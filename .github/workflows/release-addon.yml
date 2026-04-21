@@ -1,0 +1,52 @@
+name: Release Blender Addon
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label used for the zip filename"
+        required: false
+        default: "manual"
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}"
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Package addon zip
+        shell: pwsh
+        run: |
+          .\package_addon.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HoCloth-${{ steps.version.outputs.value }}
+          path: dist/HoCloth-${{ steps.version.outputs.value }}*.zip
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/HoCloth-${{ steps.version.outputs.value }}*.zip
+          generate_release_notes: true

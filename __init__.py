@@ -1,20 +1,7 @@
+import os
+import sys
+
 import bpy
-from bpy.types import Operator,Panel
-
-import os  # NOQA: E402
-import sys  # NOQA: E402
-"""
-bl安装插件时无法识别到内部写为模块的文件夹(仅安装阶段，安装完毕后使用正常),
-需要单独添加模块的路径才能找到
-"""
-plugin_dir = os.path.dirname(__file__)
-sys.path.append(plugin_dir)
-lib_dir = os.path.join(plugin_dir, "_Lib")
-sys.path.append(lib_dir)
-
-from bpy.props import BoolProperty, FloatProperty
-
-# 内置的绘制快捷键ui的接口
 import rna_keymap_ui
 
 
@@ -30,25 +17,34 @@ bl_info = {
     "category": "Mesh",
 }
 
-class AddonPreference(bpy.types.AddonPreferences):
-    """插件的参数，不随着文件改变而改变"""
-    bl_idname = __name__
+
+PLUGIN_DIR = os.path.dirname(__file__)
+LIB_DIR = os.path.join(PLUGIN_DIR, "_Lib")
+BIN_DIR = os.path.join(PLUGIN_DIR, "_bin")
+
+for path in (PLUGIN_DIR, LIB_DIR, BIN_DIR):
+    if os.path.isdir(path) and path not in sys.path:
+        sys.path.append(path)
+
+
+class HoClothAddonPreferences(bpy.types.AddonPreferences):
+    bl_idname = __package__ or __name__
 
     def draw(self, context):
-        pass
+        _ = context
+        self.layout.label(text="HoCloth plugin root is this repository folder.")
 
 
-cls = [AddonPreference,]
+CLASSES = (
+    HoClothAddonPreferences,
+)
 
 
 def register():
-    for i in cls:
-        bpy.utils.register_class(i)
-    prefs = bpy.context.preferences.addons[__name__].preferences
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
 
 
 def unregister():
-    for i in cls:
-        bpy.utils.unregister_class(i)
-
-    
+    for cls in reversed(CLASSES):
+        bpy.utils.unregister_class(cls)

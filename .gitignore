@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+native/build/
+native/out/
+native/install/
+cpp/build/
+cpp/out/
+cpp/install/
+.vs/
+.vscode/
+Thumbs.db
+Desktop.ini

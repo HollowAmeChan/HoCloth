@@ -1,0 +1,17 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "hocloth"
+version = "0.0.1"
+description = "Blender addon and native runtime bridge for HoCloth"
+requires-python = ">=3.11"
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+cmake.build-type = "RelWithDebInfo"
+wheel.packages = ["src/hocloth"]
+
+[tool.scikit-build.cmake]
+source-dir = "."
