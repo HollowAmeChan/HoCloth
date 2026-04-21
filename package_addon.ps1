@@ -1,6 +1,6 @@
 # Packages the repository root as a Blender addon zip while excluding
-# development-only folders such as native source, third-party dependencies,
-# docs, and local build artifacts.
+# development-only folders such as _native source, _third_party dependencies,
+# _docs, and local build artifacts.
 param(
     [string]$Version = "dev",
     [switch]$IncludeNativeBuild
@@ -10,25 +10,25 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $RepoRoot = $PSScriptRoot
-$DistDir = Join-Path $RepoRoot "dist"
+$DistDir = Join-Path $RepoRoot "_dist"
 $SessionId = Get-Date -Format "yyyyMMdd-HHmmss"
-$StageRoot = Join-Path $RepoRoot ("build\\package-{0}" -f $SessionId)
+$StageRoot = Join-Path $RepoRoot ("_build\\package-{0}" -f $SessionId)
 $StageAddon = Join-Path $StageRoot "HoCloth"
 $ZipPath = Join-Path $DistDir ("HoCloth-{0}.zip" -f $Version)
 $ExcludeNames = @(
     ".git",
     ".github",
     ".gitignore",
-    "build",
+    "_build",
     "CMakeLists.txt",
-    "dist",
-    "docs",
-    "native",
+    "_dist",
+    "_docs",
+    "_native",
     "package_addon.ps1",
     "pyproject.toml",
     "scripts",
     "tests",
-    "third_party",
+    "_third_party",
     "cpp",
     "src",
     "__pycache__"
@@ -48,11 +48,17 @@ Get-ChildItem -LiteralPath $RepoRoot -Force | Where-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $StageAddon -Recurse -Force
 }
 
+Get-ChildItem -LiteralPath $StageAddon -Recurse -Directory -Force | Where-Object {
+    $_.Name -eq "__pycache__"
+} | ForEach-Object {
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+}
+
 if ($IncludeNativeBuild) {
     foreach ($runtimeDir in @(
         (Join-Path $RepoRoot "_bin"),
         (Join-Path $RepoRoot "cpp\\install\\HoCloth"),
-        (Join-Path $RepoRoot "native\\install\\HoCloth")
+        (Join-Path $RepoRoot "_native\\install\\HoCloth")
     )) {
         if (Test-Path -LiteralPath $runtimeDir) {
             Get-ChildItem -LiteralPath $runtimeDir -Force | ForEach-Object {

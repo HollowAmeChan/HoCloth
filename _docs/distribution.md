@@ -11,7 +11,7 @@ Related docs:
 The repository root itself is the Blender addon directory.
 
 That means this folder can be installed directly in Blender during local
-development, even though it also contains the native C++ project.
+development, even though it also contains the `_native` C++ project.
 
 ## Compiled output plan
 
@@ -21,15 +21,15 @@ without bundling C++ source.
 
 Recommended layout:
 
-- `native/` or `cpp/`: C++ source project
+- `_native/` or `cpp/`: C++ source project
 - `_bin/`: compiled extension modules and runtime DLLs used by Blender
-- `dist/`: packaged release zips
+- `_dist/`: packaged release zips
 
 That means:
 
 - the project folder stays installable as a Blender addon
 - compiled runtime files live in `_bin/`
-- release packaging excludes C++ source directories and other dev-only folders
+- release packaging excludes `_native` and other dev-only folders
 
 ## Packaging flow
 
@@ -41,9 +41,9 @@ powershell -ExecutionPolicy Bypass -File .\package_addon.ps1 -Version dev
 
 The resulting zip is written to:
 
-`dist/HoCloth-dev.zip`
+`_dist/HoCloth-dev.zip`
 
 ## Release flow
 
 GitHub Actions packages the repository root as the addon, while excluding
-development-only folders such as native source and tests.
+development-only folders such as `_native`, `_third_party`, and `_docs`.

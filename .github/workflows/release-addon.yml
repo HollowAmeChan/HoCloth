@@ -42,11 +42,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HoCloth-${{ steps.version.outputs.value }}
-          path: dist/HoCloth-${{ steps.version.outputs.value }}*.zip
+          path: _dist/HoCloth-${{ steps.version.outputs.value }}*.zip
 
       - name: Create GitHub release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/HoCloth-${{ steps.version.outputs.value }}*.zip
+          files: _dist/HoCloth-${{ steps.version.outputs.value }}*.zip
           generate_release_notes: true

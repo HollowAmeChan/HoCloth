@@ -1,10 +1,10 @@
 __pycache__/
 *.py[cod]
-build/
-dist/
-native/build/
-native/out/
-native/install/
+_build/
+_dist/
+_native/build/
+_native/out/
+_native/install/
 cpp/build/
 cpp/out/
 cpp/install/

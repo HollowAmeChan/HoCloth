@@ -16,23 +16,23 @@ repository root
 development.
 
 plugin root python modules
-: Future Blender-side Python modules can live directly under the plugin root to
-keep the addon layout simple and obvious.
+: Blender-side Python modules live directly under the plugin root so the addon
+layout stays simple and obvious.
 
-`native/`
+`_native/`
 : C++ source, headers, and CMake files for the PhysX-backed runtime. This is
 kept in the plugin repository but excluded from release zips.
 
-`native/src/`
+`_native/src/`
 : Builder/runtime/exporter implementation files.
 
-`native/include/`
+`_native/include/`
 : Public internal headers shared by the native module.
 
-`native/cmake/`
+`_native/cmake/`
 : Helper CMake modules for PhysX, nanobind, and platform-specific setup.
 
-`third_party/`
+`_third_party/`
 : Git-cloned external dependencies vendored into the repo for stable local
 bootstrapping.
 
@@ -40,7 +40,7 @@ bootstrapping.
 : Compiled runtime payload copied next to the addon so Blender can load it
 without needing the C++ source tree at runtime.
 
-`docs/`
+`_docs/`
 : Engineering notes, architecture docs, and milestone plans.
 
 `package_addon.ps1`
@@ -51,6 +51,6 @@ repository root.
 
 - `pyproject.toml`: Python build metadata with `scikit-build-core`
 - `CMakeLists.txt`: top-level native build entry
-- `native/CMakeLists.txt`: native module target definition
+- `_native/CMakeLists.txt`: native module target definition
 - `_bin/`: runtime binary output directory
 - `.github/workflows/release-addon.yml`: addon zip packaging and release

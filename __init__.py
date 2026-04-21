@@ -4,6 +4,8 @@ import sys
 import bpy
 import rna_keymap_ui
 
+from . import authoring, compile, components, runtime
+
 
 bl_info = {
     "name": "HoCloth",
@@ -41,6 +43,10 @@ CLASSES = (
 
 
 def register():
+    components.register()
+    compile.register()
+    runtime.register()
+    authoring.register()
     for cls in CLASSES:
         bpy.utils.register_class(cls)
 
@@ -48,3 +54,7 @@ def register():
 def unregister():
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
+    authoring.unregister()
+    runtime.unregister()
+    compile.unregister()
+    components.unregister()
