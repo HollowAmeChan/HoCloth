@@ -10,6 +10,26 @@ def _poll_armature_object(self, obj):
     return obj is not None and obj.type == "ARMATURE"
 
 
+def _validate_root_bone(component) -> None:
+    armature_object = component.armature_object
+    if armature_object is None or armature_object.type != "ARMATURE" or not armature_object.data:
+        component.root_bone_name = ""
+        return
+
+    if component.root_bone_name and component.root_bone_name not in armature_object.data.bones:
+        component.root_bone_name = ""
+
+
+def _update_armature_object(self, context):
+    _ = context
+    _validate_root_bone(self)
+
+
+def _update_root_bone_name(self, context):
+    _ = context
+    _validate_root_bone(self)
+
+
 class HoClothComponentItem(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     component_type: bpy.props.StringProperty(name="Component Type")
@@ -25,8 +45,9 @@ class HoClothBoneChainComponent(bpy.types.PropertyGroup):
         name="Armature",
         type=bpy.types.Object,
         poll=_poll_armature_object,
+        update=_update_armature_object,
     )
-    root_bone_name: bpy.props.StringProperty(name="Root Bone")
+    root_bone_name: bpy.props.StringProperty(name="Root Bone", update=_update_root_bone_name)
 
 
 class HoClothColliderComponent(bpy.types.PropertyGroup):

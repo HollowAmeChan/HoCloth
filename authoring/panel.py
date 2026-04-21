@@ -12,6 +12,12 @@ def _draw_bone_chain_details(layout, scene, item):
     armature_object = chain.armature_object
     bone_names = resolve_bone_chain_names(scene, armature_object, chain.root_bone_name)
     bone_count = len(bone_names)
+    root_bone_is_valid = (
+        armature_object is not None
+        and armature_object.type == "ARMATURE"
+        and armature_object.data is not None
+        and chain.root_bone_name in armature_object.data.bones
+    )
 
     header = layout.row(align=True)
     header.prop(
@@ -37,13 +43,19 @@ def _draw_bone_chain_details(layout, scene, item):
     body = layout.box()
     body.prop(chain, "armature_object", text="Armature")
     if armature_object and armature_object.data:
-        body.prop_search(chain, "root_bone_name", armature_object.data, "bones", text="Root Bone")
+        root_row = body.row()
+        root_row.alert = bool(chain.root_bone_name) and not root_bone_is_valid
+        root_row.prop_search(chain, "root_bone_name", armature_object.data, "bones", text="Root Bone")
     else:
         body.prop(chain, "root_bone_name", text="Root Bone")
         body.label(text="Select an armature object first", icon="INFO")
 
     if armature_object and not chain.root_bone_name:
         body.label(text="Select a root bone", icon="INFO")
+    elif armature_object and chain.root_bone_name and not root_bone_is_valid:
+        warn = body.row()
+        warn.alert = True
+        warn.label(text="Stored root bone is no longer valid on this armature", icon="ERROR")
 
     if not bone_names:
         body.label(text="No bones resolved from root", icon="INFO")
