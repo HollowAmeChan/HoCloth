@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 class CompiledBone:
     name: str
     parent_index: int
+    length: float
+    rest_head_local: tuple[float, float, float]
+    rest_tail_local: tuple[float, float, float]
+    rest_local_translation: tuple[float, float, float]
+    rest_local_rotation: tuple[float, float, float, float]
 
 
 @dataclass
@@ -27,6 +32,15 @@ class SimulationCacheDescriptor:
     cache_format: str = "pc2"
     cache_path: str = ""
 
+    def to_dict(self) -> dict:
+        return {
+            "component_id": self.component_id,
+            "source_object_name": self.source_object_name,
+            "topology_hash": self.topology_hash,
+            "cache_format": self.cache_format,
+            "cache_path": self.cache_path,
+        }
+
 
 @dataclass
 class CompiledScene:
@@ -39,8 +53,8 @@ class CompiledScene:
     def summary(self) -> str:
         return f"bone_chains={len(self.bone_chains)}, bones={self.total_bone_count()}"
 
-    def to_native_dict(self) -> dict:
-        return {
+    def to_dict(self) -> dict:
+        data = {
             "bone_chains": [
                 {
                     "component_id": chain.component_id,
@@ -50,20 +64,21 @@ class CompiledScene:
                         {
                             "name": bone.name,
                             "parent_index": bone.parent_index,
+                            "length": bone.length,
+                            "rest_head_local": bone.rest_head_local,
+                            "rest_tail_local": bone.rest_tail_local,
+                            "rest_local_translation": bone.rest_local_translation,
+                            "rest_local_rotation": bone.rest_local_rotation,
                         }
                         for bone in chain.bones
                     ],
                 }
                 for chain in self.bone_chains
-            ],
-            "cache_descriptors": [
-                {
-                    "component_id": descriptor.component_id,
-                    "source_object_name": descriptor.source_object_name,
-                    "topology_hash": descriptor.topology_hash,
-                    "cache_format": descriptor.cache_format,
-                    "cache_path": descriptor.cache_path,
-                }
-                for descriptor in self.cache_descriptors
-            ],
+            ]
         }
+        if self.cache_descriptors:
+            data["cache_descriptors"] = [descriptor.to_dict() for descriptor in self.cache_descriptors]
+        return data
+
+    def to_native_dict(self) -> dict:
+        return self.to_dict()

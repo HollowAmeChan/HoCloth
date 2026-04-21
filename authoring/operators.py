@@ -1,8 +1,21 @@
 import bpy
+import json
+import os
 
 from ..compile.compiler import compile_scene_from_components
 from ..components.properties import create_component, delete_component, rebuild_component_indices
-from ..runtime.session import build_runtime, destroy_runtime, reset_runtime, step_runtime
+from ..runtime.pose_apply import apply_runtime_transforms_to_scene, capture_pose_baseline
+from ..runtime.inputs import build_runtime_inputs
+from ..runtime.session import (
+    build_runtime,
+    destroy_runtime,
+    get_compiled_scene,
+    get_last_transforms,
+    get_pose_baseline,
+    reset_runtime,
+    set_pose_baseline,
+    step_runtime,
+)
 from .extract import extract_active_bone_chain
 
 
@@ -58,6 +71,7 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     def execute(self, context):
         rebuild_component_indices(context.scene)
         compiled = compile_scene_from_components(context.scene)
+        context.scene.hocloth_compile_summary = compiled.summary()
         if not compiled.bone_chains:
             self.report({"ERROR"}, "No enabled bone-chain components could be compiled.")
             context.scene.hocloth_runtime_status = "Build failed: no valid bone chains"
@@ -69,12 +83,36 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
             return {"CANCELLED"}
 
         runtime_state = build_runtime(compiled)
+        set_pose_baseline(capture_pose_baseline(context.scene, compiled))
         context.scene.hocloth_runtime_handle = runtime_state["handle"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         context.scene.hocloth_runtime_status = (
             f"Runtime ready via {runtime_state['backend']}: {runtime_state['summary']}"
         )
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_export_compiled_scene(bpy.types.Operator):
+    bl_idname = "hocloth.export_compiled_scene"
+    bl_label = "Export Compiled Scene"
+    bl_description = "Export the current compiled scene to a JSON preview file in _build"
+
+    def execute(self, context):
+        rebuild_component_indices(context.scene)
+        compiled = compile_scene_from_components(context.scene)
+        context.scene.hocloth_compile_summary = compiled.summary()
+
+        plugin_root = os.path.dirname(os.path.dirname(__file__))
+        export_dir = os.path.join(plugin_root, "_build")
+        os.makedirs(export_dir, exist_ok=True)
+        export_path = os.path.join(export_dir, "compiled_scene_preview.json")
+
+        with open(export_path, "w", encoding="utf-8") as handle:
+            json.dump(compiled.to_dict(), handle, indent=2, ensure_ascii=False)
+
+        context.scene.hocloth_runtime_status = f"Compiled scene exported: {export_path}"
+        self.report({"INFO"}, f"Compiled scene exported to {export_path}")
         return {"FINISHED"}
 
 
@@ -85,6 +123,8 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
 
     def execute(self, context):
         runtime_state = reset_runtime()
+        if runtime_state["handle"]:
+            set_pose_baseline(capture_pose_baseline(context.scene, get_compiled_scene()))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         if runtime_state["handle"]:
@@ -99,12 +139,13 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
     bl_label = "Step Runtime"
     bl_description = "Execute one placeholder simulation step through the runtime API"
 
-    dt: bpy.props.FloatProperty(name="dt", default=1.0 / 60.0, min=0.0001)
-    substeps: bpy.props.IntProperty(name="Substeps", default=1, min=1, soft_max=8)
-
     def execute(self, context):
         try:
-            result = step_runtime(self.dt, self.substeps)
+            result = step_runtime(
+                context.scene.hocloth_runtime_dt,
+                context.scene.hocloth_runtime_substeps,
+                build_runtime_inputs(context.scene, get_compiled_scene()),
+            )
         except RuntimeError as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
@@ -112,8 +153,45 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         runtime_state = result["runtime_state"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        status_suffix = ""
+        if context.scene.hocloth_apply_pose_on_step:
+            apply_result = apply_runtime_transforms_to_scene(
+                context.scene,
+                get_compiled_scene(),
+                result["transforms"],
+                get_pose_baseline(),
+            )
+            context.view_layer.update()
+            status_suffix = f", applied={apply_result['applied_count']}"
         context.scene.hocloth_runtime_status = (
             f"Stepped {runtime_state['step_count']} times, transforms={runtime_state['bone_transform_count']}"
+            f"{status_suffix}"
+        )
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_apply_runtime_pose(bpy.types.Operator):
+    bl_idname = "hocloth.apply_runtime_pose"
+    bl_label = "Apply Runtime Pose"
+    bl_description = "Apply the most recently fetched runtime transforms back onto Blender pose bones"
+
+    def execute(self, context):
+        compiled_scene = get_compiled_scene()
+        transforms = get_last_transforms()
+        if compiled_scene is None or not transforms:
+            self.report({"INFO"}, "No runtime transforms are available yet.")
+            return {"CANCELLED"}
+
+        apply_result = apply_runtime_transforms_to_scene(
+            context.scene,
+            compiled_scene,
+            transforms,
+            get_pose_baseline(),
+        )
+        context.view_layer.update()
+        context.scene.hocloth_runtime_status = (
+            f"Applied pose to {apply_result['applied_count']} bones "
+            f"across {apply_result['armature_count']} armatures"
         )
         return {"FINISHED"}
 
@@ -136,8 +214,10 @@ CLASSES = (
     HOCLOTH_OT_add_active_bone_chain,
     HOCLOTH_OT_remove_component,
     HOCLOTH_OT_rebuild_scene,
+    HOCLOTH_OT_export_compiled_scene,
     HOCLOTH_OT_reset_runtime,
     HOCLOTH_OT_step_runtime,
+    HOCLOTH_OT_apply_runtime_pose,
     HOCLOTH_OT_destroy_runtime,
 )
 

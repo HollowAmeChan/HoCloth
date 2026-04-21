@@ -1,6 +1,4 @@
-import hashlib
-
-from .compiled import CompiledBone, CompiledBoneChain, CompiledScene, SimulationCacheDescriptor
+from .compiled import CompiledBone, CompiledBoneChain, CompiledScene
 
 
 def _collect_bone_subtree_names(bone) -> list[str]:
@@ -53,22 +51,26 @@ def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[Compil
     for bone_name in bone_names:
         bone = armature_object.data.bones.get(bone_name)
         parent_name = bone.parent.name if bone and bone.parent and bone.parent.name in name_to_index else None
+        if bone is None:
+            continue
+
+        if bone.parent and bone.parent.name in name_to_index:
+            local_matrix = bone.parent.matrix_local.inverted() @ bone.matrix_local
+        else:
+            local_matrix = bone.matrix_local.copy()
+
         compiled_bones.append(
             CompiledBone(
                 name=bone_name,
                 parent_index=name_to_index[parent_name] if parent_name else -1,
+                length=(bone.tail_local - bone.head_local).length,
+                rest_head_local=tuple(bone.head_local),
+                rest_tail_local=tuple(bone.tail_local),
+                rest_local_translation=tuple(local_matrix.to_translation()),
+                rest_local_rotation=tuple(local_matrix.to_quaternion()),
             )
         )
     return compiled_bones
-
-
-def _build_cache_descriptor(component_id: str, armature_name: str, bone_names: list[str]) -> SimulationCacheDescriptor:
-    topology_hash = hashlib.sha1("|".join(bone_names).encode("utf-8")).hexdigest()[:16]
-    return SimulationCacheDescriptor(
-        component_id=component_id,
-        source_object_name=armature_name,
-        topology_hash=topology_hash,
-    )
 
 
 def compile_scene_from_components(scene) -> CompiledScene:
@@ -94,13 +96,6 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 armature_name=armature_object.name,
                 root_bone_name=typed_item.root_bone_name,
                 bones=compiled_bones,
-            )
-        )
-        compiled.cache_descriptors.append(
-            _build_cache_descriptor(
-                item.component_id,
-                armature_object.name,
-                bone_names,
             )
         )
 

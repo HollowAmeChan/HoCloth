@@ -85,8 +85,10 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
 
         row = layout.row(align=True)
         row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH")
+        row.operator("hocloth.export_compiled_scene", icon="EXPORT")
         row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
         row.operator("hocloth.step_runtime", icon="FRAME_NEXT")
+        row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
         row.operator("hocloth.destroy_runtime", icon="TRASH")
 
         box = layout.box()
@@ -106,6 +108,11 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                     op.component_id = item.component_id
 
         status_box = layout.box()
+        status_box.label(text=f"Compiled: {scene.hocloth_compile_summary}")
+        settings_col = status_box.column(align=True)
+        settings_col.prop(scene, "hocloth_runtime_dt", text="dt")
+        settings_col.prop(scene, "hocloth_runtime_substeps", text="Substeps")
+        settings_col.prop(scene, "hocloth_apply_pose_on_step", text="Apply Pose On Step")
         status_box.label(text="Runtime")
         status_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
         status_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")

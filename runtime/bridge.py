@@ -1,4 +1,5 @@
 from importlib import import_module
+import math
 
 
 class NativeBridgeStub:
@@ -14,6 +15,7 @@ class NativeBridgeStub:
         self._scenes[handle] = {
             "compiled_scene": compiled_scene,
             "steps": 0,
+            "runtime_inputs": {"bone_chains": []},
         }
         return {
             "handle": handle,
@@ -29,6 +31,13 @@ class NativeBridgeStub:
         scene = self._scenes.get(handle)
         if scene is not None:
             scene["steps"] = 0
+        return True
+
+    def set_runtime_inputs(self, handle, runtime_inputs):
+        scene = self._scenes.get(handle)
+        if scene is None:
+            raise RuntimeError(f"Unknown runtime handle: {handle}")
+        scene["runtime_inputs"] = runtime_inputs or {"bone_chains": []}
         return True
 
     def step_scene(self, handle, dt, substeps):
@@ -52,13 +61,25 @@ class NativeBridgeStub:
 
         transforms = []
         for chain in scene["compiled_scene"].bone_chains:
-            for bone in chain.bones:
+            for bone_index, bone in enumerate(chain.bones):
+                angle = 0.015 * math.sin(scene["steps"] * 0.08 + bone_index * 0.3)
+                half_angle = angle * 0.5
                 transforms.append(
                     {
                         "component_id": chain.component_id,
+                        "armature_name": chain.armature_name,
                         "bone_name": bone.name,
+                        # Placeholder mode keeps pose translation untouched to avoid
+                        # fighting Blender's connected-bone local offsets.
                         "translation": (0.0, 0.0, 0.0),
-                        "rotation_quaternion": (1.0, 0.0, 0.0, 0.0),
+                        # Blender pose channels expect a delta from rest pose, not
+                        # the bone's absolute local rest orientation.
+                        "rotation_quaternion": (
+                            math.cos(half_angle),
+                            math.sin(half_angle),
+                            0.0,
+                            0.0,
+                        ),
                     }
                 )
         return transforms
@@ -82,6 +103,9 @@ class NativeModuleBridge:
 
     def step_scene(self, handle, dt, substeps):
         return self._module.step_scene(handle, dt, substeps)
+
+    def set_runtime_inputs(self, handle, runtime_inputs):
+        return self._module.set_runtime_inputs(handle, runtime_inputs)
 
     def get_bone_transforms(self, handle):
         return self._module.get_bone_transforms(handle)

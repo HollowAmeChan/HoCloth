@@ -134,6 +134,25 @@ def register():
         name="Runtime Status",
         default="Idle",
     )
+    bpy.types.Scene.hocloth_compile_summary = bpy.props.StringProperty(
+        name="Compile Summary",
+        default="Not compiled",
+    )
+    bpy.types.Scene.hocloth_runtime_dt = bpy.props.FloatProperty(
+        name="Runtime dt",
+        default=1.0 / 60.0,
+        min=0.0001,
+    )
+    bpy.types.Scene.hocloth_runtime_substeps = bpy.props.IntProperty(
+        name="Runtime Substeps",
+        default=1,
+        min=1,
+        soft_max=8,
+    )
+    bpy.types.Scene.hocloth_apply_pose_on_step = bpy.props.BoolProperty(
+        name="Apply Pose On Step",
+        default=True,
+    )
     bpy.types.Scene.hocloth_runtime_step_count = bpy.props.IntProperty(
         name="Runtime Step Count",
         default=0,
@@ -155,6 +174,10 @@ def unregister():
     del bpy.types.Scene.hocloth_runtime_handle
     del bpy.types.Scene.hocloth_runtime_transform_count
     del bpy.types.Scene.hocloth_runtime_step_count
+    del bpy.types.Scene.hocloth_apply_pose_on_step
+    del bpy.types.Scene.hocloth_runtime_substeps
+    del bpy.types.Scene.hocloth_runtime_dt
+    del bpy.types.Scene.hocloth_compile_summary
     del bpy.types.Scene.hocloth_runtime_status
     del bpy.types.Scene.hocloth_collider_components
     del bpy.types.Scene.hocloth_bone_chain_components

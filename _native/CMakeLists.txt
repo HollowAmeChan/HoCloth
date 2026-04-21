@@ -19,25 +19,65 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${HOCLOTH_RUNTIME_DIR}")
 
 # Static libraries and other non-runtime artifacts stay in the build tree.
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${HOCLOTH_INTERMEDIATE_DIR}")
+option(HOCLOTH_ENABLE_PHYSX "Enable PhysX-backed runtime path when dependencies are available" OFF)
+set(HOCLOTH_PYTHON_EXECUTABLE "" CACHE FILEPATH "Exact Python executable used to build the hocloth_native module")
+set(HOCLOTH_PYTHON_VERSION "3.11" CACHE STRING "Required Python ABI version for Blender compatibility")
+set(HOCLOTH_PHYSX_ROOT "${HOCLOTH_PLUGIN_ROOT}/_third_party/PhysX/physx" CACHE PATH "PhysX source or SDK root")
+set(HOCLOTH_PHYSX_INCLUDE_DIR "${HOCLOTH_PHYSX_ROOT}/include" CACHE PATH "PhysX include directory")
+set(HOCLOTH_PHYSX_LIBRARY_DIR "" CACHE PATH "Directory containing PhysX libraries")
+set(HOCLOTH_PHYSX_LIBRARIES "" CACHE STRING "Semicolon-separated list of PhysX libraries to link")
 
 message(STATUS "HoCloth native module skeleton configured.")
 message(STATUS "HoCloth runtime output directory: ${HOCLOTH_RUNTIME_DIR}")
 message(STATUS "HoCloth intermediate output directory: ${HOCLOTH_INTERMEDIATE_DIR}")
+message(STATUS "HoCloth PhysX path enabled: ${HOCLOTH_ENABLE_PHYSX}")
 
 set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
 
 if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
+    if (HOCLOTH_PYTHON_EXECUTABLE)
+        set(Python_EXECUTABLE "${HOCLOTH_PYTHON_EXECUTABLE}" CACHE FILEPATH "Python executable for hocloth_native" FORCE)
+    endif()
+
+    set(Python_FIND_STRATEGY LOCATION)
+    set(Python_FIND_REGISTRY FIRST)
+    set(Python_FIND_IMPLEMENTATIONS CPython)
+
     # Ensure Python::Module exists before nanobind config runs. This avoids
     # generator-time failures on some Windows CMake/Python combinations where
     # nanobind's own Development.Module probe does not provide the target.
-    find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development)
+    find_package(Python ${HOCLOTH_PYTHON_VERSION} EXACT REQUIRED COMPONENTS Interpreter Development)
+
+    message(STATUS "HoCloth Python executable: ${Python_EXECUTABLE}")
+    message(STATUS "HoCloth Python include dir: ${Python_INCLUDE_DIRS}")
+    message(STATUS "HoCloth Python libraries: ${Python_LIBRARIES}")
+    message(STATUS "HoCloth Python SOABI: ${Python_SOABI}")
 
     add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
 
     add_library(hocloth_runtime_core STATIC
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_physx_builder.cpp"
     )
     target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+    if (HOCLOTH_ENABLE_PHYSX)
+        if (EXISTS "${HOCLOTH_PHYSX_INCLUDE_DIR}/PxPhysicsAPI.h")
+            target_include_directories(hocloth_runtime_core PRIVATE "${HOCLOTH_PHYSX_INCLUDE_DIR}")
+            target_compile_definitions(hocloth_runtime_core PUBLIC HOCLOTH_WITH_PHYSX=1)
+
+            if (HOCLOTH_PHYSX_LIBRARY_DIR)
+                target_link_directories(hocloth_runtime_core PRIVATE "${HOCLOTH_PHYSX_LIBRARY_DIR}")
+            endif()
+
+            if (HOCLOTH_PHYSX_LIBRARIES)
+                target_link_libraries(hocloth_runtime_core PRIVATE ${HOCLOTH_PHYSX_LIBRARIES})
+            else()
+                message(WARNING "HOCLOTH_ENABLE_PHYSX is ON but HOCLOTH_PHYSX_LIBRARIES is empty. The source path is enabled, but final linking may fail until PhysX libs are configured.")
+            endif()
+        else()
+            message(WARNING "HOCLOTH_ENABLE_PHYSX is ON but PxPhysicsAPI.h was not found in ${HOCLOTH_PHYSX_INCLUDE_DIR}. Falling back to stub backend at compile time.")
+        endif()
+    endif()
 
     nanobind_add_module(hocloth_native
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_python_module.cpp"
