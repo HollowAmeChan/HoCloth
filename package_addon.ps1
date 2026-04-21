@@ -30,6 +30,17 @@ function Resolve-CMakeExecutable {
         return $command.Source
     }
 
+    $wellKnownCandidates = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+    )
+    foreach ($candidatePath in $wellKnownCandidates) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return $candidatePath
+        }
+    }
+
     $searchRoots = @(
         "D:\_SOFTWARE",
         "$env:ProgramFiles\JetBrains",

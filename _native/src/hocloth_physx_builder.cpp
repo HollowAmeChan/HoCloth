@@ -41,6 +41,7 @@ struct PhysxChainResources {
     std::string component_id;
     std::string armature_name;
     std::string root_bone_name;
+    BoneChainDescriptor descriptor;
     physx::PxRigidDynamic* root_anchor = nullptr;
     physx::PxVec3 root_rest_head = physx::PxVec3(0.0f);
     physx::PxQuat root_input_rotation = physx::PxQuat(physx::PxIdentity);
@@ -118,6 +119,10 @@ physx::PxQuat quat_between_vectors(const physx::PxVec3& from, const physx::PxVec
     const physx::PxVec3 axis = normalized_from.cross(normalized_to);
     physx::PxQuat result(axis.x, axis.y, axis.z, 1.0f + dot);
     return normalize_or_identity(result);
+}
+
+physx::PxVec3 rotate_vector(const physx::PxQuat& rotation, const physx::PxVec3& value) {
+    return rotation.rotate(value);
 }
 
 void quat_to_array(const physx::PxQuat& value, float out[4]) {
@@ -224,6 +229,7 @@ physx::PxRigidDynamic* create_tail_actor(
     shape->release();
     actor->setLinearDamping(0.1f + std::clamp(chain.drag, 0.0f, 1.0f) * 2.5f);
     actor->setAngularDamping(0.2f + std::clamp(chain.damping, 0.0f, 1.0f) * 4.0f);
+    actor->setActorFlag(physx::PxActorFlag::eDISABLE_GRAVITY, true);
     actor->setActorFlag(physx::PxActorFlag::eVISUALIZATION, true);
     physx::PxRigidBodyExt::updateMassAndInertia(*actor, 0.2f + radius);
     resources.scene->addActor(*actor);
@@ -238,6 +244,7 @@ PhysxChainResources build_chain_resources(
     chain_resources.component_id = chain.component_id;
     chain_resources.armature_name = chain.armature_name;
     chain_resources.root_bone_name = chain.root_bone_name;
+    chain_resources.descriptor = chain;
 
     if (chain.bones.empty()) {
         return chain_resources;
@@ -335,19 +342,47 @@ void reset_chain_actors(
     }
 
     if (chain.root_anchor != nullptr) {
-        const physx::PxTransform anchor_pose(root_head, physx::PxQuat(physx::PxIdentity));
+        const physx::PxTransform anchor_pose(root_head, chain.root_input_rotation);
         chain.root_anchor->setKinematicTarget(anchor_pose);
         chain.root_anchor->setGlobalPose(anchor_pose);
     }
 
     for (PhysxBoneNode& bone : chain.bones) {
         const physx::PxVec3 rest_offset = bone.rest_tail - chain.root_rest_head;
-        const physx::PxTransform actor_pose(root_head + rest_offset, physx::PxQuat(physx::PxIdentity));
+        const physx::PxVec3 rotated_offset = rotate_vector(chain.root_input_rotation, rest_offset);
+        const physx::PxQuat world_rotation = normalize_or_identity(chain.root_input_rotation * bone.rest_global_rotation);
+        const physx::PxTransform actor_pose(root_head + rotated_offset, world_rotation);
         if (bone.tail_actor != nullptr) {
             bone.tail_actor->setLinearVelocity(physx::PxVec3(0.0f));
             bone.tail_actor->setAngularVelocity(physx::PxVec3(0.0f));
             bone.tail_actor->setGlobalPose(actor_pose);
         }
+    }
+}
+
+void apply_chain_gravity(
+    const BoneChainDescriptor& chain,
+    PhysxChainResources& chain_resources
+) {
+    float gravity_length = 0.0f;
+    {
+        const physx::PxVec3 gravity_direction = make_vec3(chain.gravity_direction);
+        gravity_length = gravity_direction.magnitude();
+    }
+    if (chain.gravity_strength <= 1.0e-6f || gravity_length <= 1.0e-6f) {
+        return;
+    }
+
+    const physx::PxVec3 gravity_direction = normalize_or_default(
+        make_vec3(chain.gravity_direction),
+        physx::PxVec3(0.0f, -1.0f, 0.0f)
+    );
+    const physx::PxVec3 gravity_acceleration = gravity_direction * (9.81f * std::max(0.0f, chain.gravity_strength));
+    for (PhysxBoneNode& bone : chain_resources.bones) {
+        if (bone.tail_actor == nullptr) {
+            continue;
+        }
+        bone.tail_actor->addForce(gravity_acceleration, physx::PxForceMode::eACCELERATION, true);
     }
 }
 
@@ -369,16 +404,30 @@ std::vector<BoneTransform> build_transforms_from_scene(const PhysxSceneResources
 
         for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
             const PhysxBoneNode& bone = chain.bones[bone_index];
-            physx::PxVec3 current_head = chain.root_anchor != nullptr ? chain.root_anchor->getGlobalPose().p : chain.root_rest_head;
+            const physx::PxTransform root_pose = chain.root_anchor != nullptr
+                ? chain.root_anchor->getGlobalPose()
+                : physx::PxTransform(chain.root_rest_head, chain.root_input_rotation);
+            physx::PxVec3 current_head = root_pose.p;
             if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < current_tail_positions.size()) {
                 current_head = current_tail_positions[static_cast<std::size_t>(bone.parent_index)];
             }
 
             const physx::PxVec3 current_tail = current_tail_positions[bone_index];
-            const physx::PxVec3 rest_direction = bone.rest_tail - bone.rest_head;
+            const physx::PxVec3 rest_head_world = root_pose.p + rotate_vector(
+                chain.root_input_rotation,
+                bone.rest_head - chain.root_rest_head
+            );
+            const physx::PxVec3 rest_tail_world = root_pose.p + rotate_vector(
+                chain.root_input_rotation,
+                bone.rest_tail - chain.root_rest_head
+            );
+            const physx::PxVec3 rest_direction = rest_tail_world - rest_head_world;
             const physx::PxVec3 current_direction = current_tail - current_head;
             const physx::PxQuat swing = quat_between_vectors(rest_direction, current_direction);
-            const physx::PxQuat current_global_rotation = normalize_or_identity(swing * bone.rest_global_rotation);
+            const physx::PxQuat rest_global_rotation = normalize_or_identity(
+                chain.root_input_rotation * bone.rest_global_rotation
+            );
+            const physx::PxQuat current_global_rotation = normalize_or_identity(swing * rest_global_rotation);
             current_global_rotations[bone_index] = current_global_rotation;
 
             physx::PxQuat delta = physx::PxQuat(physx::PxIdentity);
@@ -387,7 +436,10 @@ std::vector<BoneTransform> build_transforms_from_scene(const PhysxSceneResources
                 const physx::PxQuat current_local = normalize_or_identity(parent_current.getConjugate() * current_global_rotation);
                 delta = normalize_or_identity(current_local * bone.rest_local_rotation.getConjugate());
             } else {
-                delta = normalize_or_identity(current_global_rotation * bone.rest_local_rotation.getConjugate());
+                const physx::PxQuat current_local = normalize_or_identity(
+                    chain.root_input_rotation.getConjugate() * current_global_rotation
+                );
+                delta = normalize_or_identity(current_local * bone.rest_local_rotation.getConjugate());
             }
 
             BoneTransform transform;
@@ -482,7 +534,7 @@ PhysxBuildResult build_physx_scene(SceneHandle handle, const SceneDescriptor& sc
 
     PhysxSceneResources resources;
     physx::PxSceneDesc scene_desc(g_physics->getTolerancesScale());
-    scene_desc.gravity = physx::PxVec3(0.0f, -9.81f, 0.0f);
+    scene_desc.gravity = physx::PxVec3(0.0f, 0.0f, 0.0f);
     resources.dispatcher = physx::PxDefaultCpuDispatcherCreate(1);
     if (resources.dispatcher == nullptr) {
         result.scene_created = false;
@@ -592,12 +644,12 @@ void set_physx_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs) {
         if (chain_input == nullptr || chain.root_anchor == nullptr) {
             continue;
         }
-        const physx::PxTransform anchor_pose(
-            make_vec3(chain_input->root_translation),
-            physx::PxQuat(physx::PxIdentity)
-        );
         chain.root_input_rotation = normalize_or_identity(make_quat(chain_input->root_rotation_quaternion));
-        chain.root_anchor->setKinematicTarget(anchor_pose);
+        const physx::PxTransform rotated_anchor_pose(
+            make_vec3(chain_input->root_translation),
+            chain.root_input_rotation
+        );
+        chain.root_anchor->setKinematicTarget(rotated_anchor_pose);
     }
 #else
     (void) handle;
@@ -619,6 +671,9 @@ void step_physx_scene(SceneHandle handle, const RuntimeInputs& inputs) {
     const float substep_dt = dt / static_cast<float>(substeps);
 
     for (std::int32_t substep = 0; substep < substeps; ++substep) {
+        for (PhysxChainResources& chain : it->second.chains) {
+            apply_chain_gravity(chain.descriptor, chain);
+        }
         it->second.scene->simulate(substep_dt);
         it->second.scene->fetchResults(true);
     }
