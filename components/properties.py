@@ -5,6 +5,11 @@ import bpy
 from .registry import COMPONENT_DEFINITIONS, get_component_definition
 
 
+def _poll_armature_object(self, obj):
+    _ = self
+    return obj is not None and obj.type == "ARMATURE"
+
+
 class HoClothComponentItem(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     component_type: bpy.props.StringProperty(name="Component Type")
@@ -16,13 +21,17 @@ class HoClothComponentItem(bpy.types.PropertyGroup):
 
 class HoClothBoneChainComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
-    armature_name: bpy.props.StringProperty(name="Armature")
+    armature_object: bpy.props.PointerProperty(
+        name="Armature",
+        type=bpy.types.Object,
+        poll=_poll_armature_object,
+    )
     root_bone_name: bpy.props.StringProperty(name="Root Bone")
 
 
 class HoClothColliderComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
-    object_name: bpy.props.StringProperty(name="Object")
+    collider_object: bpy.props.PointerProperty(name="Object", type=bpy.types.Object)
     radius: bpy.props.FloatProperty(name="Radius", default=0.05, min=0.0)
     height: bpy.props.FloatProperty(name="Height", default=0.1, min=0.0)
 
@@ -104,6 +113,16 @@ def register():
         name="Runtime Status",
         default="Idle",
     )
+    bpy.types.Scene.hocloth_runtime_step_count = bpy.props.IntProperty(
+        name="Runtime Step Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_transform_count = bpy.props.IntProperty(
+        name="Runtime Transform Count",
+        default=0,
+        options={"HIDDEN"},
+    )
     bpy.types.Scene.hocloth_runtime_handle = bpy.props.IntProperty(
         name="Runtime Handle",
         default=0,
@@ -113,6 +132,8 @@ def register():
 
 def unregister():
     del bpy.types.Scene.hocloth_runtime_handle
+    del bpy.types.Scene.hocloth_runtime_transform_count
+    del bpy.types.Scene.hocloth_runtime_step_count
     del bpy.types.Scene.hocloth_runtime_status
     del bpy.types.Scene.hocloth_collider_components
     del bpy.types.Scene.hocloth_bone_chain_components

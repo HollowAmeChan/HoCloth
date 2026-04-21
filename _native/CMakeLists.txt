@@ -24,10 +24,27 @@ message(STATUS "HoCloth native module skeleton configured.")
 message(STATUS "HoCloth runtime output directory: ${HOCLOTH_RUNTIME_DIR}")
 message(STATUS "HoCloth intermediate output directory: ${HOCLOTH_INTERMEDIATE_DIR}")
 
-# Placeholder target layout:
-# - Find or add nanobind from third_party/nanobind
-# - Find or add PhysX from third_party/PhysX
-# - Build a narrow Python extension surface for build/runtime/cache APIs
-#
-# Any future MODULE/SHARED targets added here will inherit the runtime output
-# path above and land in _bin/ by default.
+set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
+
+if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
+    # Ensure Python::Module exists before nanobind config runs. This avoids
+    # generator-time failures on some Windows CMake/Python combinations where
+    # nanobind's own Development.Module probe does not provide the target.
+    find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development)
+
+    add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
+
+    add_library(hocloth_runtime_core STATIC
+        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
+    )
+    target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+
+    nanobind_add_module(hocloth_native
+        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_python_module.cpp"
+    )
+    target_link_libraries(hocloth_native PRIVATE hocloth_runtime_core)
+    target_include_directories(hocloth_native PRIVATE "${HOCLOTH_NATIVE_ROOT}/include")
+    set_target_properties(hocloth_native PROPERTIES OUTPUT_NAME "hocloth_native")
+else()
+    message(WARNING "nanobind checkout not found at ${HOCLOTH_NANOBIND_DIR}; native Python module target was skipped.")
+endif()

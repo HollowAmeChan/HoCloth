@@ -1,17 +1,95 @@
+from importlib import import_module
+
+
 class NativeBridgeStub:
     """Temporary stand-in until the native extension is available."""
 
+    def __init__(self):
+        self._next_handle = 1
+        self._scenes = {}
+
     def build_scene(self, compiled_scene):
+        handle = self._next_handle
+        self._next_handle += 1
+        self._scenes[handle] = {
+            "compiled_scene": compiled_scene,
+            "steps": 0,
+        }
         return {
-            "handle": 1,
+            "handle": handle,
             "summary": compiled_scene.summary(),
             "backend": "stub",
         }
 
     def destroy_scene(self, handle):
+        self._scenes.pop(handle, None)
         return handle
+
+    def reset_scene(self, handle):
+        scene = self._scenes.get(handle)
+        if scene is not None:
+            scene["steps"] = 0
+        return True
+
+    def step_scene(self, handle, dt, substeps):
+        scene = self._scenes.get(handle)
+        if scene is None:
+            raise RuntimeError(f"Unknown runtime handle: {handle}")
+        scene["steps"] += max(1, int(substeps))
+        compiled_scene = scene["compiled_scene"]
+        return {
+            "handle": handle,
+            "dt": dt,
+            "substeps": substeps,
+            "steps": scene["steps"],
+            "summary": compiled_scene.summary(),
+        }
+
+    def get_bone_transforms(self, handle):
+        scene = self._scenes.get(handle)
+        if scene is None:
+            return []
+
+        transforms = []
+        for chain in scene["compiled_scene"].bone_chains:
+            for bone in chain.bones:
+                transforms.append(
+                    {
+                        "component_id": chain.component_id,
+                        "bone_name": bone.name,
+                        "translation": (0.0, 0.0, 0.0),
+                        "rotation_quaternion": (1.0, 0.0, 0.0, 0.0),
+                    }
+                )
+        return transforms
+
+
+_STUB_BRIDGE = NativeBridgeStub()
+
+
+class NativeModuleBridge:
+    def __init__(self, module):
+        self._module = module
+
+    def build_scene(self, compiled_scene):
+        return self._module.build_scene(compiled_scene.to_native_dict())
+
+    def destroy_scene(self, handle):
+        return self._module.destroy_scene(handle)
+
+    def reset_scene(self, handle):
+        return self._module.reset_scene(handle)
+
+    def step_scene(self, handle, dt, substeps):
+        return self._module.step_scene(handle, dt, substeps)
+
+    def get_bone_transforms(self, handle):
+        return self._module.get_bone_transforms(handle)
 
 
 def load_bridge():
-    # The real bridge can later attempt to import a module from _bin.
-    return NativeBridgeStub()
+    try:
+        module = import_module("hocloth_native")
+    except Exception:
+        return _STUB_BRIDGE
+    return NativeModuleBridge(module)

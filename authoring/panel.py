@@ -9,7 +9,8 @@ def _draw_bone_chain_details(layout, scene, item):
         return
 
     chain = scene.hocloth_bone_chain_components[item.container_index]
-    bone_names = resolve_bone_chain_names(scene, chain.armature_name, chain.root_bone_name)
+    armature_object = chain.armature_object
+    bone_names = resolve_bone_chain_names(scene, armature_object, chain.root_bone_name)
     bone_count = len(bone_names)
 
     header = layout.row(align=True)
@@ -34,8 +35,15 @@ def _draw_bone_chain_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.label(text=f"Armature: {chain.armature_name or 'None'}")
-    body.label(text=f"Root Bone: {chain.root_bone_name or 'None'}")
+    body.prop(chain, "armature_object", text="Armature")
+    if armature_object and armature_object.data:
+        body.prop_search(chain, "root_bone_name", armature_object.data, "bones", text="Root Bone")
+    else:
+        body.prop(chain, "root_bone_name", text="Root Bone")
+        body.label(text="Select an armature object first", icon="INFO")
+
+    if armature_object and not chain.root_bone_name:
+        body.label(text="Select a root bone", icon="INFO")
 
     if not bone_names:
         body.label(text="No bones resolved from root", icon="INFO")
@@ -65,6 +73,8 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
 
         row = layout.row(align=True)
         row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH")
+        row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
+        row.operator("hocloth.step_runtime", icon="FRAME_NEXT")
         row.operator("hocloth.destroy_runtime", icon="TRASH")
 
         box = layout.box()
@@ -86,6 +96,8 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         status_box = layout.box()
         status_box.label(text="Runtime")
         status_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
+        status_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
+        status_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
         status_box.label(text=f"Status: {scene.hocloth_runtime_status}")
 
 

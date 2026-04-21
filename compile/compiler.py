@@ -1,4 +1,6 @@
-from .compiled import CompiledBoneChain, CompiledScene
+import hashlib
+
+from .compiled import CompiledBone, CompiledBoneChain, CompiledScene, SimulationCacheDescriptor
 
 
 def _collect_bone_subtree_names(bone) -> list[str]:
@@ -8,9 +10,30 @@ def _collect_bone_subtree_names(bone) -> list[str]:
     return names
 
 
+def resolve_armature_object(scene, armature_reference: str):
+    if armature_reference is None:
+        return None
+
+    if hasattr(armature_reference, "type"):
+        return armature_reference if armature_reference.type == "ARMATURE" else None
+
+    armature_object = scene.objects.get(armature_reference)
+    if armature_object is not None and armature_object.type == "ARMATURE":
+        return armature_object
+
+    for obj in scene.objects:
+        if obj.type == "ARMATURE" and obj.data and obj.data.name == armature_reference:
+            return obj
+
+    return None
+
+
 def _resolve_bone_chain(scene, armature_name: str, root_bone_name: str) -> list[str]:
-    armature_object = scene.objects.get(armature_name)
-    if armature_object is None or armature_object.type != "ARMATURE":
+    armature_object = resolve_armature_object(scene, armature_name)
+    if armature_object is None:
+        return []
+
+    if not root_bone_name:
         return []
 
     root_bone = armature_object.data.bones.get(root_bone_name)
@@ -24,6 +47,30 @@ def resolve_bone_chain_names(scene, armature_name: str, root_bone_name: str) -> 
     return _resolve_bone_chain(scene, armature_name, root_bone_name)
 
 
+def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[CompiledBone]:
+    name_to_index = {name: index for index, name in enumerate(bone_names)}
+    compiled_bones: list[CompiledBone] = []
+    for bone_name in bone_names:
+        bone = armature_object.data.bones.get(bone_name)
+        parent_name = bone.parent.name if bone and bone.parent and bone.parent.name in name_to_index else None
+        compiled_bones.append(
+            CompiledBone(
+                name=bone_name,
+                parent_index=name_to_index[parent_name] if parent_name else -1,
+            )
+        )
+    return compiled_bones
+
+
+def _build_cache_descriptor(component_id: str, armature_name: str, bone_names: list[str]) -> SimulationCacheDescriptor:
+    topology_hash = hashlib.sha1("|".join(bone_names).encode("utf-8")).hexdigest()[:16]
+    return SimulationCacheDescriptor(
+        component_id=component_id,
+        source_object_name=armature_name,
+        topology_hash=topology_hash,
+    )
+
+
 def compile_scene_from_components(scene) -> CompiledScene:
     compiled = CompiledScene()
 
@@ -31,14 +78,29 @@ def compile_scene_from_components(scene) -> CompiledScene:
         if not item.enabled or item.component_type != "BONE_CHAIN" or item.container_index < 0:
             continue
 
+        if item.container_index >= len(scene.hocloth_bone_chain_components):
+            continue
+
         typed_item = scene.hocloth_bone_chain_components[item.container_index]
-        bone_names = _resolve_bone_chain(scene, typed_item.armature_name, typed_item.root_bone_name)
+        armature_object = typed_item.armature_object
+        if armature_object is None or armature_object.type != "ARMATURE":
+            continue
+
+        bone_names = _resolve_bone_chain(scene, armature_object, typed_item.root_bone_name)
+        compiled_bones = _build_compiled_bones(armature_object, bone_names) if armature_object else []
         compiled.bone_chains.append(
             CompiledBoneChain(
                 component_id=item.component_id,
-                armature_name=typed_item.armature_name,
+                armature_name=armature_object.name,
                 root_bone_name=typed_item.root_bone_name,
-                bone_names=bone_names,
+                bones=compiled_bones,
+            )
+        )
+        compiled.cache_descriptors.append(
+            _build_cache_descriptor(
+                item.component_id,
+                armature_object.name,
+                bone_names,
             )
         )
 
