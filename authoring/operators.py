@@ -6,6 +6,7 @@ from ..compile.compiler import compile_scene_from_components
 from ..components.properties import create_component, delete_component, rebuild_component_indices
 from ..runtime.pose_apply import apply_runtime_transforms_to_scene, capture_pose_baseline
 from ..runtime.inputs import build_runtime_inputs
+from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.session import (
     build_runtime,
     destroy_runtime,
@@ -151,6 +152,7 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
     bl_description = "Reset the current runtime scene state without rebuilding structure"
 
     def execute(self, context):
+        stop_live_runtime(context.scene, "Live runtime stopped")
         runtime_state = reset_runtime()
         if runtime_state["handle"]:
             set_pose_baseline(capture_pose_baseline(context.scene, get_compiled_scene()))
@@ -199,6 +201,33 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_toggle_live_runtime(bpy.types.Operator):
+    bl_idname = "hocloth.toggle_live_runtime"
+    bl_label = "Toggle Live Runtime"
+    bl_description = "Start or stop continuous runtime stepping while Blender animation playback is running"
+
+    def execute(self, context):
+        scene = context.scene
+        if scene.hocloth_runtime_live_running:
+            stop_live_runtime(scene, "Live runtime stopped")
+            screen = context.screen
+            if screen is not None and getattr(screen, "is_animation_playing", False):
+                bpy.ops.screen.animation_cancel(restore_frame=False)
+            return {"FINISHED"}
+
+        if scene.hocloth_runtime_handle == 0 or get_compiled_scene() is None:
+            self.report({"ERROR"}, "Build the runtime before starting live stepping.")
+            return {"CANCELLED"}
+
+        scene.sync_mode = "NONE"
+        start_live_runtime(scene)
+        screen = context.screen
+        if screen is not None and not getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_play()
+        scene.hocloth_runtime_status = "Live runtime armed, waiting for playback"
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_apply_runtime_pose(bpy.types.Operator):
     bl_idname = "hocloth.apply_runtime_pose"
     bl_label = "Apply Runtime Pose"
@@ -231,6 +260,7 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
     bl_description = "Destroy the current native runtime scene handle"
 
     def execute(self, context):
+        stop_live_runtime(context.scene, "Live runtime stopped")
         destroy_runtime()
         context.scene.hocloth_runtime_handle = 0
         context.scene.hocloth_runtime_step_count = 0
@@ -247,6 +277,7 @@ CLASSES = (
     HOCLOTH_OT_export_compiled_scene,
     HOCLOTH_OT_reset_runtime,
     HOCLOTH_OT_step_runtime,
+    HOCLOTH_OT_toggle_live_runtime,
     HOCLOTH_OT_apply_runtime_pose,
     HOCLOTH_OT_destroy_runtime,
 )

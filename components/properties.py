@@ -180,6 +180,11 @@ def register():
         default=0,
         options={"HIDDEN"},
     )
+    bpy.types.Scene.hocloth_runtime_live_running = bpy.props.BoolProperty(
+        name="Runtime Live Running",
+        default=False,
+        options={"HIDDEN"},
+    )
     bpy.types.Scene.hocloth_runtime_handle = bpy.props.IntProperty(
         name="Runtime Handle",
         default=0,
@@ -189,6 +194,7 @@ def register():
 
 def unregister():
     del bpy.types.Scene.hocloth_runtime_handle
+    del bpy.types.Scene.hocloth_runtime_live_running
     del bpy.types.Scene.hocloth_runtime_transform_count
     del bpy.types.Scene.hocloth_runtime_step_count
     del bpy.types.Scene.hocloth_apply_pose_on_step

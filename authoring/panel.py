@@ -144,6 +144,11 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         row.operator("hocloth.export_compiled_scene", icon="EXPORT")
         row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
         row.operator("hocloth.step_runtime", icon="FRAME_NEXT")
+        live_button = row.operator(
+            "hocloth.toggle_live_runtime",
+            icon="PAUSE" if scene.hocloth_runtime_live_running else "PLAY",
+            text="Pause" if scene.hocloth_runtime_live_running else "Live",
+        )
         row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
         row.operator("hocloth.destroy_runtime", icon="TRASH")
 
@@ -175,6 +180,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         status_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
         status_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
         status_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
+        status_box.label(text=f"Live: {'Running' if scene.hocloth_runtime_live_running else 'Stopped'}")
         status_box.label(text=f"Status: {scene.hocloth_runtime_status}")
 
 
