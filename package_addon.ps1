@@ -19,8 +19,11 @@ $ExcludeNames = @(
     ".git",
     ".github",
     ".gitignore",
+    ".idea",
     "_build",
+    "build",
     "CMakeLists.txt",
+    "CMakePresets.json",
     "_dist",
     "_docs",
     "_native",
@@ -33,6 +36,9 @@ $ExcludeNames = @(
     "src",
     "__pycache__"
 )
+$ExcludePrefixes = @(
+    "cmake-build-"
+)
 
 if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "__init__.py"))) {
     throw "Plugin root must contain __init__.py: $RepoRoot"
@@ -42,7 +48,9 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 New-Item -ItemType Directory -Force -Path $StageAddon | Out-Null
 
 Get-ChildItem -LiteralPath $RepoRoot -Force | Where-Object {
+    $item = $_
     ($ExcludeNames -notcontains $_.Name) -and
+    (-not ($ExcludePrefixes | Where-Object { $item.Name.StartsWith($_) })) -and
     (-not ($_.Extension -eq ".md"))
 } | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $StageAddon -Recurse -Force

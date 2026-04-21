@@ -1,0 +1,72 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Configure the addon root CMake entrypoint with Ninja outputs under _native/build.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/_native/build/ninja-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "Ninja Release",
+      "description": "Configure the addon root CMake entrypoint with Ninja outputs under _native/build.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/_native/build/ninja-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "vs2022-debug",
+      "displayName": "Visual Studio 2022 Debug",
+      "description": "Configure the addon root CMake entrypoint with outputs under _native/build.",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/_native/build/vs2022-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "vs2022-release",
+      "displayName": "Visual Studio 2022 Release",
+      "description": "Configure the addon root CMake entrypoint with outputs under _native/build.",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/_native/build/vs2022-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-ninja-debug",
+      "displayName": "Build Ninja Debug",
+      "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "build-ninja-release",
+      "displayName": "Build Ninja Release",
+      "configurePreset": "ninja-release"
+    },
+    {
+      "name": "build-vs2022-debug",
+      "displayName": "Build Visual Studio 2022 Debug",
+      "configurePreset": "vs2022-debug"
+    },
+    {
+      "name": "build-vs2022-release",
+      "displayName": "Build Visual Studio 2022 Release",
+      "configurePreset": "vs2022-release"
+    }
+  ]
+}
