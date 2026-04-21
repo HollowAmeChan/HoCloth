@@ -27,9 +27,10 @@ def _normalize_vector3(value):
 class NativeBridgeStub:
     """Temporary stand-in until the native extension is available."""
 
-    def __init__(self):
+    def __init__(self, import_error=None):
         self._next_handle = 1
         self._scenes = {}
+        self._import_error = import_error
 
     def build_scene(self, compiled_scene):
         handle = self._next_handle
@@ -44,6 +45,7 @@ class NativeBridgeStub:
             "handle": handle,
             "summary": compiled_scene.summary(),
             "backend": "stub",
+            "build_message": self._import_error or "hocloth_native import failed; using Python stub backend.",
         }
 
     def destroy_scene(self, handle):
@@ -225,6 +227,7 @@ class NativeModuleBridge:
 def load_bridge():
     try:
         module = import_module("hocloth_native")
-    except Exception:
-        return _STUB_BRIDGE
+    except Exception as exc:
+        print(f"[HoCloth] hocloth_native import failed, falling back to stub backend: {exc}")
+        return NativeBridgeStub(str(exc))
     return NativeModuleBridge(module)

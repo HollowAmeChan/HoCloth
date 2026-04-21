@@ -190,6 +190,9 @@ void reset_scene(SceneHandle handle) {
     it->second.inputs = RuntimeInputs{};
     it->second.chain_states = make_chain_states(it->second.scene);
     it->second.steps = 0;
+    if (it->second.physics_scene_ready) {
+        reset_physx_scene(handle);
+    }
 }
 
 void set_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs) {
@@ -198,6 +201,9 @@ void set_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs) {
         return;
     }
     it->second.inputs = inputs;
+    if (it->second.physics_scene_ready) {
+        set_physx_runtime_inputs(handle, inputs);
+    }
 }
 
 void step_scene(SceneHandle handle, const RuntimeInputs& inputs) {
@@ -213,7 +219,11 @@ void step_scene(SceneHandle handle, const RuntimeInputs& inputs) {
         it->second.inputs.substeps = inputs.substeps;
     }
 
-    advance_runtime(it->second, inputs);
+    if (it->second.physics_scene_ready) {
+        step_physx_scene(handle, it->second.inputs);
+    } else {
+        advance_runtime(it->second, inputs);
+    }
     const std::uint64_t step_increment = inputs.substeps > 0 ? static_cast<std::uint64_t>(inputs.substeps) : 1;
     it->second.steps += step_increment;
 }
@@ -230,6 +240,10 @@ std::vector<BoneTransform> get_bone_transforms(SceneHandle handle) {
     auto it = g_scenes.find(handle);
     if (it == g_scenes.end()) {
         return {};
+    }
+
+    if (it->second.physics_scene_ready) {
+        return get_physx_bone_transforms(handle);
     }
 
     std::vector<BoneTransform> transforms;

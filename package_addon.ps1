@@ -3,16 +3,58 @@
 # _docs, and local build artifacts.
 param(
     [string]$Version = "dev",
-    [switch]$IncludeNativeBuild
+    [switch]$IncludeNativeBuild,
+    [switch]$CreateZip,
+    [string]$CMakeExecutable = "",
+    [string]$ConfigurePreset = "vs2022-release-physx",
+    [string]$BuildPreset = "build-vs2022-release-physx",
+    [string]$BuildConfiguration = "Release"
 )
 
 $ErrorActionPreference = "Stop"
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+if ($CreateZip) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+}
+
+function Resolve-CMakeExecutable {
+    param(
+        [string]$RequestedPath
+    )
+
+    if ($RequestedPath -and (Test-Path -LiteralPath $RequestedPath)) {
+        return (Resolve-Path -LiteralPath $RequestedPath).Path
+    }
+
+    $command = Get-Command cmake.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command -and $command.Source) {
+        return $command.Source
+    }
+
+    $searchRoots = @(
+        "D:\_SOFTWARE",
+        "$env:ProgramFiles\JetBrains",
+        "$env:LOCALAPPDATA\Programs",
+        "$env:LOCALAPPDATA\JetBrains\Toolbox\apps"
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+    foreach ($root in $searchRoots) {
+        $candidate = Get-ChildItem -Path $root -Recurse -Filter cmake.exe -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\cmake\win\x64\bin\cmake.exe' } |
+            Select-Object -First 1
+        if ($null -ne $candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    return $null
+}
 
 $RepoRoot = $PSScriptRoot
+$BuildDir = Join-Path $RepoRoot "_build"
 $DistDir = Join-Path $RepoRoot "_dist"
 $SessionId = Get-Date -Format "yyyyMMdd-HHmmss"
-$StageRoot = Join-Path $RepoRoot ("_build\\package-{0}" -f $SessionId)
+$SafeVersion = ($Version -replace '[^A-Za-z0-9._-]', '_')
+$StageRoot = Join-Path $BuildDir ("release-{0}" -f $SafeVersion)
 $StageAddon = Join-Path $StageRoot "HoCloth"
 $ZipPath = Join-Path $DistDir ("HoCloth-{0}.zip" -f $Version)
 $ExcludeNames = @(
@@ -21,12 +63,14 @@ $ExcludeNames = @(
     ".gitignore",
     ".idea",
     "_build",
+    "_bin",
     "build",
     "CMakeLists.txt",
     "CMakePresets.json",
     "_dist",
     "_docs",
     "_native",
+    "build_physx.ps1",
     "package_addon.ps1",
     "pyproject.toml",
     "scripts",
@@ -44,8 +88,40 @@ if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "__init__.py"))) {
     throw "Plugin root must contain __init__.py: $RepoRoot"
 }
 
-New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+if ($IncludeNativeBuild) {
+    $resolvedCMake = Resolve-CMakeExecutable -RequestedPath $CMakeExecutable
+    if (-not $resolvedCMake) {
+        throw "Unable to locate cmake.exe automatically. Pass -CMakeExecutable <full-path-to-cmake.exe>."
+    }
+
+    $presetFile = Join-Path $RepoRoot "CMakePresets.json"
+    if (-not (Test-Path -LiteralPath $presetFile)) {
+        throw "CMakePresets.json not found: $presetFile"
+    }
+
+    Write-Host "Configuring native build with preset: $ConfigurePreset"
+    & $resolvedCMake -S $RepoRoot --preset $ConfigurePreset
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native configure failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "Building native module with preset: $BuildPreset"
+    & $resolvedCMake --build --preset $BuildPreset --config $BuildConfiguration
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native build failed with exit code $LASTEXITCODE"
+    }
+}
+
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+if ($CreateZip) {
+    New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+}
+
+if (Test-Path -LiteralPath $StageRoot) {
+    Remove-Item -LiteralPath $StageRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $StageAddon | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $StageAddon "_bin") | Out-Null
 
 Get-ChildItem -LiteralPath $RepoRoot -Force | Where-Object {
     $item = $_
@@ -63,40 +139,51 @@ Get-ChildItem -LiteralPath $StageAddon -Recurse -Directory -Force | Where-Object
 }
 
 if ($IncludeNativeBuild) {
+    $runtimeExcludeNames = @(
+        "Debug",
+        "Release",
+        "RelWithDebInfo",
+        "MinSizeRel",
+        "__pycache__"
+    )
     foreach ($runtimeDir in @(
         (Join-Path $RepoRoot "_bin"),
         (Join-Path $RepoRoot "cpp\\install\\HoCloth"),
         (Join-Path $RepoRoot "_native\\install\\HoCloth")
     )) {
         if (Test-Path -LiteralPath $runtimeDir) {
-            Get-ChildItem -LiteralPath $runtimeDir -Force | ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination $StageAddon -Recurse -Force
+            Get-ChildItem -LiteralPath $runtimeDir -Force | Where-Object {
+                $runtimeExcludeNames -notcontains $_.Name
+            } | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $StageAddon "_bin") -Recurse -Force
             }
         }
     }
+} elseif (Test-Path -LiteralPath (Join-Path $RepoRoot "_bin")) {
+    Get-ChildItem -LiteralPath (Join-Path $RepoRoot "_bin") -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $StageAddon "_bin") -Recurse -Force
+    }
 }
-
-if (Test-Path -LiteralPath $ZipPath) {
-    $ZipPath = Join-Path $DistDir ("HoCloth-{0}-{1}.zip" -f $Version, $SessionId)
-}
-
-if (Test-Path -LiteralPath $ZipPath) {
-    Remove-Item -LiteralPath $ZipPath -Force
-}
-
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $StageRoot,
-    $ZipPath,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false
-)
 
 Write-Host "Packaged addon root: $RepoRoot"
-Write-Host "Install in Blender from folder: $RepoRoot"
-Write-Host "Created release zip: $ZipPath"
+Write-Host "Prepared release folder: $StageRoot"
+Write-Host "Install in Blender from folder: $StageAddon"
 
-try {
-    Remove-Item -LiteralPath $StageRoot -Recurse -Force
-} catch {
-    Write-Warning "Staging cleanup skipped: $StageRoot"
+if ($CreateZip) {
+    if (Test-Path -LiteralPath $ZipPath) {
+        $ZipPath = Join-Path $DistDir ("HoCloth-{0}-{1}.zip" -f $Version, $SessionId)
+    }
+
+    if (Test-Path -LiteralPath $ZipPath) {
+        Remove-Item -LiteralPath $ZipPath -Force
+    }
+
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $StageRoot,
+        $ZipPath,
+        [System.IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+
+    Write-Host "Created release zip: $ZipPath"
 }

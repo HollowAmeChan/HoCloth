@@ -23,10 +23,23 @@ bl_info = {
 PLUGIN_DIR = os.path.dirname(__file__)
 LIB_DIR = os.path.join(PLUGIN_DIR, "_Lib")
 BIN_DIR = os.path.join(PLUGIN_DIR, "_bin")
+BIN_CONFIG_DIRS = (
+    os.path.join(BIN_DIR, "Release"),
+    os.path.join(BIN_DIR, "Debug"),
+    os.path.join(BIN_DIR, "RelWithDebInfo"),
+    os.path.join(BIN_DIR, "MinSizeRel"),
+)
 
-for path in (PLUGIN_DIR, LIB_DIR, BIN_DIR):
+SEARCH_PATHS = (
+    *BIN_CONFIG_DIRS,
+    BIN_DIR,
+    LIB_DIR,
+    PLUGIN_DIR,
+)
+
+for path in reversed(SEARCH_PATHS):
     if os.path.isdir(path) and path not in sys.path:
-        sys.path.append(path)
+        sys.path.insert(0, path)
 
 
 class HoClothAddonPreferences(bpy.types.AddonPreferences):

@@ -18,7 +18,13 @@
       "binaryDir": "${sourceDir}/_native/build/vs2022-release-physx",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "HOCLOTH_ENABLE_PHYSX": "ON"
+        "HOCLOTH_ENABLE_PHYSX": "ON",
+        "HOCLOTH_PYTHON_EXECUTABLE": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311/python.exe",
+        "Python_ROOT_DIR": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311",
+        "HOCLOTH_PHYSX_ROOT": "${sourceDir}/_third_party/PhysX/physx",
+        "HOCLOTH_PHYSX_INCLUDE_DIR": "${sourceDir}/_third_party/PhysX/physx/include",
+        "HOCLOTH_PHYSX_WORK_ROOT": "${sourceDir}/_third_party/PhysX/physx",
+        "HOCLOTH_PHYSX_LIBRARY_DIR": "${sourceDir}/_third_party/PhysX/physx/bin/win.x86_64.vc143.mt/release"
       }
     }
   ],

@@ -16,9 +16,18 @@ file(MAKE_DIRECTORY "${HOCLOTH_INTERMEDIATE_DIR}")
 # load them without depending on the CMake build tree layout.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${HOCLOTH_RUNTIME_DIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${HOCLOTH_RUNTIME_DIR}")
+foreach(_config IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER "${_config}" _config_upper)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_config_upper} "${HOCLOTH_RUNTIME_DIR}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${_config_upper} "${HOCLOTH_RUNTIME_DIR}")
+endforeach()
 
 # Static libraries and other non-runtime artifacts stay in the build tree.
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${HOCLOTH_INTERMEDIATE_DIR}")
+foreach(_config IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER "${_config}" _config_upper)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${_config_upper} "${HOCLOTH_INTERMEDIATE_DIR}")
+endforeach()
 option(HOCLOTH_ENABLE_PHYSX "Enable PhysX-backed runtime path when dependencies are available" OFF)
 set(HOCLOTH_PYTHON_EXECUTABLE "" CACHE FILEPATH "Exact Python executable used to build the hocloth_native module")
 set(HOCLOTH_PYTHON_VERSION "3.11" CACHE STRING "Required Python ABI version for Blender compatibility")
@@ -27,6 +36,11 @@ set(HOCLOTH_PHYSX_INCLUDE_DIR "${HOCLOTH_PHYSX_ROOT}/include" CACHE PATH "PhysX 
 set(HOCLOTH_PHYSX_LIBRARY_DIR "" CACHE PATH "Directory containing PhysX libraries")
 set(HOCLOTH_PHYSX_LIBRARIES "" CACHE STRING "Semicolon-separated list of PhysX libraries to link")
 set(HOCLOTH_PHYSX_WORK_ROOT "${HOCLOTH_PLUGIN_ROOT}/_third_party/PhysX/physx" CACHE PATH "PhysX build workspace used by build_physx.ps1")
+
+if (MSVC AND HOCLOTH_ENABLE_PHYSX AND HOCLOTH_PHYSX_LIBRARY_DIR MATCHES "\\.mt([/\\\\]|$)")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    message(STATUS "HoCloth MSVC runtime library: ${CMAKE_MSVC_RUNTIME_LIBRARY} (matched PhysX .mt build)")
+endif()
 
 message(STATUS "HoCloth native module skeleton configured.")
 message(STATUS "HoCloth runtime output directory: ${HOCLOTH_RUNTIME_DIR}")
