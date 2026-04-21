@@ -48,11 +48,28 @@ class HoClothBoneChainComponent(bpy.types.PropertyGroup):
         update=_update_armature_object,
     )
     root_bone_name: bpy.props.StringProperty(name="Root Bone", update=_update_root_bone_name)
+    stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
+    damping: bpy.props.FloatProperty(name="Damping", default=0.2, min=0.0, max=1.0)
+    drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0)
+    gravity_strength: bpy.props.FloatProperty(name="Gravity Strength", default=0.3, min=0.0, soft_max=2.0)
+    gravity_direction: bpy.props.FloatVectorProperty(
+        name="Gravity Direction",
+        size=3,
+        default=(0.0, 0.0, -1.0),
+    )
 
 
 class HoClothColliderComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     collider_object: bpy.props.PointerProperty(name="Object", type=bpy.types.Object)
+    shape_type: bpy.props.EnumProperty(
+        name="Shape",
+        items=(
+            ("SPHERE", "Sphere", "Sphere collider"),
+            ("CAPSULE", "Capsule", "Capsule collider"),
+        ),
+        default="CAPSULE",
+    )
     radius: bpy.props.FloatProperty(name="Radius", default=0.05, min=0.0)
     height: bpy.props.FloatProperty(name="Height", default=0.1, min=0.0)
 

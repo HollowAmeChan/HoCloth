@@ -7,66 +7,26 @@
   },
   "configurePresets": [
     {
-      "name": "ninja-debug",
-      "displayName": "Ninja Debug",
-      "description": "Configure the addon root CMake entrypoint with Ninja outputs under _native/build.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/_native/build/ninja-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "ninja-release",
-      "displayName": "Ninja Release",
-      "description": "Configure the addon root CMake entrypoint with Ninja outputs under _native/build.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/_native/build/ninja-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "vs2022-debug",
-      "displayName": "Visual Studio 2022 Debug",
-      "description": "Configure the addon root CMake entrypoint with outputs under _native/build.",
+      "name": "vs2022-release-physx",
+      "displayName": "Visual Studio 2022 Release PhysX",
+      "description": "Only supported local preset for HoCloth native builds. Requires Visual Studio/MSVC and enables the PhysX-backed runtime path.",
       "generator": "Visual Studio 17 2022",
-      "binaryDir": "${sourceDir}/_native/build/vs2022-debug",
+      "architecture": {
+        "value": "x64"
+      },
+      "toolset": "v143",
+      "binaryDir": "${sourceDir}/_native/build/vs2022-release-physx",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "vs2022-release",
-      "displayName": "Visual Studio 2022 Release",
-      "description": "Configure the addon root CMake entrypoint with outputs under _native/build.",
-      "generator": "Visual Studio 17 2022",
-      "binaryDir": "${sourceDir}/_native/build/vs2022-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "HOCLOTH_ENABLE_PHYSX": "ON"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "build-ninja-debug",
-      "displayName": "Build Ninja Debug",
-      "configurePreset": "ninja-debug"
-    },
-    {
-      "name": "build-ninja-release",
-      "displayName": "Build Ninja Release",
-      "configurePreset": "ninja-release"
-    },
-    {
-      "name": "build-vs2022-debug",
-      "displayName": "Build Visual Studio 2022 Debug",
-      "configurePreset": "vs2022-debug"
-    },
-    {
-      "name": "build-vs2022-release",
-      "displayName": "Build Visual Studio 2022 Release",
-      "configurePreset": "vs2022-release"
+      "name": "build-vs2022-release-physx",
+      "displayName": "Build Visual Studio 2022 Release PhysX",
+      "configurePreset": "vs2022-release-physx"
     }
   ]
 }

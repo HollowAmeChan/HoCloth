@@ -1,4 +1,4 @@
-from .compiled import CompiledBone, CompiledBoneChain, CompiledScene
+from .compiled import CompiledBone, CompiledBoneChain, CompiledCollider, CompiledScene
 
 
 def _collect_bone_subtree_names(bone) -> list[str]:
@@ -73,30 +73,63 @@ def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[Compil
     return compiled_bones
 
 
+def _compile_collider(item, typed_item):
+    collider_object = typed_item.collider_object
+    if collider_object is None:
+        return None
+
+    world_matrix = collider_object.matrix_world.copy()
+    return CompiledCollider(
+        component_id=item.component_id,
+        object_name=collider_object.name,
+        shape_type=typed_item.shape_type,
+        radius=typed_item.radius,
+        height=typed_item.height,
+        world_translation=tuple(world_matrix.to_translation()),
+        world_rotation=tuple(world_matrix.to_quaternion()),
+    )
+
+
 def compile_scene_from_components(scene) -> CompiledScene:
     compiled = CompiledScene()
 
     for item in scene.hocloth_components:
-        if not item.enabled or item.component_type != "BONE_CHAIN" or item.container_index < 0:
+        if not item.enabled or item.container_index < 0:
             continue
 
-        if item.container_index >= len(scene.hocloth_bone_chain_components):
-            continue
+        if item.component_type == "BONE_CHAIN":
+            if item.container_index >= len(scene.hocloth_bone_chain_components):
+                continue
 
-        typed_item = scene.hocloth_bone_chain_components[item.container_index]
-        armature_object = typed_item.armature_object
-        if armature_object is None or armature_object.type != "ARMATURE":
-            continue
+            typed_item = scene.hocloth_bone_chain_components[item.container_index]
+            armature_object = typed_item.armature_object
+            if armature_object is None or armature_object.type != "ARMATURE":
+                continue
 
-        bone_names = _resolve_bone_chain(scene, armature_object, typed_item.root_bone_name)
-        compiled_bones = _build_compiled_bones(armature_object, bone_names) if armature_object else []
-        compiled.bone_chains.append(
-            CompiledBoneChain(
-                component_id=item.component_id,
-                armature_name=armature_object.name,
-                root_bone_name=typed_item.root_bone_name,
-                bones=compiled_bones,
+            bone_names = _resolve_bone_chain(scene, armature_object, typed_item.root_bone_name)
+            compiled_bones = _build_compiled_bones(armature_object, bone_names) if armature_object else []
+            compiled.bone_chains.append(
+                CompiledBoneChain(
+                    component_id=item.component_id,
+                    armature_name=armature_object.name,
+                    root_bone_name=typed_item.root_bone_name,
+                    stiffness=typed_item.stiffness,
+                    damping=typed_item.damping,
+                    drag=typed_item.drag,
+                    gravity_strength=typed_item.gravity_strength,
+                    gravity_direction=tuple(typed_item.gravity_direction),
+                    bones=compiled_bones,
+                )
             )
-        )
+            continue
+
+        if item.component_type == "COLLIDER":
+            if item.container_index >= len(scene.hocloth_collider_components):
+                continue
+
+            typed_item = scene.hocloth_collider_components[item.container_index]
+            compiled_collider = _compile_collider(item, typed_item)
+            if compiled_collider is not None:
+                compiled.colliders.append(compiled_collider)
 
     return compiled

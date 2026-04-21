@@ -43,35 +43,80 @@ void copy_quat_blender_to_physx(const nb::tuple& tuple_value, float out[4]) {
 SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
     SceneDescriptor scene;
 
-    if (!scene_dict.contains("bone_chains")) {
-        return scene;
+    if (scene_dict.contains("bone_chains")) {
+        const nb::list bone_chains = nb::cast<nb::list>(scene_dict["bone_chains"]);
+        for (nb::handle item_handle : bone_chains) {
+            const nb::dict chain_dict = nb::cast<nb::dict>(item_handle);
+            BoneChainDescriptor chain;
+            chain.component_id = nb::cast<std::string>(chain_dict["component_id"]);
+            chain.armature_name = nb::cast<std::string>(chain_dict["armature_name"]);
+            chain.root_bone_name = nb::cast<std::string>(chain_dict["root_bone_name"]);
+            if (chain_dict.contains("stiffness")) {
+                chain.stiffness = nb::cast<float>(chain_dict["stiffness"]);
+            }
+            if (chain_dict.contains("damping")) {
+                chain.damping = nb::cast<float>(chain_dict["damping"]);
+            }
+            if (chain_dict.contains("drag")) {
+                chain.drag = nb::cast<float>(chain_dict["drag"]);
+            }
+            if (chain_dict.contains("gravity_strength")) {
+                chain.gravity_strength = nb::cast<float>(chain_dict["gravity_strength"]);
+            }
+            if (chain_dict.contains("gravity_direction")) {
+                copy_vec3_blender_to_physx(nb::cast<nb::tuple>(chain_dict["gravity_direction"]), chain.gravity_direction);
+            }
+
+            if (chain_dict.contains("bones")) {
+                const nb::list bones = nb::cast<nb::list>(chain_dict["bones"]);
+                for (nb::handle bone_handle : bones) {
+                    const nb::dict bone_dict = nb::cast<nb::dict>(bone_handle);
+                    BoneDescriptor bone;
+                    bone.name = nb::cast<std::string>(bone_dict["name"]);
+                    bone.parent_index = nb::cast<std::int32_t>(bone_dict["parent_index"]);
+                    bone.length = nb::cast<float>(bone_dict["length"]);
+                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_head_local"]), bone.rest_head_local);
+                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_tail_local"]), bone.rest_tail_local);
+                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_translation"]), bone.rest_local_translation);
+                    copy_quat_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_rotation"]), bone.rest_local_rotation);
+                    chain.bones.push_back(bone);
+                }
+            }
+
+            scene.bone_chains.push_back(chain);
+        }
     }
 
-    const nb::list bone_chains = nb::cast<nb::list>(scene_dict["bone_chains"]);
-    for (nb::handle item_handle : bone_chains) {
-        const nb::dict chain_dict = nb::cast<nb::dict>(item_handle);
-        BoneChainDescriptor chain;
-        chain.component_id = nb::cast<std::string>(chain_dict["component_id"]);
-        chain.armature_name = nb::cast<std::string>(chain_dict["armature_name"]);
-        chain.root_bone_name = nb::cast<std::string>(chain_dict["root_bone_name"]);
-
-        if (chain_dict.contains("bones")) {
-            const nb::list bones = nb::cast<nb::list>(chain_dict["bones"]);
-            for (nb::handle bone_handle : bones) {
-                const nb::dict bone_dict = nb::cast<nb::dict>(bone_handle);
-                BoneDescriptor bone;
-                bone.name = nb::cast<std::string>(bone_dict["name"]);
-                bone.parent_index = nb::cast<std::int32_t>(bone_dict["parent_index"]);
-                bone.length = nb::cast<float>(bone_dict["length"]);
-                copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_head_local"]), bone.rest_head_local);
-                copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_tail_local"]), bone.rest_tail_local);
-                copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_translation"]), bone.rest_local_translation);
-                copy_quat_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_rotation"]), bone.rest_local_rotation);
-                chain.bones.push_back(bone);
+    if (scene_dict.contains("colliders")) {
+        const nb::list colliders = nb::cast<nb::list>(scene_dict["colliders"]);
+        for (nb::handle item_handle : colliders) {
+            const nb::dict collider_dict = nb::cast<nb::dict>(item_handle);
+            ColliderDescriptor collider;
+            collider.component_id = nb::cast<std::string>(collider_dict["component_id"]);
+            collider.object_name = nb::cast<std::string>(collider_dict["object_name"]);
+            if (collider_dict.contains("shape_type")) {
+                collider.shape_type = nb::cast<std::string>(collider_dict["shape_type"]);
             }
+            if (collider_dict.contains("radius")) {
+                collider.radius = nb::cast<float>(collider_dict["radius"]);
+            }
+            if (collider_dict.contains("height")) {
+                collider.height = nb::cast<float>(collider_dict["height"]);
+            }
+            if (collider_dict.contains("world_translation")) {
+                copy_vec3_blender_to_physx(
+                    nb::cast<nb::tuple>(collider_dict["world_translation"]),
+                    collider.world_translation
+                );
+            }
+            if (collider_dict.contains("world_rotation")) {
+                copy_quat_blender_to_physx(
+                    nb::cast<nb::tuple>(collider_dict["world_rotation"]),
+                    collider.world_rotation
+                );
+            }
+            scene.colliders.push_back(collider);
         }
-
-        scene.bone_chains.push_back(chain);
     }
 
     return scene;
@@ -107,16 +152,14 @@ nb::dict build_scene_dict(const nb::dict& scene_dict) {
     const SceneHandle handle = build_scene(scene);
     const RuntimeSceneInfo info = get_scene_info(handle);
 
-    std::size_t bone_count = 0;
-    for (const BoneChainDescriptor& chain : scene.bone_chains) {
-        bone_count += chain.bones.size();
-    }
-
     nb::dict result;
     result["handle"] = handle;
-    result["summary"] = "bone_chains=" + std::to_string(scene.bone_chains.size()) +
-                        ", bones=" + std::to_string(bone_count);
+    result["summary"] = "bone_chains=" + std::to_string(info.bone_chain_count) +
+                        ", bones=" + std::to_string(info.bone_count) +
+                        ", colliders=" + std::to_string(info.collider_count);
     result["backend"] = info.backend;
+    result["build_message"] = info.build_message;
+    result["physics_scene_ready"] = info.physics_scene_ready;
     return result;
 }
 

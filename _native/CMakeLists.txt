@@ -26,6 +26,7 @@ set(HOCLOTH_PHYSX_ROOT "${HOCLOTH_PLUGIN_ROOT}/_third_party/PhysX/physx" CACHE P
 set(HOCLOTH_PHYSX_INCLUDE_DIR "${HOCLOTH_PHYSX_ROOT}/include" CACHE PATH "PhysX include directory")
 set(HOCLOTH_PHYSX_LIBRARY_DIR "" CACHE PATH "Directory containing PhysX libraries")
 set(HOCLOTH_PHYSX_LIBRARIES "" CACHE STRING "Semicolon-separated list of PhysX libraries to link")
+set(HOCLOTH_PHYSX_WORK_ROOT "${HOCLOTH_PLUGIN_ROOT}/_third_party/PhysX/physx" CACHE PATH "PhysX build workspace used by build_physx.ps1")
 
 message(STATUS "HoCloth native module skeleton configured.")
 message(STATUS "HoCloth runtime output directory: ${HOCLOTH_RUNTIME_DIR}")
@@ -33,6 +34,94 @@ message(STATUS "HoCloth intermediate output directory: ${HOCLOTH_INTERMEDIATE_DI
 message(STATUS "HoCloth PhysX path enabled: ${HOCLOTH_ENABLE_PHYSX}")
 
 set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
+
+function(hocloth_configure_physx target_name)
+    if (NOT EXISTS "${HOCLOTH_PHYSX_INCLUDE_DIR}/PxPhysicsAPI.h")
+        message(WARNING "HOCLOTH_ENABLE_PHYSX is ON but PxPhysicsAPI.h was not found in ${HOCLOTH_PHYSX_INCLUDE_DIR}. Falling back to stub backend at compile time.")
+        return()
+    endif()
+
+    set(_physx_library_dir "${HOCLOTH_PHYSX_LIBRARY_DIR}")
+    if (NOT _physx_library_dir)
+        set(_candidate_dirs
+            "${HOCLOTH_PHYSX_WORK_ROOT}/bin/win.x86_64.vc143.mt/release"
+            "${HOCLOTH_PHYSX_WORK_ROOT}/bin/win.x86_64.vc143.md/release"
+            "${HOCLOTH_PHYSX_WORK_ROOT}/bin/win.x86_64.vc142.mt/release"
+            "${HOCLOTH_PHYSX_WORK_ROOT}/bin/win.x86_64.vc142.md/release"
+        )
+        foreach(_candidate IN LISTS _candidate_dirs)
+            if (EXISTS "${_candidate}/PhysX_64.lib")
+                set(_physx_library_dir "${_candidate}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    if (NOT _physx_library_dir)
+        message(WARNING
+            "HOCLOTH_ENABLE_PHYSX is ON but no PhysX library directory was found.\n"
+            "Expected a build under ${HOCLOTH_PHYSX_WORK_ROOT}/bin/...\n"
+            "Run build_physx.ps1 first or set HOCLOTH_PHYSX_LIBRARY_DIR manually."
+        )
+        return()
+    endif()
+
+    set(_physx_libraries ${HOCLOTH_PHYSX_LIBRARIES})
+    if (NOT _physx_libraries)
+        set(_default_physx_libraries
+            PhysX_64.lib
+            PhysXCommon_64.lib
+            PhysXFoundation_64.lib
+            PhysXCooking_64.lib
+            PhysXExtensions_static_64.lib
+            PhysXPvdSDK_static_64.lib
+        )
+        set(_resolved_physx_libraries "")
+        foreach(_library IN LISTS _default_physx_libraries)
+            if (EXISTS "${_physx_library_dir}/${_library}")
+                list(APPEND _resolved_physx_libraries "${_physx_library_dir}/${_library}")
+            else()
+                message(WARNING "Expected PhysX library was not found: ${_physx_library_dir}/${_library}")
+            endif()
+        endforeach()
+        set(_physx_libraries ${_resolved_physx_libraries})
+    endif()
+
+    if (NOT _physx_libraries)
+        message(WARNING
+            "HOCLOTH_ENABLE_PHYSX is ON but no PhysX libraries were resolved.\n"
+            "Library dir: ${_physx_library_dir}"
+        )
+        return()
+    endif()
+
+    target_include_directories(${target_name} PRIVATE "${HOCLOTH_PHYSX_INCLUDE_DIR}")
+    target_compile_definitions(${target_name} PUBLIC HOCLOTH_WITH_PHYSX=1)
+    target_link_directories(${target_name} PRIVATE "${_physx_library_dir}")
+    target_link_libraries(${target_name} PRIVATE ${_physx_libraries})
+
+    set(_physx_runtime_dlls
+        PhysX_64.dll
+        PhysXCommon_64.dll
+        PhysXFoundation_64.dll
+        PhysXCooking_64.dll
+    )
+    foreach(_dll IN LISTS _physx_runtime_dlls)
+        if (EXISTS "${_physx_library_dir}/${_dll}")
+            add_custom_command(
+                TARGET hocloth_native POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_physx_library_dir}/${_dll}"
+                    "${HOCLOTH_RUNTIME_DIR}/${_dll}"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+
+    message(STATUS "HoCloth PhysX include dir: ${HOCLOTH_PHYSX_INCLUDE_DIR}")
+    message(STATUS "HoCloth PhysX library dir: ${_physx_library_dir}")
+    message(STATUS "HoCloth PhysX libraries: ${_physx_libraries}")
+endfunction()
 
 if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     if (HOCLOTH_PYTHON_EXECUTABLE)
@@ -61,21 +150,13 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     )
     target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
     if (HOCLOTH_ENABLE_PHYSX)
-        if (EXISTS "${HOCLOTH_PHYSX_INCLUDE_DIR}/PxPhysicsAPI.h")
-            target_include_directories(hocloth_runtime_core PRIVATE "${HOCLOTH_PHYSX_INCLUDE_DIR}")
-            target_compile_definitions(hocloth_runtime_core PUBLIC HOCLOTH_WITH_PHYSX=1)
-
-            if (HOCLOTH_PHYSX_LIBRARY_DIR)
-                target_link_directories(hocloth_runtime_core PRIVATE "${HOCLOTH_PHYSX_LIBRARY_DIR}")
-            endif()
-
-            if (HOCLOTH_PHYSX_LIBRARIES)
-                target_link_libraries(hocloth_runtime_core PRIVATE ${HOCLOTH_PHYSX_LIBRARIES})
-            else()
-                message(WARNING "HOCLOTH_ENABLE_PHYSX is ON but HOCLOTH_PHYSX_LIBRARIES is empty. The source path is enabled, but final linking may fail until PhysX libs are configured.")
-            endif()
-        else()
-            message(WARNING "HOCLOTH_ENABLE_PHYSX is ON but PxPhysicsAPI.h was not found in ${HOCLOTH_PHYSX_INCLUDE_DIR}. Falling back to stub backend at compile time.")
+        if (NOT MSVC)
+            message(FATAL_ERROR
+                "HOCLOTH_ENABLE_PHYSX=ON currently requires the MSVC toolchain.\n"
+                "Current compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER}\n"
+                "If you are using CLion, switch the CMake profile to a Visual Studio/MSVC toolchain,\n"
+                "then re-configure with a vs2022-* preset."
+            )
         endif()
     endif()
 
@@ -85,6 +166,10 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     target_link_libraries(hocloth_native PRIVATE hocloth_runtime_core)
     target_include_directories(hocloth_native PRIVATE "${HOCLOTH_NATIVE_ROOT}/include")
     set_target_properties(hocloth_native PROPERTIES OUTPUT_NAME "hocloth_native")
+
+    if (HOCLOTH_ENABLE_PHYSX)
+        hocloth_configure_physx(hocloth_runtime_core)
+    endif()
 else()
     message(WARNING "nanobind checkout not found at ${HOCLOTH_NANOBIND_DIR}; native Python module target was skipped.")
 endif()

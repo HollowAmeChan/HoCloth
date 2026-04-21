@@ -43,6 +43,29 @@ class HOCLOTH_OT_add_active_bone_chain(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
+    bl_idname = "hocloth.add_active_collider"
+    bl_label = "Add Active Collider"
+    bl_description = "Create a collider component from the active object"
+
+    def execute(self, context):
+        active_object = context.object
+        if active_object is None:
+            self.report({"ERROR"}, "Select an object to use as a collider.")
+            return {"CANCELLED"}
+
+        main_item, typed_item = create_component(
+            context.scene,
+            "COLLIDER",
+            f"Collider: {active_object.name}",
+        )
+        typed_item.collider_object = active_object
+        typed_item.shape_type = "SPHERE" if active_object.type == "EMPTY" else "CAPSULE"
+        main_item.display_name = f"Collider: {active_object.name}"
+        context.scene.hocloth_runtime_status = f"Added collider from {active_object.name}"
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_remove_component(bpy.types.Operator):
     bl_idname = "hocloth.remove_component"
     bl_label = "Remove Component"
@@ -87,9 +110,15 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
         context.scene.hocloth_runtime_handle = runtime_state["handle"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        build_message = runtime_state.get("build_message", "")
+        physics_ready = runtime_state.get("physics_scene_ready", False)
         context.scene.hocloth_runtime_status = (
             f"Runtime ready via {runtime_state['backend']}: {runtime_state['summary']}"
+            f", physics_ready={physics_ready}"
+            f"{', ' + build_message if build_message else ''}"
         )
+        if not physics_ready and runtime_state["backend"] == "stub" and not build_message:
+            context.scene.hocloth_runtime_status += ", likely built without HOCLOTH_ENABLE_PHYSX"
         return {"FINISHED"}
 
 
@@ -212,6 +241,7 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
 
 CLASSES = (
     HOCLOTH_OT_add_active_bone_chain,
+    HOCLOTH_OT_add_active_collider,
     HOCLOTH_OT_remove_component,
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_export_compiled_scene,

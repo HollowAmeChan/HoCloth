@@ -57,6 +57,14 @@ def _draw_bone_chain_details(layout, scene, item):
         warn.alert = True
         warn.label(text="Stored root bone is no longer valid on this armature", icon="ERROR")
 
+    params = body.column(align=True)
+    params.label(text="Spring")
+    params.prop(chain, "stiffness")
+    params.prop(chain, "damping")
+    params.prop(chain, "drag")
+    params.prop(chain, "gravity_strength")
+    params.prop(chain, "gravity_direction")
+
     if not bone_names:
         body.label(text="No bones resolved from root", icon="INFO")
         return
@@ -67,6 +75,52 @@ def _draw_bone_chain_details(layout, scene, item):
 
     if bone_count > preview_count:
         body.label(text=f"... and {bone_count - preview_count} more", icon="INFO")
+
+
+def _draw_collider_details(layout, scene, item):
+    if item.container_index < 0 or item.container_index >= len(scene.hocloth_collider_components):
+        layout.label(text="Collider data is missing", icon="ERROR")
+        return
+
+    collider = scene.hocloth_collider_components[item.container_index]
+    collider_object = collider.collider_object
+
+    header = layout.row(align=True)
+    header.prop(
+        item,
+        "ui_expanded",
+        text="",
+        emboss=False,
+        icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT",
+    )
+
+    title_col = header.column(align=True)
+    title_col.label(text=item.display_name, icon="MESH_UVSPHERE")
+    title_col.label(
+        text=collider_object.name if collider_object is not None else "No object",
+        icon="OBJECT_DATA",
+    )
+
+    actions = header.row(align=True)
+    actions.prop(item, "enabled", text="")
+    remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
+    remove_op.component_id = item.component_id
+
+    if not item.ui_expanded:
+        return
+
+    body = layout.box()
+    body.prop(collider, "collider_object", text="Object")
+    body.prop(collider, "shape_type", text="Shape")
+    body.prop(collider, "radius")
+    if collider.shape_type == "CAPSULE":
+        body.prop(collider, "height")
+
+    if collider_object is None:
+        body.label(text="Assign an object for this collider", icon="INFO")
+    else:
+        body.label(text=f"World Source: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
+        body.label(text=f"Type: {collider_object.type}", icon="INFO")
 
 
 class HOCLOTH_PT_main_panel(bpy.types.Panel):
@@ -81,7 +135,9 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         scene = context.scene
 
         layout.label(text="MVP Host Architecture")
-        layout.operator("hocloth.add_active_bone_chain", icon="BONE_DATA")
+        quick_add = layout.row(align=True)
+        quick_add.operator("hocloth.add_active_bone_chain", icon="BONE_DATA")
+        quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE")
 
         row = layout.row(align=True)
         row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH")
@@ -99,6 +155,8 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             for item in scene.hocloth_components:
                 if item.component_type == "BONE_CHAIN":
                     _draw_bone_chain_details(box, scene, item)
+                elif item.component_type == "COLLIDER":
+                    _draw_collider_details(box, scene, item)
                 else:
                     sub = box.row(align=True)
                     sub.prop(item, "enabled", text="")

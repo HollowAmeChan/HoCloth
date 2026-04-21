@@ -18,5 +18,10 @@ cpp/out/
 cpp/install/
 .vs/
 .vscode/
+_third_party/PhysX/packman-cache/
+_third_party/PhysX/physx/compiler/
+_third_party/PhysX/physx/bin/
+_third_party/PhysX/physx/install/
+_third_party/PhysX/physx/pxshared_bin/
 Thumbs.db
 Desktop.ini

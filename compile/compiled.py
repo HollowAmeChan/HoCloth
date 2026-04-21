@@ -17,11 +17,27 @@ class CompiledBoneChain:
     component_id: str
     armature_name: str
     root_bone_name: str
+    stiffness: float
+    damping: float
+    drag: float
+    gravity_strength: float
+    gravity_direction: tuple[float, float, float]
     bones: list[CompiledBone] = field(default_factory=list)
 
     @property
     def bone_names(self) -> list[str]:
         return [bone.name for bone in self.bones]
+
+
+@dataclass
+class CompiledCollider:
+    component_id: str
+    object_name: str
+    shape_type: str
+    radius: float
+    height: float
+    world_translation: tuple[float, float, float]
+    world_rotation: tuple[float, float, float, float]
 
 
 @dataclass
@@ -45,13 +61,18 @@ class SimulationCacheDescriptor:
 @dataclass
 class CompiledScene:
     bone_chains: list[CompiledBoneChain] = field(default_factory=list)
+    colliders: list[CompiledCollider] = field(default_factory=list)
     cache_descriptors: list[SimulationCacheDescriptor] = field(default_factory=list)
 
     def total_bone_count(self) -> int:
         return sum(len(chain.bones) for chain in self.bone_chains)
 
     def summary(self) -> str:
-        return f"bone_chains={len(self.bone_chains)}, bones={self.total_bone_count()}"
+        return (
+            f"bone_chains={len(self.bone_chains)}, "
+            f"bones={self.total_bone_count()}, "
+            f"colliders={len(self.colliders)}"
+        )
 
     def to_dict(self) -> dict:
         data = {
@@ -60,6 +81,11 @@ class CompiledScene:
                     "component_id": chain.component_id,
                     "armature_name": chain.armature_name,
                     "root_bone_name": chain.root_bone_name,
+                    "stiffness": chain.stiffness,
+                    "damping": chain.damping,
+                    "drag": chain.drag,
+                    "gravity_strength": chain.gravity_strength,
+                    "gravity_direction": chain.gravity_direction,
                     "bones": [
                         {
                             "name": bone.name,
@@ -74,7 +100,19 @@ class CompiledScene:
                     ],
                 }
                 for chain in self.bone_chains
-            ]
+            ],
+            "colliders": [
+                {
+                    "component_id": collider.component_id,
+                    "object_name": collider.object_name,
+                    "shape_type": collider.shape_type,
+                    "radius": collider.radius,
+                    "height": collider.height,
+                    "world_translation": collider.world_translation,
+                    "world_rotation": collider.world_rotation,
+                }
+                for collider in self.colliders
+            ],
         }
         if self.cache_descriptors:
             data["cache_descriptors"] = [descriptor.to_dict() for descriptor in self.cache_descriptors]
