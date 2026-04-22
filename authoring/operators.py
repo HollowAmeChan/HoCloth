@@ -3,7 +3,7 @@ import json
 import os
 
 from ..compile.compiler import compile_scene_from_components
-from ..components.properties import create_component, delete_component, rebuild_component_indices
+from ..components.properties import create_component, delete_component, rebuild_component_indices, sync_joint_override_names
 from ..runtime.pose_apply import apply_runtime_transforms_to_scene, capture_pose_baseline
 from ..runtime.inputs import build_runtime_inputs
 from ..runtime.live import start_live_runtime, stop_live_runtime
@@ -24,39 +24,53 @@ from .extract import extract_active_bone_chain
 _BONE_CHAIN_PRESETS = {
     "SOFT_HAIR": {
         "label": "Soft Hair",
-        "stiffness": 0.35,
-        "damping": 0.18,
-        "drag": 0.04,
-        "gravity_strength": 0.45,
+        "stiffness": 0.18,
+        "damping": 0.06,
+        "drag": 0.01,
+        "gravity_strength": 1.15,
     },
     "BALANCED": {
         "label": "Balanced",
-        "stiffness": 0.75,
-        "damping": 0.45,
-        "drag": 0.10,
-        "gravity_strength": 0.75,
+        "stiffness": 0.38,
+        "damping": 0.12,
+        "drag": 0.03,
+        "gravity_strength": 0.85,
     },
     "ROPE": {
         "label": "Rope",
-        "stiffness": 1.15,
-        "damping": 0.62,
-        "drag": 0.16,
-        "gravity_strength": 1.05,
+        "stiffness": 0.56,
+        "damping": 0.20,
+        "drag": 0.08,
+        "gravity_strength": 1.45,
     },
     "HEAVY": {
         "label": "Heavy",
-        "stiffness": 1.45,
-        "damping": 0.82,
-        "drag": 0.28,
-        "gravity_strength": 1.35,
+        "stiffness": 0.74,
+        "damping": 0.34,
+        "drag": 0.16,
+        "gravity_strength": 2.0,
     },
 }
 
 
-class HOCLOTH_OT_add_active_bone_chain(bpy.types.Operator):
-    bl_idname = "hocloth.add_active_bone_chain"
-    bl_label = "Add Active Bone Chain"
-    bl_description = "Create a bone-chain component from the active armature selection"
+def _find_spring_bone_component(scene, component_id: str):
+    return next(
+        (item for item in scene.hocloth_spring_bone_components if item.component_id == component_id),
+        None,
+    )
+
+
+def _find_collider_group_component(scene, component_id: str):
+    return next(
+        (item for item in scene.hocloth_collider_group_components if item.component_id == component_id),
+        None,
+    )
+
+
+class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
+    bl_idname = "hocloth.add_active_spring_bone"
+    bl_label = "Add Active Spring Bone"
+    bl_description = "Create a spring-bone component from the active armature selection"
 
     def execute(self, context):
         try:
@@ -67,12 +81,13 @@ class HOCLOTH_OT_add_active_bone_chain(bpy.types.Operator):
 
         main_item, typed_item = create_component(
             context.scene,
-            "BONE_CHAIN",
-            f"Bone Chain: {extracted.root_bone_name}",
+            "SPRING_BONE",
+            f"Spring Bone: {extracted.root_bone_name}",
         )
         typed_item.armature_object = context.object
         typed_item.root_bone_name = extracted.root_bone_name
-        main_item.display_name = f"Bone Chain: {extracted.root_bone_name}"
+        sync_joint_override_names(typed_item, extracted.bone_names)
+        main_item.display_name = f"Spring Bone: {extracted.root_bone_name}"
         context.scene.hocloth_runtime_status = f"Added {len(extracted.bone_names)} bones"
         return {"FINISHED"}
 
@@ -100,6 +115,56 @@ class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_add_collider_group(bpy.types.Operator):
+    bl_idname = "hocloth.add_collider_group"
+    bl_label = "Add Collider Group"
+    bl_description = "Create a collider-group component"
+
+    def execute(self, context):
+        create_component(context.scene, "COLLIDER_GROUP", "Collider Group")
+        context.scene.hocloth_runtime_status = "Added collider group"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_add_cache_output(bpy.types.Operator):
+    bl_idname = "hocloth.add_cache_output"
+    bl_label = "Add Cache Output"
+    bl_description = "Create a cache-output component"
+
+    def execute(self, context):
+        active_object = context.object
+        main_item, typed_item = create_component(context.scene, "CACHE_OUTPUT", "Cache Output")
+        if active_object is not None:
+            typed_item.source_object = active_object
+            main_item.display_name = f"Cache Output: {active_object.name}"
+        context.scene.hocloth_runtime_status = "Added cache output"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
+    bl_idname = "hocloth.assign_selected_colliders_to_group"
+    bl_label = "Use Selected Colliders"
+    bl_description = "Fill this collider group from the currently selected collider source objects"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        group = _find_collider_group_component(context.scene, self.component_id)
+        if group is None:
+            self.report({"ERROR"}, "Collider group was not found.")
+            return {"CANCELLED"}
+
+        selected_object_names = {obj.name for obj in context.selected_objects}
+        matched_ids = [
+            collider.component_id
+            for collider in context.scene.hocloth_collider_components
+            if collider.collider_object is not None and collider.collider_object.name in selected_object_names
+        ]
+        group.collider_ids = ", ".join(matched_ids)
+        context.scene.hocloth_runtime_status = f"Assigned {len(matched_ids)} colliders to group"
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_remove_component(bpy.types.Operator):
     bl_idname = "hocloth.remove_component"
     bl_label = "Remove Component"
@@ -120,10 +185,10 @@ class HOCLOTH_OT_remove_component(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class HOCLOTH_OT_apply_bone_chain_preset(bpy.types.Operator):
-    bl_idname = "hocloth.apply_bone_chain_preset"
-    bl_label = "Apply Bone Chain Preset"
-    bl_description = "Apply a preset spring profile to this bone-chain component"
+class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
+    bl_idname = "hocloth.apply_spring_bone_preset"
+    bl_label = "Apply Spring Bone Preset"
+    bl_description = "Apply a preset spring profile to this spring-bone component"
 
     component_id: bpy.props.StringProperty(name="Component ID")
     preset_id: bpy.props.StringProperty(name="Preset ID")
@@ -138,12 +203,9 @@ class HOCLOTH_OT_apply_bone_chain_preset(bpy.types.Operator):
             self.report({"ERROR"}, f"Unknown preset: {self.preset_id}")
             return {"CANCELLED"}
 
-        chain = next(
-            (item for item in context.scene.hocloth_bone_chain_components if item.component_id == self.component_id),
-            None,
-        )
+        chain = _find_spring_bone_component(context.scene, self.component_id)
         if chain is None:
-            self.report({"ERROR"}, "Bone-chain component was not found.")
+            self.report({"ERROR"}, "Spring-bone component was not found.")
             return {"CANCELLED"}
 
         chain.stiffness = preset["stiffness"]
@@ -153,6 +215,80 @@ class HOCLOTH_OT_apply_bone_chain_preset(bpy.types.Operator):
         context.scene.hocloth_runtime_status = (
             f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
         )
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_sync_spring_bone_joints(bpy.types.Operator):
+    bl_idname = "hocloth.sync_spring_bone_joints"
+    bl_label = "Sync Spring Joints"
+    bl_description = "Refresh the spring-joint override list from the current armature subtree"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        chain = _find_spring_bone_component(context.scene, self.component_id)
+        if chain is None:
+            self.report({"ERROR"}, "Spring-bone component was not found.")
+            return {"CANCELLED"}
+
+        armature_object = chain.armature_object
+        if armature_object is None or armature_object.type != "ARMATURE":
+            self.report({"ERROR"}, "Assign an armature before syncing joints.")
+            return {"CANCELLED"}
+
+        from ..compile.compiler import resolve_bone_chain_names
+
+        bone_names = resolve_bone_chain_names(context.scene, armature_object, chain.root_bone_name)
+        synced_count = sync_joint_override_names(chain, bone_names)
+        context.scene.hocloth_runtime_status = f"Synced {synced_count} spring joints"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
+    bl_idname = "hocloth.reset_spring_joint_override"
+    bl_label = "Reset Joint Override"
+    bl_description = "Reset a spring-joint override back to component defaults"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+    bone_name: bpy.props.StringProperty(name="Bone Name")
+
+    def execute(self, context):
+        chain = _find_spring_bone_component(context.scene, self.component_id)
+        if chain is None:
+            self.report({"ERROR"}, "Spring-bone component was not found.")
+            return {"CANCELLED"}
+
+        entry = next((item for item in chain.joint_overrides if item.bone_name == self.bone_name), None)
+        if entry is None:
+            self.report({"ERROR"}, "Joint override was not found.")
+            return {"CANCELLED"}
+
+        entry.enabled = False
+        entry.radius = chain.joint_radius
+        entry.stiffness = chain.stiffness
+        entry.damping = chain.damping
+        entry.drag = chain.drag
+        entry.gravity_scale = 1.0
+        context.scene.hocloth_runtime_status = f"Reset joint override: {self.bone_name}"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
+    bl_idname = "hocloth.assign_all_groups_to_spring_bone"
+    bl_label = "Use All Collider Groups"
+    bl_description = "Link all current collider groups to this spring bone"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        chain = _find_spring_bone_component(context.scene, self.component_id)
+        if chain is None:
+            self.report({"ERROR"}, "Spring-bone component was not found.")
+            return {"CANCELLED"}
+
+        group_ids = [item.component_id for item in context.scene.hocloth_collider_group_components]
+        chain.collider_group_ids = ", ".join(group_ids)
+        context.scene.hocloth_runtime_status = f"Linked {len(group_ids)} collider groups to spring bone"
         return {"FINISHED"}
 
 
@@ -170,9 +306,9 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
         rebuild_component_indices(context.scene)
         compiled = compile_scene_from_components(context.scene)
         context.scene.hocloth_compile_summary = compiled.summary()
-        if not compiled.bone_chains:
-            self.report({"ERROR"}, "No enabled bone-chain components could be compiled.")
-            context.scene.hocloth_runtime_status = "Build failed: no valid bone chains"
+        if not compiled.spring_bones:
+            self.report({"ERROR"}, "No enabled spring-bone components could be compiled.")
+            context.scene.hocloth_runtime_status = "Build failed: no valid spring bones"
             return {"CANCELLED"}
 
         if compiled.total_bone_count() == 0:
@@ -357,10 +493,16 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
 
 
 CLASSES = (
-    HOCLOTH_OT_add_active_bone_chain,
+    HOCLOTH_OT_add_active_spring_bone,
     HOCLOTH_OT_add_active_collider,
+    HOCLOTH_OT_add_collider_group,
+    HOCLOTH_OT_add_cache_output,
+    HOCLOTH_OT_assign_selected_colliders_to_group,
     HOCLOTH_OT_remove_component,
-    HOCLOTH_OT_apply_bone_chain_preset,
+    HOCLOTH_OT_apply_spring_bone_preset,
+    HOCLOTH_OT_sync_spring_bone_joints,
+    HOCLOTH_OT_reset_spring_joint_override,
+    HOCLOTH_OT_assign_all_groups_to_spring_bone,
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_export_compiled_scene,
     HOCLOTH_OT_reset_runtime,

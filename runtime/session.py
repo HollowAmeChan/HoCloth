@@ -29,6 +29,7 @@ def _debug_dump_path() -> str:
 def _write_runtime_debug_dump(runtime_inputs: dict | None, transforms: list[dict]):
     debug_payload = {
         "runtime_state": dict(_runtime_state),
+        "compiled_scene": _compiled_scene.to_dict() if _compiled_scene is not None else None,
         "runtime_inputs": runtime_inputs or {"bone_chains": []},
         "transforms": transforms,
     }

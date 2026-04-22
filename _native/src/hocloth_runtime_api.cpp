@@ -36,6 +36,7 @@ struct RuntimeBoneChainState {
     std::vector<RuntimeBoneState> bones;
     Vec3 last_root_translation;
     Quat last_root_rotation;
+    Vec3 last_center_translation;
     bool initialized = false;
 };
 
@@ -107,6 +108,16 @@ float length_squared(const Vec3& value) {
 
 float length(const Vec3& value) {
     return std::sqrt(length_squared(value));
+}
+
+Vec3 closest_point_on_segment(const Vec3& point, const Vec3& a, const Vec3& b) {
+    const Vec3 ab = sub(b, a);
+    const float ab_len_sq = length_squared(ab);
+    if (ab_len_sq <= 1.0e-8f) {
+        return a;
+    }
+    const float t = std::clamp(dot(sub(point, a), ab) / ab_len_sq, 0.0f, 1.0f);
+    return add(a, mul(ab, t));
 }
 
 Vec3 normalize_or_default(const Vec3& value, const Vec3& fallback) {
@@ -217,6 +228,9 @@ void initialize_chain_state(
     const Quat root_rotation = chain_input != nullptr
         ? normalize_or_identity(make_quat(chain_input->root_rotation_quaternion))
         : Quat{};
+    const Vec3 center_translation = chain_input != nullptr
+        ? make_vec3(chain_input->center_translation)
+        : root_translation;
 
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
         const BoneDescriptor& bone = chain.bones[bone_index];
@@ -230,7 +244,61 @@ void initialize_chain_state(
 
     chain_state.last_root_translation = root_translation;
     chain_state.last_root_rotation = root_rotation;
+    chain_state.last_center_translation = center_translation;
     chain_state.initialized = true;
+}
+
+std::vector<const ColliderDescriptor*> colliders_for_chain(const SceneDescriptor& scene, const BoneChainDescriptor& chain) {
+    std::vector<const ColliderDescriptor*> result;
+    for (const std::string& group_id : chain.collider_group_ids) {
+        for (const ColliderGroupDescriptor& group : scene.collider_groups) {
+            if (group.component_id != group_id) {
+                continue;
+            }
+            for (const std::string& collider_id : group.collider_ids) {
+                for (const ColliderDescriptor& collider : scene.colliders) {
+                    if (collider.component_id == collider_id) {
+                        result.push_back(&collider);
+                    }
+                }
+            }
+        }
+    }
+    return result;
+}
+
+void apply_collider_constraints(
+    RuntimeBoneState& state,
+    float particle_radius,
+    const std::vector<const ColliderDescriptor*>& colliders
+) {
+    if (colliders.empty()) {
+        return;
+    }
+
+    for (const ColliderDescriptor* collider : colliders) {
+        const Vec3 center = make_vec3(collider->world_translation);
+        Vec3 closest = center;
+        if (collider->shape_type == "CAPSULE") {
+            const float half_height = std::max(0.0f, collider->height) * 0.5f;
+            const Vec3 a = add(center, Vec3{0.0f, -half_height, 0.0f});
+            const Vec3 b = add(center, Vec3{0.0f, half_height, 0.0f});
+            closest = closest_point_on_segment(state.position, a, b);
+        }
+
+        Vec3 delta = sub(state.position, closest);
+        float distance = length(delta);
+        const float target_radius = std::max(0.0f, collider->radius) + std::max(0.0f, particle_radius);
+        if (distance >= target_radius) {
+            continue;
+        }
+        if (distance <= 1.0e-6f) {
+            delta = Vec3{0.0f, 1.0f, 0.0f};
+            distance = 1.0f;
+        }
+        const Vec3 normal = mul(delta, 1.0f / distance);
+        state.position = add(closest, mul(normal, target_radius));
+    }
 }
 
 void project_distance_constraint(
@@ -279,7 +347,28 @@ void project_shape_constraint(
     }
 }
 
+void project_directional_alignment(
+    Vec3 head_position,
+    RuntimeBoneState& state,
+    const Vec3& target_tail,
+    float rest_length,
+    float weight
+) {
+    const Vec3 target_direction = sub(target_tail, head_position);
+    const float target_length = length(target_direction);
+    if (target_length <= 1.0e-6f || rest_length <= 1.0e-6f) {
+        return;
+    }
+
+    const Vec3 desired_tail = add(head_position, mul(target_direction, rest_length / target_length));
+    state.position = add(
+        mul(state.position, 1.0f - weight),
+        mul(desired_tail, weight)
+    );
+}
+
 void step_bone_chain(
+    const SceneDescriptor& scene,
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
     const BoneChainRuntimeInput* chain_input,
@@ -300,30 +389,38 @@ void step_bone_chain(
     const Quat root_rotation = chain_input != nullptr
         ? normalize_or_identity(make_quat(chain_input->root_rotation_quaternion))
         : chain_state.last_root_rotation;
+    const Vec3 center_translation = chain_input != nullptr
+        ? make_vec3(chain_input->center_translation)
+        : root_translation;
+    const Vec3 center_linear_velocity = chain_input != nullptr
+        ? make_vec3(chain_input->center_linear_velocity)
+        : Vec3{};
     const Vec3 root_linear_velocity = chain_input != nullptr
         ? make_vec3(chain_input->root_linear_velocity)
         : Vec3{};
     const Vec3 root_delta = sub(root_translation, chain_state.last_root_translation);
+    const Vec3 center_delta = sub(center_translation, chain_state.last_center_translation);
+    const Vec3 center_offset = sub(center_translation, root_translation);
     const Vec3 gravity_direction = normalize_or_default(make_vec3(chain.gravity_direction), Vec3{0.0f, -1.0f, 0.0f});
-    const float stiffness = std::clamp(chain.stiffness, 0.0f, 2.0f);
-    const float stiffness_factor = std::clamp(stiffness * 0.5f, 0.0f, 1.0f);
-    const float damping = clamp_unit(chain.damping);
-    const float drag = clamp_unit(chain.drag);
-    const float gravity_strength = std::clamp(chain.gravity_strength, 0.0f, 2.0f);
-    const Vec3 gravity = mul(gravity_direction, 14.0f * gravity_strength);
-    const float inertia_mix = std::clamp(0.96f - drag * 0.72f, 0.12f, 0.98f);
-    const float root_inertia_mix = std::clamp(0.18f + stiffness_factor * 0.42f, 0.08f, 0.72f);
-    const float chain_inertia_mix = std::clamp(0.45f + stiffness_factor * 0.35f - damping * 0.15f, 0.18f, 0.82f);
-    const float stretch_compliance = 1.5e-3f + (1.0f - stiffness_factor) * 7.5e-3f;
-    const float bend_compliance = 6.0e-3f + (1.0f - stiffness_factor) * 5.5e-2f;
-    const float shape_compliance = 8.0e-2f + (1.0f - stiffness_factor) * 2.8e-1f;
+    const float gravity_strength = std::clamp(chain.gravity_strength, 0.0f, 10.0f);
+    const Vec3 gravity = mul(gravity_direction, 60.0f * gravity_strength);
     const float iterations = 8.0f;
     const std::size_t solver_iterations = 8;
+    const std::vector<const ColliderDescriptor*> colliders = colliders_for_chain(scene, chain);
 
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
+        const BoneDescriptor& bone = chain.bones[bone_index];
         RuntimeBoneState& state = chain_state.bones[bone_index];
+        const float stiffness = std::clamp(bone.stiffness, 0.0f, 1.0f);
+        const float stiffness_factor = stiffness;
+        const float damping = clamp_unit(bone.damping);
+        const float drag = clamp_unit(bone.drag);
+        const float inertia_mix = std::clamp(0.985f - drag * 0.42f, 0.40f, 0.995f);
+        const float root_inertia_mix = std::clamp(0.10f + stiffness_factor * 0.28f, 0.06f, 0.42f);
+        const float chain_inertia_mix = std::clamp(0.36f + stiffness_factor * 0.22f - damping * 0.10f, 0.18f, 0.66f);
         const Vec3 velocity = mul(sub(state.position, state.previous_position), inertia_mix);
         Vec3 inherited_motion = mul(root_delta, root_inertia_mix);
+        inherited_motion = add(inherited_motion, mul(center_delta, 0.12f));
         if (bone_index > 0) {
             const RuntimeBoneState& parent_state = chain_state.bones[bone_index - 1];
             const Vec3 parent_motion = sub(parent_state.position, parent_state.previous_position);
@@ -333,9 +430,12 @@ void step_bone_chain(
                 mul(parent_motion, chain_inertia_mix * depth_falloff)
             );
         }
+        const float center_influence = 0.020f * (1.0f / (1.0f + static_cast<float>(bone_index) * 0.25f));
+        const Vec3 center_force = add(mul(center_offset, center_influence), mul(center_linear_velocity, 0.015f * dt));
+        const float gravity_motion_scale = (0.45f + (1.0f - stiffness_factor) * 0.85f) * bone.gravity_scale;
         const Vec3 predicted = add(
             add(state.position, add(velocity, inherited_motion)),
-            add(mul(gravity, dt * dt), mul(root_linear_velocity, 0.06f * dt))
+            add(add(mul(gravity, gravity_motion_scale * dt * dt), mul(root_linear_velocity, 0.06f * dt)), center_force)
         );
         state.previous_position = state.position;
         state.position = predicted;
@@ -348,6 +448,9 @@ void step_bone_chain(
         for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
             const BoneDescriptor& bone = chain.bones[bone_index];
             RuntimeBoneState& state = chain_state.bones[bone_index];
+            const float stiffness = std::clamp(bone.stiffness, 0.0f, 1.0f);
+            const float stiffness_factor = stiffness;
+            const float stretch_compliance = 1.5e-3f + (1.0f - stiffness_factor) * 7.5e-3f;
             Vec3 head_position = root_translation;
             if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.bones.size()) {
                 head_position = chain_state.bones[static_cast<std::size_t>(bone.parent_index)].position;
@@ -363,41 +466,34 @@ void step_bone_chain(
                 state.stretch_lambda
             );
             if (bone_index > 0) {
-                const BoneDescriptor& parent_bone = chain.bones[bone_index - 1];
-                Vec3 bend_anchor = root_translation;
-                if (bone_index > 1) {
-                    bend_anchor = chain_state.bones[bone_index - 2].position;
-                }
-                const float bend_rest_length = std::max(1.0e-5f, parent_bone.length + bone.length);
-                project_distance_constraint(
-                    bend_anchor,
-                    state,
-                    bend_rest_length,
-                    bend_compliance / iterations,
-                    dt,
-                    state.bend_lambda
-                );
-            }
-            if (bone_index > 0) {
-                project_shape_constraint(
+                const float alignment_weight = (0.008f + stiffness_factor * 0.055f) / iterations;
+                project_directional_alignment(
                     head_position,
                     state,
                     target_tail,
-                    shape_compliance / iterations,
-                    dt
+                    std::max(1.0e-5f, bone.length),
+                    alignment_weight
                 );
             }
+            apply_collider_constraints(state, std::max(chain.joint_radius, bone.radius), colliders);
         }
     }
 
-    const float velocity_damping = std::clamp(0.96f - damping * 0.72f - drag * 0.12f, 0.06f, 0.99f);
-    for (RuntimeBoneState& state : chain_state.bones) {
+    for (std::size_t bone_index = 0; bone_index < chain_state.bones.size(); ++bone_index) {
+        const BoneDescriptor& bone = chain.bones[bone_index];
+        RuntimeBoneState& state = chain_state.bones[bone_index];
+        const float velocity_damping = std::clamp(
+            0.992f - clamp_unit(bone.damping) * 0.35f - clamp_unit(bone.drag) * 0.18f,
+            0.40f,
+            0.995f
+        );
         const Vec3 new_velocity = mul(sub(state.position, state.previous_position), velocity_damping);
         state.previous_position = sub(state.position, new_velocity);
     }
 
     chain_state.last_root_translation = root_translation;
     chain_state.last_root_rotation = root_rotation;
+    chain_state.last_center_translation = center_translation;
 }
 
 void advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs) {
@@ -410,6 +506,7 @@ void advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs
             const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
             RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
             step_bone_chain(
+                scene_state.scene,
                 chain,
                 chain_state,
                 find_chain_input(scene_state.inputs, chain),
@@ -573,6 +670,8 @@ RuntimeSceneInfo get_scene_info(SceneHandle handle) {
     info.step_count = it->second.steps;
     info.bone_chain_count = static_cast<std::uint64_t>(it->second.scene.bone_chains.size());
     info.collider_count = static_cast<std::uint64_t>(it->second.scene.colliders.size());
+    info.collider_group_count = static_cast<std::uint64_t>(it->second.scene.collider_groups.size());
+    info.cache_descriptor_count = static_cast<std::uint64_t>(it->second.scene.cache_descriptors.size());
     info.physics_scene_ready = it->second.physics_scene_ready;
     for (const BoneChainDescriptor& chain : it->second.scene.bone_chains) {
         info.bone_count += static_cast<std::uint64_t>(chain.bones.size());

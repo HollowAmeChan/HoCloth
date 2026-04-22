@@ -12,6 +12,11 @@ struct BoneDescriptor {
     std::string name;
     std::int32_t parent_index = -1;
     float length = 0.0f;
+    float radius = 0.0f;
+    float stiffness = 0.6f;
+    float damping = 0.2f;
+    float drag = 0.1f;
+    float gravity_scale = 1.0f;
     float rest_head_local[3] = {0.0f, 0.0f, 0.0f};
     float rest_tail_local[3] = {0.0f, 0.0f, 0.0f};
     float rest_local_translation[3] = {0.0f, 0.0f, 0.0f};
@@ -22,11 +27,14 @@ struct BoneChainDescriptor {
     std::string component_id;
     std::string armature_name;
     std::string root_bone_name;
+    std::string center_object_name;
+    float joint_radius = 0.02f;
     float stiffness = 0.6f;
     float damping = 0.2f;
     float drag = 0.1f;
     float gravity_strength = 0.3f;
     float gravity_direction[3] = {0.0f, -1.0f, 0.0f};
+    std::vector<std::string> collider_group_ids;
     std::vector<BoneDescriptor> bones;
 };
 
@@ -40,19 +48,39 @@ struct ColliderDescriptor {
     float world_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 };
 
+struct ColliderGroupDescriptor {
+    std::string component_id;
+    std::vector<std::string> collider_ids;
+};
+
+struct CacheDescriptor {
+    std::string component_id;
+    std::string source_object_name;
+    std::string topology_hash;
+    std::string cache_format = "pc2";
+    std::string cache_path;
+};
+
 struct SceneDescriptor {
     std::vector<BoneChainDescriptor> bone_chains;
     std::vector<ColliderDescriptor> colliders;
+    std::vector<ColliderGroupDescriptor> collider_groups;
+    std::vector<CacheDescriptor> cache_descriptors;
 };
 
 struct BoneChainRuntimeInput {
     std::string component_id;
     std::string armature_name;
     std::string root_bone_name;
+    std::string center_object_name;
     float root_translation[3] = {0.0f, 0.0f, 0.0f};
     float root_rotation_quaternion[4] = {1.0f, 0.0f, 0.0f, 0.0f};
     float root_linear_velocity[3] = {0.0f, 0.0f, 0.0f};
     float root_scale[3] = {1.0f, 1.0f, 1.0f};
+    float center_translation[3] = {0.0f, 0.0f, 0.0f};
+    float center_rotation_quaternion[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float center_linear_velocity[3] = {0.0f, 0.0f, 0.0f};
+    float center_scale[3] = {1.0f, 1.0f, 1.0f};
 };
 
 struct RuntimeInputs {
@@ -77,6 +105,8 @@ struct RuntimeSceneInfo {
     std::uint64_t bone_chain_count = 0;
     std::uint64_t bone_count = 0;
     std::uint64_t collider_count = 0;
+    std::uint64_t collider_group_count = 0;
+    std::uint64_t cache_descriptor_count = 0;
     bool physics_scene_ready = false;
 };
 

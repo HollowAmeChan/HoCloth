@@ -1,6 +1,14 @@
 from mathutils import Matrix, Quaternion, Vector
 
-from .compiled import CompiledBone, CompiledBoneChain, CompiledCollider, CompiledScene
+from .compiled import (
+    CompiledCollider,
+    CompiledColliderGroup,
+    CompiledScene,
+    CompiledSpringBone,
+    CompiledSpringJoint,
+    SimulationCacheDescriptor,
+)
+from ..components.properties import _parse_component_id_list
 
 
 def _scale_vector(value, scale) -> tuple[float, float, float]:
@@ -142,9 +150,9 @@ def resolve_bone_chain_names(scene, armature_name: str, root_bone_name: str) -> 
     return _resolve_bone_chain(scene, armature_name, root_bone_name)
 
 
-def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[CompiledBone]:
+def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[CompiledSpringJoint]:
     name_to_index = {name: index for index, name in enumerate(bone_names)}
-    compiled_bones: list[CompiledBone] = []
+    compiled_bones: list[CompiledSpringJoint] = []
     armature_scale = tuple(float(axis) for axis in armature_object.matrix_world.to_scale())
     root_bone = armature_object.data.bones.get(bone_names[0]) if bone_names else None
     root_matrix_inv = root_bone.matrix_local.inverted() if root_bone is not None else Matrix.Identity(4)
@@ -164,10 +172,15 @@ def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[Compil
             armature_scale,
         )
         compiled_bones.append(
-            CompiledBone(
+            CompiledSpringJoint(
                 name=bone_name,
                 parent_index=name_to_index[parent_name] if parent_name else -1,
                 length=_scaled_distance(bone.head_local, bone.tail_local, armature_scale),
+                radius=0.0,
+                stiffness=0.0,
+                damping=0.0,
+                drag=0.0,
+                gravity_scale=1.0,
                 rest_head_local=chain_space["head_local"],
                 rest_tail_local=chain_space["tail_local"],
                 rest_local_translation=chain_space["local_translation"],
@@ -175,6 +188,41 @@ def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[Compil
             )
         )
     return compiled_bones
+
+
+def _spring_joint_override_map(typed_item) -> dict[str, object]:
+    return {
+        item.bone_name: item
+        for item in typed_item.joint_overrides
+        if item.bone_name
+    }
+
+
+def _apply_joint_parameters(compiled_bones: list[CompiledSpringJoint], typed_item) -> list[CompiledSpringJoint]:
+    overrides = _spring_joint_override_map(typed_item)
+    configured_bones: list[CompiledSpringJoint] = []
+
+    for joint in compiled_bones:
+        override = overrides.get(joint.name)
+        use_override = override is not None and override.enabled
+        configured_bones.append(
+            CompiledSpringJoint(
+                name=joint.name,
+                parent_index=joint.parent_index,
+                length=joint.length,
+                radius=float(override.radius) if use_override else float(typed_item.joint_radius),
+                stiffness=float(override.stiffness) if use_override else float(typed_item.stiffness),
+                damping=float(override.damping) if use_override else float(typed_item.damping),
+                drag=float(override.drag) if use_override else float(typed_item.drag),
+                gravity_scale=float(override.gravity_scale) if use_override else 1.0,
+                rest_head_local=joint.rest_head_local,
+                rest_tail_local=joint.rest_tail_local,
+                rest_local_translation=joint.rest_local_translation,
+                rest_local_rotation=joint.rest_local_rotation,
+            )
+        )
+
+    return configured_bones
 
 
 def _compile_collider(item, typed_item):
@@ -194,36 +242,61 @@ def _compile_collider(item, typed_item):
     )
 
 
+def _build_topology_hash(source_object) -> str:
+    if source_object is None:
+        return ""
+    mesh_data = getattr(source_object, "data", None)
+    if source_object.type == "MESH" and mesh_data is not None:
+        return f"{source_object.name}:{len(mesh_data.vertices)}:{len(mesh_data.edges)}:{len(mesh_data.polygons)}"
+    return f"{source_object.name}:{source_object.type}"
+
+
 def compile_scene_from_components(scene) -> CompiledScene:
     compiled = CompiledScene()
+    compiled_collider_ids: set[str] = set()
+    deferred_collider_groups: list[tuple[str, object]] = []
+    deferred_cache_outputs: list[tuple[str, object]] = []
 
     for item in scene.hocloth_components:
         if not item.enabled or item.container_index < 0:
             continue
 
-        if item.component_type == "BONE_CHAIN":
-            if item.container_index >= len(scene.hocloth_bone_chain_components):
+        if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+            if item.container_index >= len(scene.hocloth_spring_bone_components):
                 continue
 
-            typed_item = scene.hocloth_bone_chain_components[item.container_index]
+            typed_item = scene.hocloth_spring_bone_components[item.container_index]
             armature_object = typed_item.armature_object
             if armature_object is None or armature_object.type != "ARMATURE":
                 continue
 
             bone_names = _resolve_bone_chain(scene, armature_object, typed_item.root_bone_name)
             compiled_bones = _build_compiled_bones(armature_object, bone_names) if armature_object else []
-            compiled.bone_chains.append(
-                CompiledBoneChain(
+            compiled_bones = _apply_joint_parameters(compiled_bones, typed_item)
+            compiled.spring_bones.append(
+                CompiledSpringBone(
                     component_id=item.component_id,
                     armature_name=armature_object.name,
                     root_bone_name=typed_item.root_bone_name,
+                    center_object_name=(
+                        typed_item.center_object.name
+                        if typed_item.center_source == "OBJECT" and typed_item.center_object is not None
+                        else (
+                            typed_item.center_armature_object.name
+                            if typed_item.center_source == "BONE" and typed_item.center_armature_object is not None
+                            else ""
+                        )
+                    ),
+                    center_bone_name=typed_item.center_bone_name if typed_item.center_source == "BONE" else "",
+                    joint_radius=float(typed_item.joint_radius),
+                    collider_group_ids=_parse_component_id_list(typed_item.collider_group_ids),
                     stiffness=typed_item.stiffness,
                     damping=typed_item.damping,
                     drag=typed_item.drag,
                     gravity_strength=typed_item.gravity_strength,
                     gravity_direction=tuple(typed_item.gravity_direction),
                     armature_scale=tuple(float(axis) for axis in armature_object.matrix_world.to_scale()),
-                    bones=compiled_bones,
+                    joints=compiled_bones,
                 )
             )
             continue
@@ -236,5 +309,41 @@ def compile_scene_from_components(scene) -> CompiledScene:
             compiled_collider = _compile_collider(item, typed_item)
             if compiled_collider is not None:
                 compiled.colliders.append(compiled_collider)
+                compiled_collider_ids.add(compiled_collider.component_id)
+            continue
+
+        if item.component_type == "COLLIDER_GROUP":
+            if item.container_index < len(scene.hocloth_collider_group_components):
+                deferred_collider_groups.append((item.component_id, scene.hocloth_collider_group_components[item.container_index]))
+            continue
+
+        if item.component_type == "CACHE_OUTPUT":
+            if item.container_index < len(scene.hocloth_cache_output_components):
+                deferred_cache_outputs.append((item.component_id, scene.hocloth_cache_output_components[item.container_index]))
+
+    for component_id, typed_item in deferred_collider_groups:
+        collider_ids = [
+            collider_id
+            for collider_id in _parse_component_id_list(typed_item.collider_ids)
+            if collider_id in compiled_collider_ids
+        ]
+        compiled.collider_groups.append(
+            CompiledColliderGroup(
+                component_id=component_id,
+                collider_ids=collider_ids,
+            )
+        )
+
+    for component_id, typed_item in deferred_cache_outputs:
+        source_object = typed_item.source_object
+        compiled.cache_descriptors.append(
+            SimulationCacheDescriptor(
+                component_id=component_id,
+                source_object_name=source_object.name if source_object is not None else "",
+                topology_hash=_build_topology_hash(source_object),
+                cache_format=typed_item.cache_format,
+                cache_path=typed_item.cache_path,
+            )
+        )
 
     return compiled

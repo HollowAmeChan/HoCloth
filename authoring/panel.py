@@ -1,6 +1,7 @@
 import bpy
 
 from ..compile.compiler import resolve_bone_chain_names
+from ..components.properties import _parse_component_id_list, list_component_display_names
 
 
 _BONE_CHAIN_PRESET_BUTTONS = (
@@ -11,12 +12,12 @@ _BONE_CHAIN_PRESET_BUTTONS = (
 )
 
 
-def _draw_bone_chain_details(layout, scene, item):
-    if item.container_index < 0 or item.container_index >= len(scene.hocloth_bone_chain_components):
-        layout.label(text="Bone chain data is missing", icon="ERROR")
+def _draw_spring_bone_details(layout, scene, item):
+    if item.container_index < 0 or item.container_index >= len(scene.hocloth_spring_bone_components):
+        layout.label(text="Spring-bone data is missing", icon="ERROR")
         return
 
-    chain = scene.hocloth_bone_chain_components[item.container_index]
+    chain = scene.hocloth_spring_bone_components[item.container_index]
     armature_object = chain.armature_object
     bone_names = resolve_bone_chain_names(scene, armature_object, chain.root_bone_name)
     bone_count = len(bone_names)
@@ -38,7 +39,7 @@ def _draw_bone_chain_details(layout, scene, item):
 
     title_col = header.column(align=True)
     title_col.label(text=item.display_name, icon="BONE_DATA")
-    title_col.label(text=f"{bone_count} bones", icon="ARMATURE_DATA")
+    title_col.label(text=f"{bone_count} joints", icon="ARMATURE_DATA")
 
     actions = header.row(align=True)
     actions.prop(item, "enabled", text="")
@@ -70,22 +71,79 @@ def _draw_bone_chain_details(layout, scene, item):
     preset_box.label(text="Presets")
     preset_row = preset_box.row(align=True)
     for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[:2]:
-        preset_op = preset_row.operator("hocloth.apply_bone_chain_preset", text=label)
+        preset_op = preset_row.operator("hocloth.apply_spring_bone_preset", text=label)
         preset_op.component_id = item.component_id
         preset_op.preset_id = preset_id
     preset_row = preset_box.row(align=True)
     for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[2:]:
-        preset_op = preset_row.operator("hocloth.apply_bone_chain_preset", text=label)
+        preset_op = preset_row.operator("hocloth.apply_spring_bone_preset", text=label)
         preset_op.component_id = item.component_id
         preset_op.preset_id = preset_id
     preset_box.label(text="Apply preset, then rebuild runtime", icon="INFO")
 
     params.label(text="Spring")
+    params.prop(chain, "center_source", text="Center")
+    if chain.center_source == "OBJECT":
+        params.prop(chain, "center_object", text="Center Object")
+    elif chain.center_source == "BONE":
+        params.prop(chain, "center_armature_object", text="Center Armature")
+        if chain.center_armature_object and chain.center_armature_object.data:
+            params.prop_search(chain, "center_bone_name", chain.center_armature_object.data, "bones", text="Center Bone")
+        else:
+            params.prop(chain, "center_bone_name", text="Center Bone")
+    params.prop(chain, "joint_radius", text="Particle Radius")
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")
     params.prop(chain, "drag")
     params.prop(chain, "gravity_strength")
     params.prop(chain, "gravity_direction")
+    params.prop(chain, "collider_group_ids")
+    sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH")
+    sync_op.component_id = item.component_id
+    group_link_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED")
+    group_link_op.component_id = item.component_id
+
+    group_names = list_component_display_names(scene, _parse_component_id_list(chain.collider_group_ids))
+    if group_names:
+        body.label(text="Collider Groups", icon="LINKED")
+        for group_name in group_names[:4]:
+            body.label(text=group_name, icon="DOT")
+
+    summary_box = body.box()
+    summary_box.label(text="Config Summary")
+    summary_box.label(text=f"Root: {chain.root_bone_name or 'None'}", icon="BONE_DATA")
+    summary_box.label(text=f"Joints: {bone_count}", icon="ARMATURE_DATA")
+    summary_box.label(text=f"Particle Radius: {chain.joint_radius:.3f}", icon="MESH_UVSPHERE")
+    if chain.center_source == "OBJECT" and chain.center_object is not None:
+        summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")
+    elif chain.center_source == "BONE" and chain.center_bone_name:
+        summary_box.label(text=f"Center Bone: {chain.center_bone_name}", icon="CON_ARMATURE")
+    else:
+        summary_box.label(text="Center: None", icon="INFO")
+    summary_box.label(text=f"Collider Groups: {len(group_names)}", icon="LINKED")
+
+    if chain.joint_overrides:
+        joint_box = body.box()
+        joint_box.label(text="Joint Overrides")
+        preview_count = min(6, len(chain.joint_overrides))
+        for entry in chain.joint_overrides[:preview_count]:
+            row = joint_box.row(align=True)
+            row.prop(entry, "enabled", text="")
+            row.label(text=entry.bone_name, icon="BONE_DATA")
+            if entry.enabled:
+                row.label(text=f"r={entry.radius:.3f} k={entry.stiffness:.2f} d={entry.damping:.2f}")
+            reset_op = row.operator("hocloth.reset_spring_joint_override", text="", icon="LOOP_BACK")
+            reset_op.component_id = item.component_id
+            reset_op.bone_name = entry.bone_name
+            if entry.enabled:
+                detail = joint_box.column(align=True)
+                detail.prop(entry, "radius")
+                detail.prop(entry, "stiffness")
+                detail.prop(entry, "damping")
+                detail.prop(entry, "drag")
+                detail.prop(entry, "gravity_scale")
+        if len(chain.joint_overrides) > preview_count:
+            joint_box.label(text=f"... and {len(chain.joint_overrides) - preview_count} more joints", icon="INFO")
 
     if not bone_names:
         body.label(text="No bones resolved from root", icon="INFO")
@@ -145,6 +203,64 @@ def _draw_collider_details(layout, scene, item):
         body.label(text=f"Type: {collider_object.type}", icon="INFO")
 
 
+def _draw_collider_group_details(layout, scene, item):
+    if item.container_index < 0 or item.container_index >= len(scene.hocloth_collider_group_components):
+        layout.label(text="Collider-group data is missing", icon="ERROR")
+        return
+
+    group = scene.hocloth_collider_group_components[item.container_index]
+    collider_names = list_component_display_names(scene, _parse_component_id_list(group.collider_ids))
+
+    header = layout.row(align=True)
+    header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
+    title_col = header.column(align=True)
+    title_col.label(text=item.display_name, icon="GROUP")
+    title_col.label(text=f"{len(collider_names)} colliders", icon="MESH_UVSPHERE")
+    actions = header.row(align=True)
+    actions.prop(item, "enabled", text="")
+    remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
+    remove_op.component_id = item.component_id
+
+    if not item.ui_expanded:
+        return
+
+    body = layout.box()
+    body.prop(group, "collider_ids")
+    body.label(text="Use comma-separated collider component IDs", icon="INFO")
+    assign_op = body.operator("hocloth.assign_selected_colliders_to_group", icon="RESTRICT_SELECT_OFF")
+    assign_op.component_id = item.component_id
+    for collider_name in collider_names[:6]:
+        body.label(text=collider_name, icon="DOT")
+
+
+def _draw_cache_output_details(layout, scene, item):
+    if item.container_index < 0 or item.container_index >= len(scene.hocloth_cache_output_components):
+        layout.label(text="Cache-output data is missing", icon="ERROR")
+        return
+
+    cache_output = scene.hocloth_cache_output_components[item.container_index]
+
+    header = layout.row(align=True)
+    header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
+    title_col = header.column(align=True)
+    title_col.label(text=item.display_name, icon="EXPORT")
+    title_col.label(text=cache_output.cache_format.upper(), icon="FILE")
+    actions = header.row(align=True)
+    actions.prop(item, "enabled", text="")
+    remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
+    remove_op.component_id = item.component_id
+
+    if not item.ui_expanded:
+        return
+
+    body = layout.box()
+    body.prop(cache_output, "source_object")
+    body.prop(cache_output, "cache_format")
+    body.prop(cache_output, "cache_path")
+    if cache_output.source_object is None:
+        body.label(text="Assign a source object to describe the cache target", icon="INFO")
+
+
 class HOCLOTH_PT_main_panel(bpy.types.Panel):
     bl_label = "HoCloth"
     bl_idname = "HOCLOTH_PT_main_panel"
@@ -158,21 +274,28 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
 
         layout.label(text="MVP Host Architecture")
         quick_add = layout.row(align=True)
-        quick_add.operator("hocloth.add_active_bone_chain", icon="BONE_DATA")
+        quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA")
         quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE")
+        quick_add.operator("hocloth.add_collider_group", icon="GROUP")
+        quick_add.operator("hocloth.add_cache_output", icon="EXPORT")
 
         row = layout.row(align=True)
         row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH")
-        row.operator("hocloth.export_compiled_scene", icon="EXPORT")
-        row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
         row.operator("hocloth.step_runtime", icon="FRAME_NEXT")
-        live_button = row.operator(
+        row.operator(
             "hocloth.toggle_live_runtime",
             icon="PAUSE" if scene.hocloth_runtime_live_running else "PLAY",
             text="Pause" if scene.hocloth_runtime_live_running else "Live",
         )
-        row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
-        row.operator("hocloth.destroy_runtime", icon="TRASH")
+
+        debug_box = layout.box()
+        debug_box.prop(scene, "hocloth_ui_debug_expanded", text="Debug Tools")
+        if scene.hocloth_ui_debug_expanded:
+            debug_row = debug_box.row(align=True)
+            debug_row.operator("hocloth.export_compiled_scene", icon="EXPORT")
+            debug_row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
+            debug_row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
+            debug_row.operator("hocloth.destroy_runtime", icon="TRASH")
 
         box = layout.box()
         box.label(text="Components")
@@ -180,10 +303,14 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             box.label(text="No components yet", icon="INFO")
         else:
             for item in scene.hocloth_components:
-                if item.component_type == "BONE_CHAIN":
-                    _draw_bone_chain_details(box, scene, item)
+                if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+                    _draw_spring_bone_details(box, scene, item)
                 elif item.component_type == "COLLIDER":
                     _draw_collider_details(box, scene, item)
+                elif item.component_type == "COLLIDER_GROUP":
+                    _draw_collider_group_details(box, scene, item)
+                elif item.component_type == "CACHE_OUTPUT":
+                    _draw_cache_output_details(box, scene, item)
                 else:
                     sub = box.row(align=True)
                     sub.prop(item, "enabled", text="")

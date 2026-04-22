@@ -43,14 +43,23 @@ void copy_quat_blender_to_solver(const nb::tuple& tuple_value, float out[4]) {
 SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
     SceneDescriptor scene;
 
-    if (scene_dict.contains("bone_chains")) {
-        const nb::list bone_chains = nb::cast<nb::list>(scene_dict["bone_chains"]);
+    if (scene_dict.contains("bone_chains") || scene_dict.contains("spring_bones")) {
+        nb::handle chain_source = scene_dict.contains("spring_bones")
+            ? scene_dict["spring_bones"]
+            : scene_dict["bone_chains"];
+        const nb::list bone_chains = nb::cast<nb::list>(chain_source);
         for (nb::handle item_handle : bone_chains) {
             const nb::dict chain_dict = nb::cast<nb::dict>(item_handle);
             BoneChainDescriptor chain;
             chain.component_id = nb::cast<std::string>(chain_dict["component_id"]);
             chain.armature_name = nb::cast<std::string>(chain_dict["armature_name"]);
             chain.root_bone_name = nb::cast<std::string>(chain_dict["root_bone_name"]);
+            if (chain_dict.contains("center_object_name")) {
+                chain.center_object_name = nb::cast<std::string>(chain_dict["center_object_name"]);
+            }
+            if (chain_dict.contains("joint_radius")) {
+                chain.joint_radius = nb::cast<float>(chain_dict["joint_radius"]);
+            }
             if (chain_dict.contains("stiffness")) {
                 chain.stiffness = nb::cast<float>(chain_dict["stiffness"]);
             }
@@ -66,15 +75,36 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
             if (chain_dict.contains("gravity_direction")) {
                 copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["gravity_direction"]), chain.gravity_direction);
             }
+            if (chain_dict.contains("collider_group_ids")) {
+                chain.collider_group_ids = nb::cast<std::vector<std::string>>(chain_dict["collider_group_ids"]);
+            }
 
-            if (chain_dict.contains("bones")) {
-                const nb::list bones = nb::cast<nb::list>(chain_dict["bones"]);
+            if (chain_dict.contains("bones") || chain_dict.contains("joints")) {
+                nb::handle bone_source = chain_dict.contains("joints")
+                    ? chain_dict["joints"]
+                    : chain_dict["bones"];
+                const nb::list bones = nb::cast<nb::list>(bone_source);
                 for (nb::handle bone_handle : bones) {
                     const nb::dict bone_dict = nb::cast<nb::dict>(bone_handle);
                     BoneDescriptor bone;
                     bone.name = nb::cast<std::string>(bone_dict["name"]);
                     bone.parent_index = nb::cast<std::int32_t>(bone_dict["parent_index"]);
                     bone.length = nb::cast<float>(bone_dict["length"]);
+                    if (bone_dict.contains("radius")) {
+                        bone.radius = nb::cast<float>(bone_dict["radius"]);
+                    }
+                    if (bone_dict.contains("stiffness")) {
+                        bone.stiffness = nb::cast<float>(bone_dict["stiffness"]);
+                    }
+                    if (bone_dict.contains("damping")) {
+                        bone.damping = nb::cast<float>(bone_dict["damping"]);
+                    }
+                    if (bone_dict.contains("drag")) {
+                        bone.drag = nb::cast<float>(bone_dict["drag"]);
+                    }
+                    if (bone_dict.contains("gravity_scale")) {
+                        bone.gravity_scale = nb::cast<float>(bone_dict["gravity_scale"]);
+                    }
                     copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_head_local"]), bone.rest_head_local);
                     copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_tail_local"]), bone.rest_tail_local);
                     copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_local_translation"]), bone.rest_local_translation);
@@ -119,6 +149,41 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
         }
     }
 
+    if (scene_dict.contains("collider_groups")) {
+        const nb::list collider_groups = nb::cast<nb::list>(scene_dict["collider_groups"]);
+        for (nb::handle item_handle : collider_groups) {
+            const nb::dict group_dict = nb::cast<nb::dict>(item_handle);
+            ColliderGroupDescriptor group;
+            group.component_id = nb::cast<std::string>(group_dict["component_id"]);
+            if (group_dict.contains("collider_ids")) {
+                group.collider_ids = nb::cast<std::vector<std::string>>(group_dict["collider_ids"]);
+            }
+            scene.collider_groups.push_back(group);
+        }
+    }
+
+    if (scene_dict.contains("cache_descriptors")) {
+        const nb::list cache_descriptors = nb::cast<nb::list>(scene_dict["cache_descriptors"]);
+        for (nb::handle item_handle : cache_descriptors) {
+            const nb::dict cache_dict = nb::cast<nb::dict>(item_handle);
+            CacheDescriptor descriptor;
+            descriptor.component_id = nb::cast<std::string>(cache_dict["component_id"]);
+            if (cache_dict.contains("source_object_name")) {
+                descriptor.source_object_name = nb::cast<std::string>(cache_dict["source_object_name"]);
+            }
+            if (cache_dict.contains("topology_hash")) {
+                descriptor.topology_hash = nb::cast<std::string>(cache_dict["topology_hash"]);
+            }
+            if (cache_dict.contains("cache_format")) {
+                descriptor.cache_format = nb::cast<std::string>(cache_dict["cache_format"]);
+            }
+            if (cache_dict.contains("cache_path")) {
+                descriptor.cache_path = nb::cast<std::string>(cache_dict["cache_path"]);
+            }
+            scene.cache_descriptors.push_back(descriptor);
+        }
+    }
+
     return scene;
 }
 
@@ -139,6 +204,9 @@ RuntimeInputs runtime_inputs_from_python(float dt, std::int32_t substeps, const 
         chain.component_id = nb::cast<std::string>(chain_dict["component_id"]);
         chain.armature_name = nb::cast<std::string>(chain_dict["armature_name"]);
         chain.root_bone_name = nb::cast<std::string>(chain_dict["root_bone_name"]);
+        if (chain_dict.contains("center_object_name")) {
+            chain.center_object_name = nb::cast<std::string>(chain_dict["center_object_name"]);
+        }
         copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["root_translation"]), chain.root_translation);
         copy_quat_blender_to_solver(nb::cast<nb::tuple>(chain_dict["root_rotation_quaternion"]), chain.root_rotation_quaternion);
         if (chain_dict.contains("root_linear_velocity")) {
@@ -146,6 +214,18 @@ RuntimeInputs runtime_inputs_from_python(float dt, std::int32_t substeps, const 
         }
         if (chain_dict.contains("root_scale")) {
             copy_vec3(nb::cast<nb::tuple>(chain_dict["root_scale"]), chain.root_scale);
+        }
+        if (chain_dict.contains("center_translation")) {
+            copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["center_translation"]), chain.center_translation);
+        }
+        if (chain_dict.contains("center_rotation_quaternion")) {
+            copy_quat_blender_to_solver(nb::cast<nb::tuple>(chain_dict["center_rotation_quaternion"]), chain.center_rotation_quaternion);
+        }
+        if (chain_dict.contains("center_linear_velocity")) {
+            copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["center_linear_velocity"]), chain.center_linear_velocity);
+        }
+        if (chain_dict.contains("center_scale")) {
+            copy_vec3(nb::cast<nb::tuple>(chain_dict["center_scale"]), chain.center_scale);
         }
         inputs.bone_chains.push_back(chain);
     }
@@ -162,7 +242,9 @@ nb::dict build_scene_dict(const nb::dict& scene_dict) {
     result["handle"] = handle;
     result["summary"] = "bone_chains=" + std::to_string(info.bone_chain_count) +
                         ", bones=" + std::to_string(info.bone_count) +
-                        ", colliders=" + std::to_string(info.collider_count);
+                        ", colliders=" + std::to_string(info.collider_count) +
+                        ", collider_groups=" + std::to_string(info.collider_group_count) +
+                        ", cache_outputs=" + std::to_string(info.cache_descriptor_count);
     result["backend"] = info.backend;
     result["build_message"] = info.build_message;
     result["physics_scene_ready"] = info.physics_scene_ready;

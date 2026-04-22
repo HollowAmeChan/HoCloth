@@ -40,6 +40,25 @@ def _safe_fps(scene) -> float:
     return fps / fps_base if fps_base > 1.0e-6 else fps
 
 
+def _object_transform_input(obj) -> tuple[tuple[float, float, float], tuple[float, float, float, float], tuple[float, float, float]]:
+    if obj is None:
+        return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    translation, rotation = _matrix_translation_rotation(obj.matrix_world)
+    scale = tuple(float(axis) for axis in obj.matrix_world.to_scale())
+    return translation, rotation, scale
+
+
+def _bone_transform_input(scene, armature_name: str, bone_name: str):
+    armature_object = resolve_armature_object(scene, armature_name)
+    if armature_object is None or armature_object.pose is None or not bone_name:
+        return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    pose_bone = armature_object.pose.bones.get(bone_name)
+    if pose_bone is None:
+        return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+    world_matrix = armature_object.matrix_world @ pose_bone.matrix
+    return _object_transform_input(type("BoneProxy", (), {"matrix_world": world_matrix})())
+
+
 def reset_runtime_input_tracking():
     _INPUT_STATE["last_scene_frame"] = None
     _INPUT_STATE["chain_states"] = {}
@@ -69,14 +88,30 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
         root_world_matrix = armature_object.matrix_world @ pose_bone.matrix
         translation, rotation = _matrix_translation_rotation(root_world_matrix)
         armature_scale = tuple(float(axis) for axis in armature_object.matrix_world.to_scale())
+        center_object_name = getattr(chain, "center_object_name", "")
+        center_bone_name = getattr(chain, "center_bone_name", "")
+        if center_bone_name:
+            center_translation, center_rotation, center_scale = _bone_transform_input(
+                scene,
+                center_object_name or chain.armature_name,
+                center_bone_name,
+            )
+        else:
+            center_object = scene.objects.get(center_object_name) if center_object_name else None
+            center_translation, center_rotation, center_scale = _object_transform_input(center_object)
         linear_velocity = (0.0, 0.0, 0.0)
         previous_state = _INPUT_STATE["chain_states"].get(chain.component_id)
         if previous_state is not None and frame_delta in (-1, 1):
             translation_delta = _vector_subtract(translation, previous_state["translation"])
             linear_velocity = _vector_scale(translation_delta, 1.0 / max(frame_dt, 1.0e-6))
+        center_linear_velocity = (0.0, 0.0, 0.0)
+        if previous_state is not None and frame_delta in (-1, 1):
+            center_delta = _vector_subtract(center_translation, previous_state["center_translation"])
+            center_linear_velocity = _vector_scale(center_delta, 1.0 / max(frame_dt, 1.0e-6))
 
         next_chain_states[chain.component_id] = {
             "translation": translation,
+            "center_translation": center_translation,
             "rotation": rotation,
             "armature_scale": armature_scale,
         }
@@ -85,10 +120,16 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
                 "component_id": chain.component_id,
                 "armature_name": chain.armature_name,
                 "root_bone_name": chain.root_bone_name,
+                "center_object_name": center_object_name,
+                "center_bone_name": center_bone_name,
                 "root_translation": translation,
                 "root_rotation_quaternion": rotation,
                 "root_linear_velocity": linear_velocity,
                 "root_scale": armature_scale,
+                "center_translation": center_translation,
+                "center_rotation_quaternion": center_rotation,
+                "center_linear_velocity": center_linear_velocity,
+                "center_scale": center_scale,
             }
         )
 
