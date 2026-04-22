@@ -1,3 +1,6 @@
+import json
+import os
+
 from .bridge import load_bridge
 
 
@@ -16,6 +19,23 @@ _last_transforms = []
 _pose_baseline = {}
 
 
+def _debug_dump_path() -> str:
+    plugin_root = os.path.dirname(os.path.dirname(__file__))
+    build_dir = os.path.join(plugin_root, "_build")
+    os.makedirs(build_dir, exist_ok=True)
+    return os.path.join(build_dir, "runtime_debug_latest.json")
+
+
+def _write_runtime_debug_dump(runtime_inputs: dict | None, transforms: list[dict]):
+    debug_payload = {
+        "runtime_state": dict(_runtime_state),
+        "runtime_inputs": runtime_inputs or {"bone_chains": []},
+        "transforms": transforms,
+    }
+    with open(_debug_dump_path(), "w", encoding="utf-8") as handle:
+        json.dump(debug_payload, handle, indent=2, ensure_ascii=False)
+
+
 def _current_bridge():
     global _active_bridge
     if _active_bridge is None:
@@ -26,8 +46,6 @@ def _current_bridge():
 def build_runtime(compiled_scene):
     global _active_bridge, _compiled_scene, _last_transforms
     bridge = load_bridge()
-    if _runtime_state["handle"]:
-        _current_bridge().destroy_scene(_runtime_state["handle"])
     _active_bridge = bridge
     _compiled_scene = compiled_scene
     _last_transforms = []
@@ -42,8 +60,6 @@ def build_runtime(compiled_scene):
 
 def destroy_runtime():
     global _active_bridge, _compiled_scene, _last_transforms, _pose_baseline
-    if _runtime_state["handle"]:
-        _current_bridge().destroy_scene(_runtime_state["handle"])
     reset_runtime_state()
     _active_bridge = None
     _compiled_scene = None
@@ -56,12 +72,19 @@ def reset_runtime():
     if not _runtime_state["handle"]:
         return dict(_runtime_state)
 
-    _current_bridge().reset_scene(_runtime_state["handle"])
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_substeps"] = 0
     _runtime_state["bone_transform_count"] = 0
     _last_transforms = []
+    return dict(_runtime_state)
+
+
+def set_runtime_inputs_only(runtime_inputs: dict | None = None):
+    if not _runtime_state["handle"]:
+        raise RuntimeError("Runtime has not been built yet.")
+
+    _current_bridge().set_runtime_inputs(_runtime_state["handle"], runtime_inputs or {"bone_chains": []})
     return dict(_runtime_state)
 
 
@@ -80,6 +103,7 @@ def step_runtime(dt: float = 1.0 / 60.0, substeps: int = 1, runtime_inputs: dict
     _runtime_state["last_dt"] = dt
     _runtime_state["last_substeps"] = substeps
     _runtime_state["bone_transform_count"] = len(transforms)
+    _write_runtime_debug_dump(runtime_inputs, transforms)
     return {
         "runtime_state": dict(_runtime_state),
         "transforms": transforms,

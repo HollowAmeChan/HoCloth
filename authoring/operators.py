@@ -14,10 +14,43 @@ from ..runtime.session import (
     get_last_transforms,
     get_pose_baseline,
     reset_runtime,
+    set_runtime_inputs_only,
     set_pose_baseline,
     step_runtime,
 )
 from .extract import extract_active_bone_chain
+
+
+_BONE_CHAIN_PRESETS = {
+    "SOFT_HAIR": {
+        "label": "Soft Hair",
+        "stiffness": 0.35,
+        "damping": 0.18,
+        "drag": 0.04,
+        "gravity_strength": 0.45,
+    },
+    "BALANCED": {
+        "label": "Balanced",
+        "stiffness": 0.75,
+        "damping": 0.45,
+        "drag": 0.10,
+        "gravity_strength": 0.75,
+    },
+    "ROPE": {
+        "label": "Rope",
+        "stiffness": 1.15,
+        "damping": 0.62,
+        "drag": 0.16,
+        "gravity_strength": 1.05,
+    },
+    "HEAVY": {
+        "label": "Heavy",
+        "stiffness": 1.45,
+        "damping": 0.82,
+        "drag": 0.28,
+        "gravity_strength": 1.35,
+    },
+}
 
 
 class HOCLOTH_OT_add_active_bone_chain(bpy.types.Operator):
@@ -87,12 +120,53 @@ class HOCLOTH_OT_remove_component(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_apply_bone_chain_preset(bpy.types.Operator):
+    bl_idname = "hocloth.apply_bone_chain_preset"
+    bl_label = "Apply Bone Chain Preset"
+    bl_description = "Apply a preset spring profile to this bone-chain component"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+    preset_id: bpy.props.StringProperty(name="Preset ID")
+
+    def execute(self, context):
+        if not self.component_id:
+            self.report({"ERROR"}, "No component id was provided.")
+            return {"CANCELLED"}
+
+        preset = _BONE_CHAIN_PRESETS.get(self.preset_id)
+        if preset is None:
+            self.report({"ERROR"}, f"Unknown preset: {self.preset_id}")
+            return {"CANCELLED"}
+
+        chain = next(
+            (item for item in context.scene.hocloth_bone_chain_components if item.component_id == self.component_id),
+            None,
+        )
+        if chain is None:
+            self.report({"ERROR"}, "Bone-chain component was not found.")
+            return {"CANCELLED"}
+
+        chain.stiffness = preset["stiffness"]
+        chain.damping = preset["damping"]
+        chain.drag = preset["drag"]
+        chain.gravity_strength = preset["gravity_strength"]
+        context.scene.hocloth_runtime_status = (
+            f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
+        )
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     bl_idname = "hocloth.rebuild_scene"
     bl_label = "Build Runtime"
     bl_description = "Compile authoring data and build the native runtime scene"
 
     def execute(self, context):
+        stop_live_runtime(context.scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+
         rebuild_component_indices(context.scene)
         compiled = compile_scene_from_components(context.scene)
         context.scene.hocloth_compile_summary = compiled.summary()
@@ -107,19 +181,22 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
             return {"CANCELLED"}
 
         runtime_state = build_runtime(compiled)
+        initial_inputs = build_runtime_inputs(context.scene, compiled)
+        set_runtime_inputs_only(initial_inputs)
         set_pose_baseline(capture_pose_baseline(context.scene, compiled))
         context.scene.hocloth_runtime_handle = runtime_state["handle"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         build_message = runtime_state.get("build_message", "")
-        physics_ready = runtime_state.get("physics_scene_ready", False)
+        solver_ready = runtime_state.get("physics_scene_ready", False)
         context.scene.hocloth_runtime_status = (
             f"Runtime ready via {runtime_state['backend']}: {runtime_state['summary']}"
-            f", physics_ready={physics_ready}"
+            f", solver_ready={solver_ready}"
             f"{', ' + build_message if build_message else ''}"
+            ", rebuild after changing chain parameters"
         )
-        if not physics_ready and runtime_state["backend"] == "stub" and not build_message:
-            context.scene.hocloth_runtime_status += ", likely built without HOCLOTH_ENABLE_PHYSX"
+        if not solver_ready and runtime_state["backend"] == "stub" and not build_message:
+            context.scene.hocloth_runtime_status += ", native module unavailable so Python placeholder backend is active"
         return {"FINISHED"}
 
 
@@ -153,9 +230,16 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
 
     def execute(self, context):
         stop_live_runtime(context.scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+
+        compiled_scene = get_compiled_scene()
+        if context.scene.hocloth_runtime_handle and compiled_scene is not None:
+            set_runtime_inputs_only(build_runtime_inputs(context.scene, compiled_scene))
         runtime_state = reset_runtime()
         if runtime_state["handle"]:
-            set_pose_baseline(capture_pose_baseline(context.scene, get_compiled_scene()))
+            set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         if runtime_state["handle"]:
@@ -261,6 +345,9 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
 
     def execute(self, context):
         stop_live_runtime(context.scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
         destroy_runtime()
         context.scene.hocloth_runtime_handle = 0
         context.scene.hocloth_runtime_step_count = 0
@@ -273,6 +360,7 @@ CLASSES = (
     HOCLOTH_OT_add_active_bone_chain,
     HOCLOTH_OT_add_active_collider,
     HOCLOTH_OT_remove_component,
+    HOCLOTH_OT_apply_bone_chain_preset,
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_export_compiled_scene,
     HOCLOTH_OT_reset_runtime,

@@ -27,17 +27,17 @@ void copy_quat(const nb::tuple& tuple_value, float out[4]) {
 }
 
 
-void copy_vec3_blender_to_physx(const nb::tuple& tuple_value, float out[3]) {
+void copy_vec3_blender_to_solver(const nb::tuple& tuple_value, float out[3]) {
     float blender_value[3];
     copy_vec3(tuple_value, blender_value);
-    blender_to_physx_vector(blender_value, out);
+    blender_to_solver_vector(blender_value, out);
 }
 
 
-void copy_quat_blender_to_physx(const nb::tuple& tuple_value, float out[4]) {
+void copy_quat_blender_to_solver(const nb::tuple& tuple_value, float out[4]) {
     float blender_value[4];
     copy_quat(tuple_value, blender_value);
-    blender_to_physx_quaternion(blender_value, out);
+    blender_to_solver_quaternion(blender_value, out);
 }
 
 SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
@@ -64,7 +64,7 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
                 chain.gravity_strength = nb::cast<float>(chain_dict["gravity_strength"]);
             }
             if (chain_dict.contains("gravity_direction")) {
-                copy_vec3_blender_to_physx(nb::cast<nb::tuple>(chain_dict["gravity_direction"]), chain.gravity_direction);
+                copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["gravity_direction"]), chain.gravity_direction);
             }
 
             if (chain_dict.contains("bones")) {
@@ -75,10 +75,10 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
                     bone.name = nb::cast<std::string>(bone_dict["name"]);
                     bone.parent_index = nb::cast<std::int32_t>(bone_dict["parent_index"]);
                     bone.length = nb::cast<float>(bone_dict["length"]);
-                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_head_local"]), bone.rest_head_local);
-                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_tail_local"]), bone.rest_tail_local);
-                    copy_vec3_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_translation"]), bone.rest_local_translation);
-                    copy_quat_blender_to_physx(nb::cast<nb::tuple>(bone_dict["rest_local_rotation"]), bone.rest_local_rotation);
+                    copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_head_local"]), bone.rest_head_local);
+                    copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_tail_local"]), bone.rest_tail_local);
+                    copy_vec3_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_local_translation"]), bone.rest_local_translation);
+                    copy_quat_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_local_rotation"]), bone.rest_local_rotation);
                     chain.bones.push_back(bone);
                 }
             }
@@ -104,13 +104,13 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
                 collider.height = nb::cast<float>(collider_dict["height"]);
             }
             if (collider_dict.contains("world_translation")) {
-                copy_vec3_blender_to_physx(
+                copy_vec3_blender_to_solver(
                     nb::cast<nb::tuple>(collider_dict["world_translation"]),
                     collider.world_translation
                 );
             }
             if (collider_dict.contains("world_rotation")) {
-                copy_quat_blender_to_physx(
+                copy_quat_blender_to_solver(
                     nb::cast<nb::tuple>(collider_dict["world_rotation"]),
                     collider.world_rotation
                 );
@@ -139,8 +139,14 @@ RuntimeInputs runtime_inputs_from_python(float dt, std::int32_t substeps, const 
         chain.component_id = nb::cast<std::string>(chain_dict["component_id"]);
         chain.armature_name = nb::cast<std::string>(chain_dict["armature_name"]);
         chain.root_bone_name = nb::cast<std::string>(chain_dict["root_bone_name"]);
-        copy_vec3_blender_to_physx(nb::cast<nb::tuple>(chain_dict["root_translation"]), chain.root_translation);
-        copy_quat_blender_to_physx(nb::cast<nb::tuple>(chain_dict["root_rotation_quaternion"]), chain.root_rotation_quaternion);
+        copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["root_translation"]), chain.root_translation);
+        copy_quat_blender_to_solver(nb::cast<nb::tuple>(chain_dict["root_rotation_quaternion"]), chain.root_rotation_quaternion);
+        if (chain_dict.contains("root_linear_velocity")) {
+            copy_vec3_blender_to_solver(nb::cast<nb::tuple>(chain_dict["root_linear_velocity"]), chain.root_linear_velocity);
+        }
+        if (chain_dict.contains("root_scale")) {
+            copy_vec3(nb::cast<nb::tuple>(chain_dict["root_scale"]), chain.root_scale);
+        }
         inputs.bone_chains.push_back(chain);
     }
 
@@ -186,8 +192,8 @@ nb::list get_bone_transforms_list(SceneHandle handle) {
     for (const BoneTransform& transform : get_bone_transforms(handle)) {
         float blender_translation[3];
         float blender_rotation[4];
-        physx_to_blender_vector(transform.translation, blender_translation);
-        physx_to_blender_quaternion(transform.rotation_quaternion, blender_rotation);
+        solver_to_blender_vector(transform.translation, blender_translation);
+        solver_to_blender_quaternion(transform.rotation_quaternion, blender_rotation);
 
         nb::dict item;
         item["component_id"] = transform.component_id;

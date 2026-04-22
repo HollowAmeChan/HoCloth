@@ -1,7 +1,12 @@
 import bpy
 
-from .inputs import build_runtime_inputs
-from .pose_apply import apply_runtime_transforms_to_scene, capture_pose_baseline
+from .inputs import build_runtime_inputs, reset_runtime_input_tracking
+from .pose_apply import (
+    apply_runtime_transforms_to_scene,
+    capture_pose_baseline,
+    capture_pose_state,
+    restore_pose_state,
+)
 from .session import (
     get_compiled_scene,
     get_pose_baseline,
@@ -14,12 +19,15 @@ _LIVE_STATE = {
     "active_scene_name": "",
     "last_processed_identity": "",
     "last_frame": None,
+    "last_source_pose": {},
 }
 
 
 def _reset_runtime_tracking():
     _LIVE_STATE["last_processed_identity"] = ""
     _LIVE_STATE["last_frame"] = None
+    _LIVE_STATE["last_source_pose"] = {}
+    reset_runtime_input_tracking()
 
 
 def _clear_active_scene():
@@ -86,6 +94,22 @@ def on_animation_playback_pre(scene, depsgraph):
 
 
 @bpy.app.handlers.persistent
+def on_frame_change_pre(scene, depsgraph):
+    _ = depsgraph
+    if not _is_scene_live_enabled(scene):
+        return
+
+    if _LIVE_STATE["active_scene_name"] != scene.name:
+        return
+
+    compiled_scene = get_compiled_scene()
+    if compiled_scene is None:
+        return
+
+    restore_pose_state(scene, compiled_scene, _LIVE_STATE["last_source_pose"])
+
+
+@bpy.app.handlers.persistent
 def on_animation_playback_post(scene, depsgraph):
     _ = depsgraph
     active_scene = _scene_from_name() or scene
@@ -118,11 +142,15 @@ def on_frame_change_post(scene, depsgraph):
     if not _check_frame_continuity(scene):
         return
 
+    compiled_scene = get_compiled_scene()
+    source_pose = capture_pose_state(scene, compiled_scene)
+    runtime_inputs = build_runtime_inputs(scene, compiled_scene)
+
     try:
         result = step_runtime(
             scene.hocloth_runtime_dt,
             scene.hocloth_runtime_substeps,
-            build_runtime_inputs(scene, get_compiled_scene()),
+            runtime_inputs,
         )
     except RuntimeError as exc:
         _mark_stopped(scene, f"Live runtime failed: {exc}")
@@ -138,11 +166,12 @@ def on_frame_change_post(scene, depsgraph):
     if scene.hocloth_apply_pose_on_step:
         apply_result = apply_runtime_transforms_to_scene(
             scene,
-            get_compiled_scene(),
+            compiled_scene,
             result["transforms"],
             get_pose_baseline(),
         )
         status_suffix = f", applied={apply_result['applied_count']}"
+    _LIVE_STATE["last_source_pose"] = source_pose
 
     scene.hocloth_runtime_status = (
         f"Live stepping on frame {scene.frame_current}, "
@@ -167,6 +196,8 @@ def register():
         bpy.app.handlers.animation_playback_pre.append(on_animation_playback_pre)
     if on_animation_playback_post not in bpy.app.handlers.animation_playback_post:
         bpy.app.handlers.animation_playback_post.append(on_animation_playback_post)
+    if on_frame_change_pre not in bpy.app.handlers.frame_change_pre:
+        bpy.app.handlers.frame_change_pre.append(on_frame_change_pre)
     if on_frame_change_post not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(on_frame_change_post)
 
@@ -176,6 +207,8 @@ def unregister():
         bpy.app.handlers.animation_playback_pre.remove(on_animation_playback_pre)
     if on_animation_playback_post in bpy.app.handlers.animation_playback_post:
         bpy.app.handlers.animation_playback_post.remove(on_animation_playback_post)
+    if on_frame_change_pre in bpy.app.handlers.frame_change_pre:
+        bpy.app.handlers.frame_change_pre.remove(on_frame_change_pre)
     if on_frame_change_post in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(on_frame_change_post)
     _clear_active_scene()

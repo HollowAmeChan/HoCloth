@@ -6,8 +6,8 @@ param(
     [switch]$IncludeNativeBuild,
     [switch]$CreateZip,
     [string]$CMakeExecutable = "",
-    [string]$ConfigurePreset = "vs2022-release-physx",
-    [string]$BuildPreset = "build-vs2022-release-physx",
+    [string]$ConfigurePreset = "vs2022-release-native",
+    [string]$BuildPreset = "build-vs2022-release-native",
     [string]$BuildConfiguration = "Release"
 )
 
@@ -81,7 +81,6 @@ $ExcludeNames = @(
     "_dist",
     "_docs",
     "_native",
-    "build_physx.ps1",
     "package_addon.ps1",
     "pyproject.toml",
     "scripts",

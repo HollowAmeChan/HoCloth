@@ -1,4 +1,101 @@
+from mathutils import Matrix, Quaternion, Vector
+
 from .compiled import CompiledBone, CompiledBoneChain, CompiledCollider, CompiledScene
+
+
+def _scale_vector(value, scale) -> tuple[float, float, float]:
+    return (
+        float(value[0]) * float(scale[0]),
+        float(value[1]) * float(scale[1]),
+        float(value[2]) * float(scale[2]),
+    )
+
+
+def _scaled_distance(a, b, scale) -> float:
+    delta = _scale_vector((
+        float(b[0]) - float(a[0]),
+        float(b[1]) - float(a[1]),
+        float(b[2]) - float(a[2]),
+    ), scale)
+    return (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]) ** 0.5
+
+
+def _tuple_to_vector(value) -> Vector:
+    return Vector((float(value[0]), float(value[1]), float(value[2])))
+
+
+def _vector_to_tuple(value: Vector) -> tuple[float, float, float]:
+    return (float(value.x), float(value.y), float(value.z))
+
+
+def _quaternion_to_tuple(value: Quaternion) -> tuple[float, float, float, float]:
+    return (float(value.w), float(value.x), float(value.y), float(value.z))
+
+
+def _segment_direction(head_local, tail_local, fallback: Vector | None = None) -> Vector:
+    direction = _tuple_to_vector(tail_local) - _tuple_to_vector(head_local)
+    if direction.length <= 1.0e-6:
+        return fallback.copy() if fallback is not None else Vector((0.0, 1.0, 0.0))
+    return direction.normalized()
+
+
+def _direction_to_rest_rotation(direction: Vector) -> tuple[float, float, float, float]:
+    canonical_axis = Vector((0.0, 1.0, 0.0))
+    rotation = canonical_axis.rotation_difference(direction.normalized())
+    return (float(rotation.w), float(rotation.x), float(rotation.y), float(rotation.z))
+
+
+def _transform_point(matrix: Matrix, point) -> Vector:
+    return matrix @ Vector((float(point[0]), float(point[1]), float(point[2]), 1.0))
+
+
+def _scale_chain_point(point: Vector, scale) -> tuple[float, float, float]:
+    return (
+        float(point.x) * float(scale[0]),
+        float(point.y) * float(scale[1]),
+        float(point.z) * float(scale[2]),
+    )
+
+
+def _chain_space_local_translation(
+    head_local: tuple[float, float, float],
+    parent_head_local: tuple[float, float, float] | None,
+) -> tuple[float, float, float]:
+    if parent_head_local is None:
+        return (0.0, 0.0, 0.0)
+    return _vector_to_tuple(_tuple_to_vector(head_local) - _tuple_to_vector(parent_head_local))
+
+
+def _chain_space_local_rotation(
+    bone,
+    parent_bone,
+    root_rotation_inv: Quaternion,
+) -> tuple[float, float, float, float]:
+    current_global = root_rotation_inv @ bone.matrix_local.to_quaternion()
+    if parent_bone is None:
+        return _quaternion_to_tuple(current_global)
+
+    parent_global = root_rotation_inv @ parent_bone.matrix_local.to_quaternion()
+    local_rotation = parent_global.conjugated() @ current_global
+    return _quaternion_to_tuple(local_rotation)
+
+
+def _extract_chain_space_rest_data(bone, parent_bone, root_matrix_inv: Matrix, root_rotation_inv: Quaternion, armature_scale) -> dict:
+    head_root = _transform_point(root_matrix_inv, bone.head_local).to_3d()
+    tail_root = _transform_point(root_matrix_inv, bone.tail_local).to_3d()
+    scaled_head = _scale_chain_point(head_root, armature_scale)
+    scaled_tail = _scale_chain_point(tail_root, armature_scale)
+    parent_head = None
+    if parent_bone is not None:
+        parent_head_root = _transform_point(root_matrix_inv, parent_bone.head_local).to_3d()
+        parent_head = _scale_chain_point(parent_head_root, armature_scale)
+
+    return {
+        "head_local": scaled_head,
+        "tail_local": scaled_tail,
+        "local_translation": _chain_space_local_translation(scaled_head, parent_head),
+        "local_rotation": _chain_space_local_rotation(bone, parent_bone, root_rotation_inv),
+    }
 
 
 def _collect_bone_subtree_names(bone) -> list[str]:
@@ -48,26 +145,33 @@ def resolve_bone_chain_names(scene, armature_name: str, root_bone_name: str) -> 
 def _build_compiled_bones(armature_object, bone_names: list[str]) -> list[CompiledBone]:
     name_to_index = {name: index for index, name in enumerate(bone_names)}
     compiled_bones: list[CompiledBone] = []
+    armature_scale = tuple(float(axis) for axis in armature_object.matrix_world.to_scale())
+    root_bone = armature_object.data.bones.get(bone_names[0]) if bone_names else None
+    root_matrix_inv = root_bone.matrix_local.inverted() if root_bone is not None else Matrix.Identity(4)
+    root_rotation_inv = root_bone.matrix_local.to_quaternion().conjugated() if root_bone is not None else Quaternion()
     for bone_name in bone_names:
         bone = armature_object.data.bones.get(bone_name)
         parent_name = bone.parent.name if bone and bone.parent and bone.parent.name in name_to_index else None
         if bone is None:
             continue
 
-        if bone.parent and bone.parent.name in name_to_index:
-            local_matrix = bone.parent.matrix_local.inverted() @ bone.matrix_local
-        else:
-            local_matrix = bone.matrix_local.copy()
-
+        parent_bone = bone.parent if bone.parent and bone.parent.name in name_to_index else None
+        chain_space = _extract_chain_space_rest_data(
+            bone,
+            parent_bone,
+            root_matrix_inv,
+            root_rotation_inv,
+            armature_scale,
+        )
         compiled_bones.append(
             CompiledBone(
                 name=bone_name,
                 parent_index=name_to_index[parent_name] if parent_name else -1,
-                length=(bone.tail_local - bone.head_local).length,
-                rest_head_local=tuple(bone.head_local),
-                rest_tail_local=tuple(bone.tail_local),
-                rest_local_translation=tuple(local_matrix.to_translation()),
-                rest_local_rotation=tuple(local_matrix.to_quaternion()),
+                length=_scaled_distance(bone.head_local, bone.tail_local, armature_scale),
+                rest_head_local=chain_space["head_local"],
+                rest_tail_local=chain_space["tail_local"],
+                rest_local_translation=chain_space["local_translation"],
+                rest_local_rotation=chain_space["local_rotation"],
             )
         )
     return compiled_bones
@@ -118,6 +222,7 @@ def compile_scene_from_components(scene) -> CompiledScene:
                     drag=typed_item.drag,
                     gravity_strength=typed_item.gravity_strength,
                     gravity_direction=tuple(typed_item.gravity_direction),
+                    armature_scale=tuple(float(axis) for axis in armature_object.matrix_world.to_scale()),
                     bones=compiled_bones,
                 )
             )

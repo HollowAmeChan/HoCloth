@@ -4,17 +4,17 @@
 
 namespace hocloth {
 
-// Blender uses a Z-up right-handed basis. PhysX commonly runs in a Y-up
-// right-handed basis. We map:
-// Blender (x, y, z) -> PhysX (x, z, -y)
-inline void blender_to_physx_vector(const float in[3], float out[3]) {
+// Blender uses a Z-up right-handed basis. The current native placeholder
+// solver stores data in a Y-up-style internal basis so the runtime API can
+// remain stable while the custom XPBD backend evolves.
+inline void blender_to_solver_vector(const float in[3], float out[3]) {
     out[0] = in[0];
     out[1] = in[2];
     out[2] = -in[1];
 }
 
 
-inline void physx_to_blender_vector(const float in[3], float out[3]) {
+inline void solver_to_blender_vector(const float in[3], float out[3]) {
     out[0] = in[0];
     out[1] = -in[2];
     out[2] = in[1];
@@ -117,7 +117,7 @@ inline void normalize_quaternion(float io[4]) {
 }
 
 
-inline void blender_to_physx_quaternion(const float in[4], float out[4]) {
+inline void blender_to_solver_quaternion(const float in[4], float out[4]) {
     static constexpr float basis[9] = {
         1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f,
@@ -140,7 +140,7 @@ inline void blender_to_physx_quaternion(const float in[4], float out[4]) {
 }
 
 
-inline void physx_to_blender_quaternion(const float in[4], float out[4]) {
+inline void solver_to_blender_quaternion(const float in[4], float out[4]) {
     static constexpr float basis[9] = {
         1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f,

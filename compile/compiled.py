@@ -22,6 +22,7 @@ class CompiledBoneChain:
     drag: float
     gravity_strength: float
     gravity_direction: tuple[float, float, float]
+    armature_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     bones: list[CompiledBone] = field(default_factory=list)
 
     @property
@@ -86,6 +87,7 @@ class CompiledScene:
                     "drag": chain.drag,
                     "gravity_strength": chain.gravity_strength,
                     "gravity_direction": chain.gravity_direction,
+                    "armature_scale": chain.armature_scale,
                     "bones": [
                         {
                             "name": bone.name,

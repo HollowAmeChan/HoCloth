@@ -51,6 +51,8 @@ struct BoneChainRuntimeInput {
     std::string root_bone_name;
     float root_translation[3] = {0.0f, 0.0f, 0.0f};
     float root_rotation_quaternion[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float root_linear_velocity[3] = {0.0f, 0.0f, 0.0f};
+    float root_scale[3] = {1.0f, 1.0f, 1.0f};
 };
 
 struct RuntimeInputs {

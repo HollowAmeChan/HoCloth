@@ -1,30 +1,49 @@
 #include "hocloth_runtime_api.hpp"
-#include "hocloth_physx_builder.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace hocloth {
 
 namespace {
 
+struct Vec3 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
+struct Quat {
+    float w = 1.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
 struct RuntimeBoneState {
-    float pitch = 0.0f;
-    float roll = 0.0f;
-    float pitch_velocity = 0.0f;
-    float roll_velocity = 0.0f;
+    Vec3 position;
+    Vec3 previous_position;
+    float stretch_lambda = 0.0f;
+    float bend_lambda = 0.0f;
+    float shape_lambda = 0.0f;
 };
 
 struct RuntimeBoneChainState {
     std::vector<RuntimeBoneState> bones;
+    Vec3 last_root_translation;
+    Quat last_root_rotation;
+    bool initialized = false;
 };
 
 struct RuntimeSceneState {
     SceneDescriptor scene;
     RuntimeInputs inputs;
     std::vector<RuntimeBoneChainState> chain_states;
-    std::string backend = "stub";
+    std::string backend = "xpbd";
     std::string build_message;
     bool physics_scene_ready = false;
     std::uint64_t steps = 0;
@@ -33,38 +52,146 @@ struct RuntimeSceneState {
 std::unordered_map<SceneHandle, RuntimeSceneState> g_scenes;
 SceneHandle g_next_handle = 1;
 
-
-void quat_multiply(const float a[4], const float b[4], float out[4]) {
-    out[0] = a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3];
-    out[1] = a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2];
-    out[2] = a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1];
-    out[3] = a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0];
-}
-
 float clamp_unit(float value) {
     return std::clamp(value, 0.0f, 1.0f);
 }
 
-float clamp_symmetric(float value, float limit) {
-    return std::clamp(value, -limit, limit);
+Vec3 make_vec3(const float value[3]) {
+    return Vec3{value[0], value[1], value[2]};
 }
 
-float vector_length3(const float value[3]) {
-    return std::sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]);
+Quat make_quat(const float value[4]) {
+    return Quat{value[0], value[1], value[2], value[3]};
 }
 
-void normalize_vector3(const float input[3], float output[3]) {
-    const float length = vector_length3(input);
-    if (length <= 1.0e-6f) {
-        output[0] = 0.0f;
-        output[1] = -1.0f;
-        output[2] = 0.0f;
-        return;
+void copy_vec3(const Vec3& value, float out[3]) {
+    out[0] = value.x;
+    out[1] = value.y;
+    out[2] = value.z;
+}
+
+void copy_quat(const Quat& value, float out[4]) {
+    out[0] = value.w;
+    out[1] = value.x;
+    out[2] = value.y;
+    out[3] = value.z;
+}
+
+Vec3 add(const Vec3& a, const Vec3& b) {
+    return Vec3{a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vec3 sub(const Vec3& a, const Vec3& b) {
+    return Vec3{a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+Vec3 mul(const Vec3& value, float scalar) {
+    return Vec3{value.x * scalar, value.y * scalar, value.z * scalar};
+}
+
+float dot(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vec3 cross(const Vec3& a, const Vec3& b) {
+    return Vec3{
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    };
+}
+
+float length_squared(const Vec3& value) {
+    return dot(value, value);
+}
+
+float length(const Vec3& value) {
+    return std::sqrt(length_squared(value));
+}
+
+Vec3 normalize_or_default(const Vec3& value, const Vec3& fallback) {
+    const float len = length(value);
+    if (len <= 1.0e-6f) {
+        return fallback;
+    }
+    return mul(value, 1.0f / len);
+}
+
+Quat normalize_or_identity(const Quat& value) {
+    const float len = std::sqrt(
+        value.w * value.w +
+        value.x * value.x +
+        value.y * value.y +
+        value.z * value.z
+    );
+    if (len <= 1.0e-6f) {
+        return Quat{};
+    }
+    const float inv = 1.0f / len;
+    return Quat{
+        value.w * inv,
+        value.x * inv,
+        value.y * inv,
+        value.z * inv,
+    };
+}
+
+Quat conjugate(const Quat& value) {
+    return Quat{value.w, -value.x, -value.y, -value.z};
+}
+
+Quat quat_multiply(const Quat& a, const Quat& b) {
+    return Quat{
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    };
+}
+
+Vec3 rotate_vector(const Quat& rotation, const Vec3& value) {
+    const Quat v{0.0f, value.x, value.y, value.z};
+    const Quat rotated = quat_multiply(quat_multiply(rotation, v), conjugate(rotation));
+    return Vec3{rotated.x, rotated.y, rotated.z};
+}
+
+Quat quat_between_vectors(const Vec3& from, const Vec3& to) {
+    const Vec3 normalized_from = normalize_or_default(from, Vec3{0.0f, 1.0f, 0.0f});
+    const Vec3 normalized_to = normalize_or_default(to, Vec3{0.0f, 1.0f, 0.0f});
+    const float cosine = dot(normalized_from, normalized_to);
+
+    if (cosine >= 1.0f - 1.0e-5f) {
+        return Quat{};
     }
 
-    output[0] = input[0] / length;
-    output[1] = input[1] / length;
-    output[2] = input[2] / length;
+    if (cosine <= -1.0f + 1.0e-5f) {
+        Vec3 axis = cross(normalized_from, Vec3{1.0f, 0.0f, 0.0f});
+        if (length_squared(axis) <= 1.0e-6f) {
+            axis = cross(normalized_from, Vec3{0.0f, 0.0f, 1.0f});
+        }
+        axis = normalize_or_default(axis, Vec3{0.0f, 0.0f, 1.0f});
+        return Quat{0.0f, axis.x, axis.y, axis.z};
+    }
+
+    const Vec3 axis = cross(normalized_from, normalized_to);
+    return normalize_or_identity(Quat{1.0f + cosine, axis.x, axis.y, axis.z});
+}
+
+Vec3 rest_head_world(const BoneDescriptor& bone, const Vec3& root_translation, const Quat& root_rotation, const Vec3& root_rest_head) {
+    return add(root_translation, rotate_vector(root_rotation, sub(make_vec3(bone.rest_head_local), root_rest_head)));
+}
+
+Vec3 rest_tail_world(const BoneDescriptor& bone, const Vec3& root_translation, const Quat& root_rotation, const Vec3& root_rest_head) {
+    return add(root_translation, rotate_vector(root_rotation, sub(make_vec3(bone.rest_tail_local), root_rest_head)));
+}
+
+const BoneChainRuntimeInput* find_chain_input(const RuntimeInputs& inputs, const BoneChainDescriptor& chain) {
+    for (const BoneChainRuntimeInput& input : inputs.bone_chains) {
+        if (input.component_id == chain.component_id) {
+            return &input;
+        }
+    }
+    return nullptr;
 }
 
 std::vector<RuntimeBoneChainState> make_chain_states(const SceneDescriptor& scene) {
@@ -78,63 +205,199 @@ std::vector<RuntimeBoneChainState> make_chain_states(const SceneDescriptor& scen
     return states;
 }
 
-void step_bone_chain(
+void initialize_chain_state(
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
-    float dt
+    const BoneChainRuntimeInput* chain_input
 ) {
-    if (chain_state.bones.empty() || dt <= 0.0f) {
+    const Vec3 root_rest_head = chain.bones.empty()
+        ? Vec3{}
+        : make_vec3(chain.bones.front().rest_head_local);
+    const Vec3 root_translation = chain_input != nullptr ? make_vec3(chain_input->root_translation) : root_rest_head;
+    const Quat root_rotation = chain_input != nullptr
+        ? normalize_or_identity(make_quat(chain_input->root_rotation_quaternion))
+        : Quat{};
+
+    for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
+        const BoneDescriptor& bone = chain.bones[bone_index];
+        RuntimeBoneState& state = chain_state.bones[bone_index];
+        state.position = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        state.previous_position = state.position;
+        state.stretch_lambda = 0.0f;
+        state.bend_lambda = 0.0f;
+        state.shape_lambda = 0.0f;
+    }
+
+    chain_state.last_root_translation = root_translation;
+    chain_state.last_root_rotation = root_rotation;
+    chain_state.initialized = true;
+}
+
+void project_distance_constraint(
+    Vec3 head_position,
+    RuntimeBoneState& state,
+    float rest_length,
+    float compliance,
+    float dt,
+    float& lambda
+) {
+    const Vec3 delta = sub(state.position, head_position);
+    const float current_length = length(delta);
+    if (current_length <= 1.0e-6f || rest_length <= 1.0e-6f) {
+        lambda = 0.0f;
         return;
     }
 
-    float gravity_dir[3];
-    normalize_vector3(chain.gravity_direction, gravity_dir);
+    const Vec3 gradient = mul(delta, 1.0f / current_length);
+    const float constraint = current_length - rest_length;
+    const float alpha = compliance / std::max(dt * dt, 1.0e-8f);
+    const float delta_lambda = (-constraint - alpha * lambda) / (1.0f + alpha);
+    lambda += delta_lambda;
+    state.position = add(state.position, mul(gradient, delta_lambda));
+}
 
-    const float stiffness = clamp_unit(chain.stiffness);
+void project_shape_constraint(
+    Vec3 head_position,
+    RuntimeBoneState& state,
+    const Vec3& target_tail,
+    float compliance,
+    float dt
+) {
+    const Vec3 delta = sub(state.position, target_tail);
+    const float alpha = compliance / std::max(dt * dt, 1.0e-8f);
+    const float denominator = 1.0f + alpha;
+    const Vec3 correction = mul(delta, -1.0f / denominator);
+    state.position = add(state.position, correction);
+    state.shape_lambda = 0.0f;
+    const Vec3 direction = sub(state.position, head_position);
+    const float current_length = length(direction);
+    if (current_length > 1.0e-6f) {
+        const float rest_length = length(sub(target_tail, head_position));
+        if (rest_length > 1.0e-6f) {
+            state.position = add(head_position, mul(direction, rest_length / current_length));
+        }
+    }
+}
+
+void step_bone_chain(
+    const BoneChainDescriptor& chain,
+    RuntimeBoneChainState& chain_state,
+    const BoneChainRuntimeInput* chain_input,
+    float dt
+) {
+    if (chain.bones.empty() || dt <= 0.0f) {
+        return;
+    }
+
+    if (!chain_state.initialized) {
+        initialize_chain_state(chain, chain_state, chain_input);
+    }
+
+    const Vec3 root_rest_head = make_vec3(chain.bones.front().rest_head_local);
+    const Vec3 root_translation = chain_input != nullptr
+        ? make_vec3(chain_input->root_translation)
+        : chain_state.last_root_translation;
+    const Quat root_rotation = chain_input != nullptr
+        ? normalize_or_identity(make_quat(chain_input->root_rotation_quaternion))
+        : chain_state.last_root_rotation;
+    const Vec3 root_linear_velocity = chain_input != nullptr
+        ? make_vec3(chain_input->root_linear_velocity)
+        : Vec3{};
+    const Vec3 root_delta = sub(root_translation, chain_state.last_root_translation);
+    const Vec3 gravity_direction = normalize_or_default(make_vec3(chain.gravity_direction), Vec3{0.0f, -1.0f, 0.0f});
+    const float stiffness = std::clamp(chain.stiffness, 0.0f, 2.0f);
+    const float stiffness_factor = std::clamp(stiffness * 0.5f, 0.0f, 1.0f);
     const float damping = clamp_unit(chain.damping);
     const float drag = clamp_unit(chain.drag);
-    const float gravity = std::max(0.0f, chain.gravity_strength);
-    const float stiffness_gain = 18.0f + stiffness * 54.0f;
-    const float damping_gain = 3.0f + damping * 10.0f;
-    const float drag_factor = std::max(0.0f, 1.0f - drag * dt * 10.0f);
-    const float inherit_factor = 0.72f + stiffness * 0.18f;
-    const float max_angle = 1.15f;
-    const float max_velocity = 8.0f;
-    const float chain_size = static_cast<float>(chain_state.bones.size());
+    const float gravity_strength = std::clamp(chain.gravity_strength, 0.0f, 2.0f);
+    const Vec3 gravity = mul(gravity_direction, 14.0f * gravity_strength);
+    const float inertia_mix = std::clamp(0.96f - drag * 0.72f, 0.12f, 0.98f);
+    const float root_inertia_mix = std::clamp(0.18f + stiffness_factor * 0.42f, 0.08f, 0.72f);
+    const float chain_inertia_mix = std::clamp(0.45f + stiffness_factor * 0.35f - damping * 0.15f, 0.18f, 0.82f);
+    const float stretch_compliance = 1.5e-3f + (1.0f - stiffness_factor) * 7.5e-3f;
+    const float bend_compliance = 6.0e-3f + (1.0f - stiffness_factor) * 5.5e-2f;
+    const float shape_compliance = 8.0e-2f + (1.0f - stiffness_factor) * 2.8e-1f;
+    const float iterations = 8.0f;
+    const std::size_t solver_iterations = 8;
 
-    for (std::size_t bone_index = 0; bone_index < chain_state.bones.size(); ++bone_index) {
-        RuntimeBoneState& bone_state = chain_state.bones[bone_index];
-        const BoneDescriptor& bone = chain.bones[bone_index];
-        const float depth = static_cast<float>(bone_index + 1) / std::max(1.0f, chain_size);
-        const float length_scale = std::max(0.05f, bone.length);
-        const float gravity_scale = gravity * (0.18f + depth * 0.48f) * std::sqrt(length_scale);
-
-        float parent_pitch = 0.0f;
-        float parent_roll = 0.0f;
-        if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.bones.size()) {
-            const RuntimeBoneState& parent_state = chain_state.bones[static_cast<std::size_t>(bone.parent_index)];
-            parent_pitch = parent_state.pitch * inherit_factor;
-            parent_roll = parent_state.roll * inherit_factor;
+    for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
+        RuntimeBoneState& state = chain_state.bones[bone_index];
+        const Vec3 velocity = mul(sub(state.position, state.previous_position), inertia_mix);
+        Vec3 inherited_motion = mul(root_delta, root_inertia_mix);
+        if (bone_index > 0) {
+            const RuntimeBoneState& parent_state = chain_state.bones[bone_index - 1];
+            const Vec3 parent_motion = sub(parent_state.position, parent_state.previous_position);
+            const float depth_falloff = 1.0f / (1.0f + static_cast<float>(bone_index) * 0.35f);
+            inherited_motion = add(
+                inherited_motion,
+                mul(parent_motion, chain_inertia_mix * depth_falloff)
+            );
         }
-
-        const float target_pitch = parent_pitch + (-gravity_dir[1]) * gravity_scale;
-        const float target_roll = parent_roll + gravity_dir[0] * gravity_scale;
-        const float pitch_accel = (target_pitch - bone_state.pitch) * stiffness_gain -
-                                  bone_state.pitch_velocity * damping_gain;
-        const float roll_accel = (target_roll - bone_state.roll) * stiffness_gain -
-                                 bone_state.roll_velocity * damping_gain;
-
-        bone_state.pitch_velocity = clamp_symmetric(
-            (bone_state.pitch_velocity + pitch_accel * dt) * drag_factor,
-            max_velocity
+        const Vec3 predicted = add(
+            add(state.position, add(velocity, inherited_motion)),
+            add(mul(gravity, dt * dt), mul(root_linear_velocity, 0.06f * dt))
         );
-        bone_state.roll_velocity = clamp_symmetric(
-            (bone_state.roll_velocity + roll_accel * dt) * drag_factor,
-            max_velocity
-        );
-        bone_state.pitch = clamp_symmetric(bone_state.pitch + bone_state.pitch_velocity * dt, max_angle);
-        bone_state.roll = clamp_symmetric(bone_state.roll + bone_state.roll_velocity * dt, max_angle);
+        state.previous_position = state.position;
+        state.position = predicted;
+        state.stretch_lambda = 0.0f;
+        state.bend_lambda = 0.0f;
+        state.shape_lambda = 0.0f;
     }
+
+    for (std::size_t iteration = 0; iteration < solver_iterations; ++iteration) {
+        for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
+            const BoneDescriptor& bone = chain.bones[bone_index];
+            RuntimeBoneState& state = chain_state.bones[bone_index];
+            Vec3 head_position = root_translation;
+            if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.bones.size()) {
+                head_position = chain_state.bones[static_cast<std::size_t>(bone.parent_index)].position;
+            }
+
+            const Vec3 target_tail = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+            project_distance_constraint(
+                head_position,
+                state,
+                std::max(1.0e-5f, bone.length),
+                stretch_compliance,
+                dt,
+                state.stretch_lambda
+            );
+            if (bone_index > 0) {
+                const BoneDescriptor& parent_bone = chain.bones[bone_index - 1];
+                Vec3 bend_anchor = root_translation;
+                if (bone_index > 1) {
+                    bend_anchor = chain_state.bones[bone_index - 2].position;
+                }
+                const float bend_rest_length = std::max(1.0e-5f, parent_bone.length + bone.length);
+                project_distance_constraint(
+                    bend_anchor,
+                    state,
+                    bend_rest_length,
+                    bend_compliance / iterations,
+                    dt,
+                    state.bend_lambda
+                );
+            }
+            if (bone_index > 0) {
+                project_shape_constraint(
+                    head_position,
+                    state,
+                    target_tail,
+                    shape_compliance / iterations,
+                    dt
+                );
+            }
+        }
+    }
+
+    const float velocity_damping = std::clamp(0.96f - damping * 0.72f - drag * 0.12f, 0.06f, 0.99f);
+    for (RuntimeBoneState& state : chain_state.bones) {
+        const Vec3 new_velocity = mul(sub(state.position, state.previous_position), velocity_damping);
+        state.previous_position = sub(state.position, new_velocity);
+    }
+
+    chain_state.last_root_translation = root_translation;
+    chain_state.last_root_rotation = root_rotation;
 }
 
 void advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs) {
@@ -144,41 +407,101 @@ void advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs
 
     for (std::int32_t substep = 0; substep < substeps; ++substep) {
         for (std::size_t chain_index = 0; chain_index < scene_state.scene.bone_chains.size(); ++chain_index) {
+            const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
+            RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
             step_bone_chain(
-                scene_state.scene.bone_chains[chain_index],
-                scene_state.chain_states[chain_index],
+                chain,
+                chain_state,
+                find_chain_input(scene_state.inputs, chain),
                 substep_dt
             );
         }
     }
 }
 
+std::vector<BoneTransform> build_transforms(const RuntimeSceneState& scene_state) {
+    std::vector<BoneTransform> transforms;
+
+    for (std::size_t chain_index = 0; chain_index < scene_state.scene.bone_chains.size(); ++chain_index) {
+        const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
+        const RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
+        const BoneChainRuntimeInput* chain_input = find_chain_input(scene_state.inputs, chain);
+        const Vec3 root_rest_head = chain.bones.empty()
+            ? Vec3{}
+            : make_vec3(chain.bones.front().rest_head_local);
+        const Vec3 root_translation = chain_input != nullptr
+            ? make_vec3(chain_input->root_translation)
+            : chain_state.last_root_translation;
+        const Quat root_rotation = chain_input != nullptr
+            ? normalize_or_identity(make_quat(chain_input->root_rotation_quaternion))
+            : chain_state.last_root_rotation;
+
+        std::vector<Quat> rest_global_rotations(chain.bones.size(), Quat{});
+        std::vector<Quat> current_global_rotations(chain.bones.size(), Quat{});
+        for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
+            const BoneDescriptor& bone = chain.bones[bone_index];
+            Vec3 current_head = root_translation;
+            if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.bones.size()) {
+                current_head = chain_state.bones[static_cast<std::size_t>(bone.parent_index)].position;
+            }
+            const Vec3 current_tail = chain_state.bones[bone_index].position;
+            const Vec3 current_direction_world = sub(current_tail, current_head);
+            const Vec3 current_direction = rotate_vector(conjugate(root_rotation), current_direction_world);
+            const Vec3 rest_direction = sub(make_vec3(bone.rest_tail_local), make_vec3(bone.rest_head_local));
+            const Quat swing = quat_between_vectors(rest_direction, current_direction);
+
+            Quat rest_global_rotation = make_quat(bone.rest_local_rotation);
+            if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < rest_global_rotations.size()) {
+                rest_global_rotation = quat_multiply(
+                    rest_global_rotations[static_cast<std::size_t>(bone.parent_index)],
+                    make_quat(bone.rest_local_rotation)
+                );
+            }
+            rest_global_rotations[bone_index] = rest_global_rotation;
+
+            const Quat current_global_rotation = normalize_or_identity(quat_multiply(swing, rest_global_rotation));
+            current_global_rotations[bone_index] = current_global_rotation;
+
+            Quat current_local = current_global_rotation;
+            if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < current_global_rotations.size()) {
+                current_local = normalize_or_identity(
+                    quat_multiply(
+                        conjugate(current_global_rotations[static_cast<std::size_t>(bone.parent_index)]),
+                        current_global_rotation
+                    )
+                );
+            }
+
+            const Quat delta = normalize_or_identity(quat_multiply(current_local, conjugate(make_quat(bone.rest_local_rotation))));
+            BoneTransform transform;
+            transform.component_id = chain.component_id;
+            transform.armature_name = chain.armature_name;
+            transform.bone_name = bone.name;
+            copy_quat(delta, transform.rotation_quaternion);
+            transforms.push_back(std::move(transform));
+        }
+    }
+
+    return transforms;
+}
 
 }  // namespace
 
 SceneHandle build_scene(const SceneDescriptor& scene) {
-    const PhysxBuildResult physx = probe_physx_backend();
     const SceneHandle handle = g_next_handle++;
-    const PhysxBuildResult build_result = build_physx_scene(handle, scene);
-    const std::string backend = build_result.scene_created ? build_result.backend : physx.backend;
-    const std::string build_message = build_result.message.empty() ? physx.message : build_result.message;
-    g_scenes.emplace(
-        handle,
-        RuntimeSceneState{
-            scene,
-            RuntimeInputs{},
-            make_chain_states(scene),
-            backend,
-            build_message,
-            build_result.scene_created,
-            0
-        }
-    );
+    RuntimeSceneState state;
+    state.scene = scene;
+    state.inputs = RuntimeInputs{};
+    state.chain_states = make_chain_states(scene);
+    state.backend = "xpbd";
+    state.build_message = "XPBD runtime scene created";
+    state.physics_scene_ready = false;
+    state.steps = 0;
+    g_scenes.emplace(handle, std::move(state));
     return handle;
 }
 
 void destroy_scene(SceneHandle handle) {
-    destroy_physx_scene(handle);
     g_scenes.erase(handle);
 }
 
@@ -190,9 +513,6 @@ void reset_scene(SceneHandle handle) {
     it->second.inputs = RuntimeInputs{};
     it->second.chain_states = make_chain_states(it->second.scene);
     it->second.steps = 0;
-    if (it->second.physics_scene_ready) {
-        reset_physx_scene(handle);
-    }
 }
 
 void set_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs) {
@@ -201,9 +521,6 @@ void set_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs) {
         return;
     }
     it->second.inputs = inputs;
-    if (it->second.physics_scene_ready) {
-        set_physx_runtime_inputs(handle, inputs);
-    }
 }
 
 void step_scene(SceneHandle handle, const RuntimeInputs& inputs) {
@@ -219,12 +536,10 @@ void step_scene(SceneHandle handle, const RuntimeInputs& inputs) {
         it->second.inputs.substeps = inputs.substeps;
     }
 
-    if (it->second.physics_scene_ready) {
-        step_physx_scene(handle, it->second.inputs);
-    } else {
-        advance_runtime(it->second, inputs);
-    }
-    const std::uint64_t step_increment = inputs.substeps > 0 ? static_cast<std::uint64_t>(inputs.substeps) : 1;
+    advance_runtime(it->second, it->second.inputs);
+    const std::uint64_t step_increment = it->second.inputs.substeps > 0
+        ? static_cast<std::uint64_t>(it->second.inputs.substeps)
+        : 1;
     it->second.steps += step_increment;
 }
 
@@ -241,51 +556,7 @@ std::vector<BoneTransform> get_bone_transforms(SceneHandle handle) {
     if (it == g_scenes.end()) {
         return {};
     }
-
-    if (it->second.physics_scene_ready) {
-        return get_physx_bone_transforms(handle);
-    }
-
-    std::vector<BoneTransform> transforms;
-    for (std::size_t chain_index = 0; chain_index < it->second.scene.bone_chains.size(); ++chain_index) {
-        const BoneChainDescriptor& chain = it->second.scene.bone_chains[chain_index];
-        const RuntimeBoneChainState& chain_state = it->second.chain_states[chain_index];
-        for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
-            const BoneDescriptor& bone = chain.bones[bone_index];
-            const RuntimeBoneState& bone_state = chain_state.bones[bone_index];
-            const float pitch = bone_state.pitch;
-            const float roll = bone_state.roll;
-            const float half_pitch = pitch * 0.5f;
-            const float half_roll = roll * 0.5f;
-            const float quat_x[4] = {
-                std::cos(half_pitch),
-                std::sin(half_pitch),
-                0.0f,
-                0.0f,
-            };
-            const float quat_z[4] = {
-                std::cos(half_roll),
-                0.0f,
-                0.0f,
-                std::sin(half_roll),
-            };
-            float delta_quat[4];
-            quat_multiply(quat_z, quat_x, delta_quat);
-
-            BoneTransform transform;
-            transform.component_id = chain.component_id;
-            transform.armature_name = chain.armature_name;
-            transform.bone_name = bone.name;
-            // Placeholder mode outputs pose-space delta rotation, not absolute
-            // local orientation, so Blender can layer it on top of rest pose.
-            transform.rotation_quaternion[0] = delta_quat[0];
-            transform.rotation_quaternion[1] = delta_quat[1];
-            transform.rotation_quaternion[2] = delta_quat[2];
-            transform.rotation_quaternion[3] = delta_quat[3];
-            transforms.push_back(transform);
-        }
-    }
-    return transforms;
+    return build_transforms(it->second);
 }
 
 RuntimeSceneInfo get_scene_info(SceneHandle handle) {

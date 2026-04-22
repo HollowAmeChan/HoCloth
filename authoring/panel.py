@@ -3,6 +3,14 @@ import bpy
 from ..compile.compiler import resolve_bone_chain_names
 
 
+_BONE_CHAIN_PRESET_BUTTONS = (
+    ("SOFT_HAIR", "Soft Hair"),
+    ("BALANCED", "Balanced"),
+    ("ROPE", "Rope"),
+    ("HEAVY", "Heavy"),
+)
+
+
 def _draw_bone_chain_details(layout, scene, item):
     if item.container_index < 0 or item.container_index >= len(scene.hocloth_bone_chain_components):
         layout.label(text="Bone chain data is missing", icon="ERROR")
@@ -58,6 +66,20 @@ def _draw_bone_chain_details(layout, scene, item):
         warn.label(text="Stored root bone is no longer valid on this armature", icon="ERROR")
 
     params = body.column(align=True)
+    preset_box = body.box()
+    preset_box.label(text="Presets")
+    preset_row = preset_box.row(align=True)
+    for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[:2]:
+        preset_op = preset_row.operator("hocloth.apply_bone_chain_preset", text=label)
+        preset_op.component_id = item.component_id
+        preset_op.preset_id = preset_id
+    preset_row = preset_box.row(align=True)
+    for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[2:]:
+        preset_op = preset_row.operator("hocloth.apply_bone_chain_preset", text=label)
+        preset_op.component_id = item.component_id
+        preset_op.preset_id = preset_id
+    preset_box.label(text="Apply preset, then rebuild runtime", icon="INFO")
+
     params.label(text="Spring")
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")

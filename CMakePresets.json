@@ -7,32 +7,27 @@
   },
   "configurePresets": [
     {
-      "name": "vs2022-release-physx",
-      "displayName": "Visual Studio 2022 Release PhysX",
-      "description": "Only supported local preset for HoCloth native builds. Requires Visual Studio/MSVC and enables the PhysX-backed runtime path.",
+      "name": "vs2022-release-native",
+      "displayName": "Visual Studio 2022 Release Native",
+      "description": "Supported local preset for HoCloth native placeholder builds. Uses Visual Studio/MSVC and targets the current self-contained XPBD path.",
       "generator": "Visual Studio 17 2022",
       "architecture": {
         "value": "x64"
       },
       "toolset": "v143",
-      "binaryDir": "${sourceDir}/_native/build/vs2022-release-physx",
+      "binaryDir": "${sourceDir}/_native/build/vs2022-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "HOCLOTH_ENABLE_PHYSX": "ON",
         "HOCLOTH_PYTHON_EXECUTABLE": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311/python.exe",
-        "Python_ROOT_DIR": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311",
-        "HOCLOTH_PHYSX_ROOT": "${sourceDir}/_third_party/PhysX/physx",
-        "HOCLOTH_PHYSX_INCLUDE_DIR": "${sourceDir}/_third_party/PhysX/physx/include",
-        "HOCLOTH_PHYSX_WORK_ROOT": "${sourceDir}/_third_party/PhysX/physx",
-        "HOCLOTH_PHYSX_LIBRARY_DIR": "${sourceDir}/_third_party/PhysX/physx/bin/win.x86_64.vc143.mt/release"
+        "Python_ROOT_DIR": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "build-vs2022-release-physx",
-      "displayName": "Build Visual Studio 2022 Release PhysX",
-      "configurePreset": "vs2022-release-physx"
+      "name": "build-vs2022-release-native",
+      "displayName": "Build Visual Studio 2022 Release Native",
+      "configurePreset": "vs2022-release-native"
     }
   ]
 }
