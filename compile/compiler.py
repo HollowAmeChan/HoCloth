@@ -11,6 +11,9 @@ from .compiled import (
 from ..components.properties import _parse_component_id_list, find_component_by_id
 
 
+_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
+
+
 def _scale_vector(value, scale) -> tuple[float, float, float]:
     return (
         float(value[0]) * float(scale[0]),
@@ -225,6 +228,42 @@ def _apply_joint_parameters(compiled_bones: list[CompiledSpringJoint], typed_ite
     return configured_bones
 
 
+def _append_tail_tip_joint(compiled_bones: list[CompiledSpringJoint], typed_item) -> list[CompiledSpringJoint]:
+    if not getattr(typed_item, "append_tail_tip", False) or not compiled_bones:
+        return compiled_bones
+
+    last_joint = compiled_bones[-1]
+    head = Vector(last_joint.rest_head_local)
+    tail = Vector(last_joint.rest_tail_local)
+    direction = tail - head
+    if direction.length <= 1.0e-6:
+        return compiled_bones
+
+    tip_head = tail
+    tip_tail = tail + direction
+    compiled_bones.append(
+        CompiledSpringJoint(
+            name=f"{last_joint.name}{_TAIL_TIP_SUFFIX}",
+            parent_index=len(compiled_bones) - 1,
+            length=float(last_joint.length),
+            radius=float(last_joint.radius),
+            stiffness=float(last_joint.stiffness),
+            damping=float(last_joint.damping),
+            drag=float(last_joint.drag),
+            gravity_scale=float(last_joint.gravity_scale),
+            rest_head_local=(float(tip_head.x), float(tip_head.y), float(tip_head.z)),
+            rest_tail_local=(float(tip_tail.x), float(tip_tail.y), float(tip_tail.z)),
+            rest_local_translation=(
+                float(tip_head.x - head.x),
+                float(tip_head.y - head.y),
+                float(tip_head.z - head.z),
+            ),
+            rest_local_rotation=last_joint.rest_local_rotation,
+        )
+    )
+    return compiled_bones
+
+
 def _compile_collider(item, typed_item):
     collider_object = typed_item.collider_object
     if collider_object is None:
@@ -284,6 +323,7 @@ def compile_scene_from_components(scene) -> CompiledScene:
             bone_names = _resolve_bone_chain(scene, armature_object, typed_item.root_bone_name)
             compiled_bones = _build_compiled_bones(armature_object, bone_names) if armature_object else []
             compiled_bones = _apply_joint_parameters(compiled_bones, typed_item)
+            compiled_bones = _append_tail_tip_joint(compiled_bones, typed_item)
             compiled.spring_bones.append(
                 CompiledSpringBone(
                     component_id=item.component_id,

@@ -103,6 +103,7 @@ def _draw_spring_bone_details(layout, scene, item):
         else:
             params.prop(chain, "center_bone_name", text="Center Bone")
     params.prop(chain, "joint_radius", text="Particle Radius")
+    params.prop(chain, "append_tail_tip")
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")
     params.prop(chain, "drag")
@@ -125,6 +126,7 @@ def _draw_spring_bone_details(layout, scene, item):
     summary_box.label(text=f"Root: {chain.root_bone_name or 'None'}", icon="BONE_DATA")
     summary_box.label(text=f"Joints: {bone_count}", icon="ARMATURE_DATA")
     summary_box.label(text=f"Particle Radius: {chain.joint_radius:.3f}", icon="MESH_UVSPHERE")
+    summary_box.label(text=f"Tail Tip: {'On' if chain.append_tail_tip else 'Off'}", icon="BONE_DATA")
     if chain.center_source == "OBJECT" and chain.center_object is not None:
         summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")
     elif chain.center_source == "BONE" and chain.center_bone_name:

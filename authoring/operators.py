@@ -67,6 +67,48 @@ def _find_collider_group_component(scene, component_id: str):
     )
 
 
+def _build_runtime_from_scene(context, report=None) -> bool:
+    scene = context.scene
+    stop_live_runtime(scene, "Live runtime stopped")
+    screen = context.screen
+    if screen is not None and getattr(screen, "is_animation_playing", False):
+        bpy.ops.screen.animation_cancel(restore_frame=False)
+
+    rebuild_component_indices(scene)
+    compiled = compile_scene_from_components(scene)
+    scene.hocloth_compile_summary = compiled.summary()
+    if not compiled.spring_bones:
+        if report is not None:
+            report({"ERROR"}, "No enabled spring-bone components could be compiled.")
+        scene.hocloth_runtime_status = "Build failed: no valid spring bones"
+        return False
+
+    if compiled.total_bone_count() == 0:
+        if report is not None:
+            report({"ERROR"}, "Compiled bone chains contain no resolvable bones.")
+        scene.hocloth_runtime_status = "Build failed: resolved 0 bones"
+        return False
+
+    runtime_state = build_runtime(compiled)
+    initial_inputs = build_runtime_inputs(scene, compiled)
+    set_runtime_inputs_only(initial_inputs)
+    set_pose_baseline(capture_pose_baseline(scene, compiled))
+    scene.hocloth_runtime_handle = runtime_state["handle"]
+    scene.hocloth_runtime_step_count = runtime_state["step_count"]
+    scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    build_message = runtime_state.get("build_message", "")
+    solver_ready = runtime_state.get("physics_scene_ready", False)
+    scene.hocloth_runtime_status = (
+        f"Runtime ready via {runtime_state['backend']}: {runtime_state['summary']}"
+        f", solver_ready={solver_ready}"
+        f"{', ' + build_message if build_message else ''}"
+        ", rebuild after changing chain parameters"
+    )
+    if not solver_ready and runtime_state["backend"] == "stub" and not build_message:
+        scene.hocloth_runtime_status += ", native module unavailable so Python placeholder backend is active"
+    return True
+
+
 class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
     bl_idname = "hocloth.add_active_spring_bone"
     bl_label = "Add Active Spring Bone"
@@ -298,41 +340,8 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     bl_description = "Compile authoring data and build the native runtime scene"
 
     def execute(self, context):
-        stop_live_runtime(context.scene, "Live runtime stopped")
-        screen = context.screen
-        if screen is not None and getattr(screen, "is_animation_playing", False):
-            bpy.ops.screen.animation_cancel(restore_frame=False)
-
-        rebuild_component_indices(context.scene)
-        compiled = compile_scene_from_components(context.scene)
-        context.scene.hocloth_compile_summary = compiled.summary()
-        if not compiled.spring_bones:
-            self.report({"ERROR"}, "No enabled spring-bone components could be compiled.")
-            context.scene.hocloth_runtime_status = "Build failed: no valid spring bones"
+        if not _build_runtime_from_scene(context, self.report):
             return {"CANCELLED"}
-
-        if compiled.total_bone_count() == 0:
-            self.report({"ERROR"}, "Compiled bone chains contain no resolvable bones.")
-            context.scene.hocloth_runtime_status = "Build failed: resolved 0 bones"
-            return {"CANCELLED"}
-
-        runtime_state = build_runtime(compiled)
-        initial_inputs = build_runtime_inputs(context.scene, compiled)
-        set_runtime_inputs_only(initial_inputs)
-        set_pose_baseline(capture_pose_baseline(context.scene, compiled))
-        context.scene.hocloth_runtime_handle = runtime_state["handle"]
-        context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
-        context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
-        build_message = runtime_state.get("build_message", "")
-        solver_ready = runtime_state.get("physics_scene_ready", False)
-        context.scene.hocloth_runtime_status = (
-            f"Runtime ready via {runtime_state['backend']}: {runtime_state['summary']}"
-            f", solver_ready={solver_ready}"
-            f"{', ' + build_message if build_message else ''}"
-            ", rebuild after changing chain parameters"
-        )
-        if not solver_ready and runtime_state["backend"] == "stub" and not build_message:
-            context.scene.hocloth_runtime_status += ", native module unavailable so Python placeholder backend is active"
         return {"FINISHED"}
 
 
@@ -435,8 +444,7 @@ class HOCLOTH_OT_toggle_live_runtime(bpy.types.Operator):
                 bpy.ops.screen.animation_cancel(restore_frame=False)
             return {"FINISHED"}
 
-        if scene.hocloth_runtime_handle == 0 or get_compiled_scene() is None:
-            self.report({"ERROR"}, "Build the runtime before starting live stepping.")
+        if not _build_runtime_from_scene(context, self.report):
             return {"CANCELLED"}
 
         scene.sync_mode = "NONE"

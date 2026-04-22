@@ -4,6 +4,9 @@ from mathutils import Quaternion, Vector
 from ..compile.compiler import resolve_armature_object
 
 
+_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
+
+
 def _component_armature_lookup(compiled_scene) -> dict[str, str]:
     if compiled_scene is None:
         return {}
@@ -115,6 +118,8 @@ def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, compiled_scene, tr
             continue
 
         bone_name = transform.get("bone_name", "")
+        if bone_name.endswith(_TAIL_TIP_SUFFIX):
+            continue
         pose_bone = armature_object.pose.bones.get(bone_name)
         if pose_bone is None:
             missing_bone_count += 1

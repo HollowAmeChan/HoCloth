@@ -2,6 +2,9 @@ from importlib import import_module
 import math
 
 
+_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
+
+
 def _quat_mul(a, b):
     aw, ax, ay, az = a
     bw, bx, by, bz = b
@@ -126,6 +129,8 @@ class NativeBridgeStub:
         for chain_index, chain in enumerate(scene["compiled_scene"].bone_chains):
             chain_state = scene["chain_states"][chain_index]
             for bone_index, bone in enumerate(chain.bones):
+                if bone.name.endswith(_TAIL_TIP_SUFFIX):
+                    continue
                 bone_state = chain_state[bone_index]
                 pitch = bone_state["pitch"]
                 roll = bone_state["roll"]

@@ -94,6 +94,10 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
         update=_update_center_armature_object,
     )
     center_bone_name: bpy.props.StringProperty(name="Center Bone", update=_update_center_bone_name)
+    append_tail_tip: bpy.props.BoolProperty(
+        name="Append Tail Tip",
+        default=False,
+    )
     joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.02, min=0.0)
     collider_group_ids: bpy.props.StringProperty(name="Collider Group IDs")
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)

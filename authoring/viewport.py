@@ -3,7 +3,7 @@ import math
 import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
-from mathutils import Matrix, Vector
+from mathutils import Vector
 
 from ..compile.compiler import resolve_bone_chain_names
 from ..components.properties import _parse_component_id_list, find_component_by_id
@@ -11,6 +11,7 @@ from ..components.properties import _parse_component_id_list, find_component_by_
 
 _DRAW_HANDLER = None
 _LINE_SHADER = None
+_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
 
 _SPRING_COLOR = (0.24, 0.78, 1.0, 1.0)
 _RADIUS_COLOR = (1.0, 0.72, 0.18, 1.0)
@@ -109,6 +110,15 @@ def _joint_world_positions(component):
             continue
         world_matrix = armature_object.matrix_world @ pose_bone.matrix
         positions.append((bone_name, world_matrix.translation.copy()))
+    if positions and getattr(component, "append_tail_tip", False):
+        last_pose_bone = armature_object.pose.bones.get(positions[-1][0])
+        if last_pose_bone is not None:
+            positions.append(
+                (
+                    f"{last_pose_bone.name}{_TAIL_TIP_SUFFIX}",
+                    (armature_object.matrix_world @ last_pose_bone.tail).copy(),
+                )
+            )
     return positions
 
 
@@ -130,7 +140,7 @@ def _append_spring_bone_segments(scene, region_data, spring_segments, radius_seg
                 radius = _joint_radius(component, bone_name)
                 if radius <= 0.0:
                     continue
-                _append_polyline(radius_segments, _circle_points(position, right, up, radius))
+                _append_collider_sphere_segments(radius_segments, position, radius, region_data)
 
 
 def _append_collider_sphere_segments(segments, center, radius, region_data):
