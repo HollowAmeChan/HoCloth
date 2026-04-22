@@ -35,6 +35,7 @@ struct BoneChainDescriptor {
     float gravity_strength = 0.3f;
     float gravity_direction[3] = {0.0f, -1.0f, 0.0f};
     std::vector<std::string> collider_group_ids;
+    std::vector<std::string> collision_binding_ids;
     std::vector<BoneDescriptor> bones;
 };
 
@@ -53,6 +54,28 @@ struct ColliderGroupDescriptor {
     std::vector<std::string> collider_ids;
 };
 
+struct CollisionObjectDescriptor {
+    std::string collision_object_id;
+    std::string owner_component_id;
+    std::string motion_type = "STATIC";
+    std::string shape_type = "CAPSULE";
+    float world_translation[3] = {0.0f, 0.0f, 0.0f};
+    float world_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float linear_velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angular_velocity[3] = {0.0f, 0.0f, 0.0f};
+    float radius = 0.0f;
+    float height = 0.0f;
+    std::string source_object_name;
+    std::vector<std::string> source_group_ids;
+};
+
+struct CollisionBindingDescriptor {
+    std::string binding_id;
+    std::string owner_component_id;
+    std::vector<std::string> source_group_ids;
+    std::vector<std::string> collision_object_ids;
+};
+
 struct CacheDescriptor {
     std::string component_id;
     std::string source_object_name;
@@ -65,6 +88,8 @@ struct SceneDescriptor {
     std::vector<BoneChainDescriptor> bone_chains;
     std::vector<ColliderDescriptor> colliders;
     std::vector<ColliderGroupDescriptor> collider_groups;
+    std::vector<CollisionObjectDescriptor> collision_objects;
+    std::vector<CollisionBindingDescriptor> collision_bindings;
     std::vector<CacheDescriptor> cache_descriptors;
 };
 
@@ -106,6 +131,8 @@ struct RuntimeSceneInfo {
     std::uint64_t bone_count = 0;
     std::uint64_t collider_count = 0;
     std::uint64_t collider_group_count = 0;
+    std::uint64_t collision_object_count = 0;
+    std::uint64_t collision_binding_count = 0;
     std::uint64_t cache_descriptor_count = 0;
     bool physics_scene_ready = false;
 };

@@ -93,7 +93,7 @@ def _draw_spring_bone_details(layout, scene, item):
     preset_box.label(text="Apply preset, then rebuild runtime", icon="INFO")
 
     params.label(text="Spring")
-    params.prop(chain, "center_source", text="Center")
+    params.prop(chain, "center_source", text="Center Anchor")
     if chain.center_source == "OBJECT":
         params.prop(chain, "center_object", text="Center Object")
     elif chain.center_source == "BONE":
@@ -103,13 +103,15 @@ def _draw_spring_bone_details(layout, scene, item):
         else:
             params.prop(chain, "center_bone_name", text="Center Bone")
     params.prop(chain, "joint_radius", text="Particle Radius")
-    params.prop(chain, "append_tail_tip")
+    params.prop(chain, "append_tail_tip", text="Append Tail Tip Joint")
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")
     params.prop(chain, "drag")
     params.prop(chain, "gravity_strength")
     params.prop(chain, "gravity_direction")
-    params.prop(chain, "collider_group_ids")
+    params.separator()
+    params.label(text="Collision")
+    params.prop(chain, "collider_group_ids", text="Collision Bindings")
     sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH")
     sync_op.component_id = item.component_id
     group_link_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED")
@@ -117,7 +119,7 @@ def _draw_spring_bone_details(layout, scene, item):
 
     group_names = list_component_display_names(scene, _parse_component_id_list(chain.collider_group_ids))
     if group_names:
-        body.label(text="Collider Groups", icon="LINKED")
+        body.label(text="Collision Bindings", icon="LINKED")
         for group_name in group_names[:4]:
             body.label(text=group_name, icon="DOT")
 
@@ -133,7 +135,7 @@ def _draw_spring_bone_details(layout, scene, item):
         summary_box.label(text=f"Center Bone: {chain.center_bone_name}", icon="CON_ARMATURE")
     else:
         summary_box.label(text="Center: None", icon="INFO")
-    summary_box.label(text=f"Collider Groups: {len(group_names)}", icon="LINKED")
+    summary_box.label(text=f"Collision Bindings: {len(group_names)}", icon="LINKED")
 
     if chain.joint_overrides:
         joint_box = body.box()
@@ -202,16 +204,17 @@ def _draw_collider_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.prop(collider, "collider_object", text="Object")
+    body.label(text="Collision Object")
+    body.prop(collider, "collider_object", text="Source Object")
     body.prop(collider, "shape_type", text="Shape")
-    body.prop(collider, "radius")
+    body.prop(collider, "radius", text="Radius")
     if collider.shape_type == "CAPSULE":
-        body.prop(collider, "height")
+        body.prop(collider, "height", text="Capsule Height")
 
     if collider_object is None:
-        body.label(text="Assign an object for this collider", icon="INFO")
+        body.label(text="Assign an object for this collision object", icon="INFO")
     else:
-        body.label(text=f"World Source: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
+        body.label(text=f"Transform Source: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
         body.label(text=f"Type: {collider_object.type}", icon="INFO")
 
 
@@ -226,7 +229,7 @@ def _draw_collider_group_details(layout, scene, item):
     header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
     title_col = header.column(align=True)
     title_col.label(text=item.display_name, icon="GROUP")
-    title_col.label(text=f"{len(collider_names)} colliders", icon="MESH_UVSPHERE")
+    title_col.label(text=f"{len(collider_names)} collision objects", icon="MESH_UVSPHERE")
     actions = header.row(align=True)
     actions.prop(item, "enabled", text="")
     remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
@@ -236,8 +239,10 @@ def _draw_collider_group_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.prop(group, "collider_ids")
+    body.label(text="Collision Binding")
+    body.prop(group, "collider_ids", text="Collision Objects")
     body.label(text="Use comma-separated collider component IDs", icon="INFO")
+    body.label(text="This compiles into a runtime collision binding", icon="INFO")
     assign_op = body.operator("hocloth.assign_selected_colliders_to_group", icon="RESTRICT_SELECT_OFF")
     assign_op.component_id = item.component_id
     for collider_name in collider_names[:6]:
@@ -281,16 +286,16 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        layout.label(text="MVP Host Architecture")
+        layout.label(text="XPBD Spring Runtime")
         quick_add = layout.row(align=True)
-        quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA")
-        quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE")
-        quick_add.operator("hocloth.add_collider_group", icon="GROUP")
-        quick_add.operator("hocloth.add_cache_output", icon="EXPORT")
+        quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA", text="Spring")
+        quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE", text="Collider")
+        quick_add.operator("hocloth.add_collider_group", icon="GROUP", text="Binding")
+        quick_add.operator("hocloth.add_cache_output", icon="EXPORT", text="Cache")
 
         row = layout.row(align=True)
-        row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH")
-        row.operator("hocloth.step_runtime", icon="FRAME_NEXT")
+        row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH", text="Build")
+        row.operator("hocloth.step_runtime", icon="FRAME_NEXT", text="Step")
         row.operator(
             "hocloth.toggle_live_runtime",
             icon="PAUSE" if scene.hocloth_runtime_live_running else "PLAY",
@@ -298,7 +303,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         )
 
         debug_box = layout.box()
-        debug_box.prop(scene, "hocloth_ui_debug_expanded", text="Debug Tools")
+        debug_box.prop(scene, "hocloth_ui_debug_expanded", text="Advanced Tools")
         if scene.hocloth_ui_debug_expanded:
             debug_row = debug_box.row(align=True)
             debug_row.operator("hocloth.export_compiled_scene", icon="EXPORT")
@@ -328,15 +333,21 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                     op = sub.operator("hocloth.remove_component", text="", icon="X")
                     op.component_id = item.component_id
 
-        status_box = layout.box()
-        status_box.label(text=f"Compiled: {scene.hocloth_compile_summary}")
-        settings_col = status_box.column(align=True)
+        runtime_box = layout.box()
+        runtime_box.label(text="Runtime")
+        runtime_box.label(text=f"Compiled: {scene.hocloth_compile_summary}")
+        settings_col = runtime_box.column(align=True)
         settings_col.prop(scene, "hocloth_runtime_dt", text="dt")
         settings_col.prop(scene, "hocloth_runtime_substeps", text="Substeps")
         settings_col.prop(scene, "hocloth_apply_pose_on_step", text="Apply Pose On Step")
+        runtime_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
+        runtime_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
+        runtime_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
+        runtime_box.label(text=f"Live: {'Running' if scene.hocloth_runtime_live_running else 'Stopped'}")
+        runtime_box.label(text=f"Status: {scene.hocloth_runtime_status}")
 
         overlay_box = layout.box()
-        overlay_box.label(text="Viewport Debug")
+        overlay_box.label(text="Viewport Overlay")
         overlay_box.prop(scene, "hocloth_viewport_overlay_enabled", text="Enable Overlay")
         overlay_col = overlay_box.column(align=True)
         overlay_col.enabled = scene.hocloth_viewport_overlay_enabled
@@ -344,13 +355,6 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         overlay_col.prop(scene, "hocloth_viewport_draw_particle_radius")
         overlay_col.prop(scene, "hocloth_viewport_draw_colliders")
         overlay_col.prop(scene, "hocloth_viewport_overlay_alpha")
-
-        status_box.label(text="Runtime")
-        status_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
-        status_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
-        status_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
-        status_box.label(text=f"Live: {'Running' if scene.hocloth_runtime_live_running else 'Stopped'}")
-        status_box.label(text=f"Status: {scene.hocloth_runtime_status}")
 
 
 CLASSES = (HOCLOTH_PT_main_panel,)

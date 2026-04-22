@@ -55,6 +55,7 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
 
     add_library(hocloth_runtime_core STATIC
+        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_collision_world.cpp"
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
     )
     target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")

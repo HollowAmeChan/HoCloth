@@ -78,7 +78,7 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     )
     root_bone_name: bpy.props.StringProperty(name="Root Bone", update=_update_root_bone_name)
     center_source: bpy.props.EnumProperty(
-        name="Center Source",
+        name="Center Anchor",
         items=(
             ("NONE", "None", "No separate center"),
             ("OBJECT", "Object", "Use an object transform as center"),
@@ -95,11 +95,11 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     )
     center_bone_name: bpy.props.StringProperty(name="Center Bone", update=_update_center_bone_name)
     append_tail_tip: bpy.props.BoolProperty(
-        name="Append Tail Tip",
+        name="Append Tail Tip Joint",
         default=False,
     )
-    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.02, min=0.0)
-    collider_group_ids: bpy.props.StringProperty(name="Collider Group IDs")
+    joint_radius: bpy.props.FloatProperty(name="Particle Radius", default=0.02, min=0.0)
+    collider_group_ids: bpy.props.StringProperty(name="Collision Bindings")
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
     damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0)
     drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0)
@@ -130,7 +130,7 @@ class HoClothColliderComponent(bpy.types.PropertyGroup):
 
 class HoClothColliderGroupComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
-    collider_ids: bpy.props.StringProperty(name="Collider IDs")
+    collider_ids: bpy.props.StringProperty(name="Collider Sources")
 
 
 class HoClothCacheOutputComponent(bpy.types.PropertyGroup):

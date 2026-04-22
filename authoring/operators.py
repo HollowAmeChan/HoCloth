@@ -159,12 +159,12 @@ class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
 
 class HOCLOTH_OT_add_collider_group(bpy.types.Operator):
     bl_idname = "hocloth.add_collider_group"
-    bl_label = "Add Collider Group"
-    bl_description = "Create a collider-group component"
+    bl_label = "Add Collision Binding"
+    bl_description = "Create a collision-binding component"
 
     def execute(self, context):
-        create_component(context.scene, "COLLIDER_GROUP", "Collider Group")
-        context.scene.hocloth_runtime_status = "Added collider group"
+        create_component(context.scene, "COLLIDER_GROUP", "Collision Binding")
+        context.scene.hocloth_runtime_status = "Added collision binding"
         return {"FINISHED"}
 
 
@@ -185,15 +185,15 @@ class HOCLOTH_OT_add_cache_output(bpy.types.Operator):
 
 class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
     bl_idname = "hocloth.assign_selected_colliders_to_group"
-    bl_label = "Use Selected Colliders"
-    bl_description = "Fill this collider group from the currently selected collider source objects"
+    bl_label = "Use Selected Collision Objects"
+    bl_description = "Fill this collision binding from the currently selected collider source objects"
 
     component_id: bpy.props.StringProperty(name="Component ID")
 
     def execute(self, context):
         group = _find_collider_group_component(context.scene, self.component_id)
         if group is None:
-            self.report({"ERROR"}, "Collider group was not found.")
+            self.report({"ERROR"}, "Collision binding was not found.")
             return {"CANCELLED"}
 
         selected_object_names = {obj.name for obj in context.selected_objects}
@@ -203,7 +203,7 @@ class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
             if collider.collider_object is not None and collider.collider_object.name in selected_object_names
         ]
         group.collider_ids = ", ".join(matched_ids)
-        context.scene.hocloth_runtime_status = f"Assigned {len(matched_ids)} colliders to group"
+        context.scene.hocloth_runtime_status = f"Assigned {len(matched_ids)} collision objects to binding"
         return {"FINISHED"}
 
 
@@ -317,8 +317,8 @@ class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
 
 class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
     bl_idname = "hocloth.assign_all_groups_to_spring_bone"
-    bl_label = "Use All Collider Groups"
-    bl_description = "Link all current collider groups to this spring bone"
+    bl_label = "Use All Collision Bindings"
+    bl_description = "Link all current collision bindings to this spring bone"
 
     component_id: bpy.props.StringProperty(name="Component ID")
 
@@ -330,7 +330,7 @@ class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
 
         group_ids = [item.component_id for item in context.scene.hocloth_collider_group_components]
         chain.collider_group_ids = ", ".join(group_ids)
-        context.scene.hocloth_runtime_status = f"Linked {len(group_ids)} collider groups to spring bone"
+        context.scene.hocloth_runtime_status = f"Linked {len(group_ids)} collision bindings to spring bone"
         return {"FINISHED"}
 
 

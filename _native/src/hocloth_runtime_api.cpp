@@ -1,4 +1,5 @@
 #include "hocloth_runtime_api.hpp"
+#include "hocloth_collision_world.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -44,6 +45,7 @@ struct RuntimeSceneState {
     SceneDescriptor scene;
     RuntimeInputs inputs;
     std::vector<RuntimeBoneChainState> chain_states;
+    CollisionWorld collision_world;
     std::string backend = "xpbd";
     std::string build_message;
     bool physics_scene_ready = false;
@@ -332,19 +334,25 @@ void initialize_chain_state(
     chain_state.initialized = true;
 }
 
-std::vector<const ColliderDescriptor*> colliders_for_chain(const SceneDescriptor& scene, const BoneChainDescriptor& chain) {
-    std::vector<const ColliderDescriptor*> result;
-    for (const std::string& group_id : chain.collider_group_ids) {
-        for (const ColliderGroupDescriptor& group : scene.collider_groups) {
-            if (group.component_id != group_id) {
+std::vector<const CollisionWorldObject*> collision_objects_for_chain(
+    const RuntimeSceneState& scene_state,
+    const BoneChainDescriptor& chain
+) {
+    std::vector<const CollisionWorldObject*> result;
+    if (chain.collision_binding_ids.empty() || scene_state.collision_world.binding_count() == 0) {
+        return result;
+    }
+
+    for (const std::string& binding_id : chain.collision_binding_ids) {
+        for (const CollisionWorldBinding& binding : scene_state.collision_world.bindings()) {
+            if (binding.binding_id != binding_id) {
                 continue;
             }
-            for (const std::string& collider_id : group.collider_ids) {
-                for (const ColliderDescriptor& collider : scene.colliders) {
-                    if (collider.component_id == collider_id) {
-                        result.push_back(&collider);
-                    }
+            for (const std::size_t object_index : binding.object_indices) {
+                if (object_index >= scene_state.collision_world.objects().size()) {
+                    continue;
                 }
+                result.push_back(&scene_state.collision_world.objects()[object_index]);
             }
         }
     }
@@ -356,7 +364,7 @@ ColliderContact evaluate_collider_contact(
     const RuntimeBoneState& state,
     float bone_length,
     float particle_radius,
-    const ColliderDescriptor& collider
+    const CollisionWorldObject& collider
 ) {
     const Vec3 bone_tail = state.position;
     const bool use_bone_capsule = bone_length > 1.0e-6f && particle_radius > 0.0f;
@@ -482,13 +490,13 @@ void apply_collider_constraints(
     RuntimeBoneState& state,
     float bone_length,
     float particle_radius,
-    const std::vector<const ColliderDescriptor*>& colliders
+    const std::vector<const CollisionWorldObject*>& colliders
 ) {
     if (colliders.empty()) {
         return;
     }
 
-    for (const ColliderDescriptor* collider : colliders) {
+    for (const CollisionWorldObject* collider : colliders) {
         const ColliderContact contact = evaluate_collider_contact(head_position, state, bone_length, particle_radius, *collider);
         project_contact(head_position, state, contact, true, bone_length);
     }
@@ -569,7 +577,7 @@ void solve_bone_constraints_for_index(
     const Vec3& root_rest_head,
     float dt,
     float iterations,
-    const std::vector<const ColliderDescriptor*>& colliders,
+    const std::vector<const CollisionWorldObject*>& colliders,
     bool apply_collision
 ) {
     const BoneDescriptor& bone = chain.bones[bone_index];
@@ -613,7 +621,7 @@ void solve_bone_constraints_for_index(
 }
 
 void step_bone_chain(
-    const SceneDescriptor& scene,
+    const RuntimeSceneState& scene_state,
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
     const BoneChainRuntimeInput* chain_input,
@@ -663,7 +671,7 @@ void step_bone_chain(
     const Vec3 gravity = mul(gravity_direction, 60.0f * gravity_strength);
     const float iterations = 8.0f;
     const std::size_t solver_iterations = 8;
-    const std::vector<const ColliderDescriptor*> colliders = colliders_for_chain(scene, chain);
+    const std::vector<const CollisionWorldObject*> colliders = collision_objects_for_chain(scene_state, chain);
 
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
         const BoneDescriptor& bone = chain.bones[bone_index];
@@ -790,7 +798,7 @@ void advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs
             const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
             RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
             step_bone_chain(
-                scene_state.scene,
+                scene_state,
                 chain,
                 chain_state,
                 find_chain_input(scene_state.inputs, chain),
@@ -878,6 +886,7 @@ SceneHandle build_scene(const SceneDescriptor& scene) {
     state.scene = scene;
     state.inputs = RuntimeInputs{};
     state.chain_states = make_chain_states(scene);
+    state.collision_world.build_from_scene(scene);
     state.backend = "xpbd";
     state.build_message = "XPBD runtime scene created";
     state.physics_scene_ready = false;
@@ -959,6 +968,8 @@ RuntimeSceneInfo get_scene_info(SceneHandle handle) {
     info.bone_chain_count = static_cast<std::uint64_t>(it->second.scene.bone_chains.size());
     info.collider_count = static_cast<std::uint64_t>(it->second.scene.colliders.size());
     info.collider_group_count = static_cast<std::uint64_t>(it->second.scene.collider_groups.size());
+    info.collision_object_count = static_cast<std::uint64_t>(it->second.scene.collision_objects.size());
+    info.collision_binding_count = static_cast<std::uint64_t>(it->second.scene.collision_bindings.size());
     info.cache_descriptor_count = static_cast<std::uint64_t>(it->second.scene.cache_descriptors.size());
     info.physics_scene_ready = it->second.physics_scene_ready;
     for (const BoneChainDescriptor& chain : it->second.scene.bone_chains) {

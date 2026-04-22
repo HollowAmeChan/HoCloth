@@ -72,7 +72,7 @@ class NativeBridgeStub:
             "steps": 0,
             "runtime_inputs": {"bone_chains": []},
             "chain_states": self._make_chain_states(compiled_scene),
-            "collider_lookup": self._build_collider_lookup(compiled_scene),
+            "collision_binding_lookup": self._build_collision_binding_lookup(compiled_scene),
         }
         return {
             "handle": handle,
@@ -91,7 +91,7 @@ class NativeBridgeStub:
             scene["steps"] = 0
             scene["runtime_inputs"] = {"bone_chains": []}
             scene["chain_states"] = self._make_chain_states(scene["compiled_scene"])
-            scene["collider_lookup"] = self._build_collider_lookup(scene["compiled_scene"])
+            scene["collision_binding_lookup"] = self._build_collision_binding_lookup(scene["compiled_scene"])
         return True
 
     def set_runtime_inputs(self, handle, runtime_inputs):
@@ -168,16 +168,19 @@ class NativeBridgeStub:
             for chain in compiled_scene.bone_chains
         ]
 
-    def _build_collider_lookup(self, compiled_scene):
-        collider_by_id = {collider.component_id: collider for collider in compiled_scene.colliders}
-        group_lookup = {}
-        for group in getattr(compiled_scene, "collider_groups", []):
-            group_lookup[group.component_id] = [
-                collider_by_id[collider_id]
-                for collider_id in group.collider_ids
-                if collider_id in collider_by_id
+    def _build_collision_binding_lookup(self, compiled_scene):
+        object_lookup = {
+            collision_object.collision_object_id: collision_object
+            for collision_object in getattr(compiled_scene, "collision_objects", [])
+        }
+        binding_lookup = {}
+        for binding in getattr(compiled_scene, "collision_bindings", []):
+            binding_lookup[binding.binding_id] = [
+                object_lookup[collision_object_id]
+                for collision_object_id in binding.collision_object_ids
+                if collision_object_id in object_lookup
             ]
-        return group_lookup
+        return binding_lookup
 
     def _find_runtime_input(self, scene, component_id):
         runtime_inputs = scene.get("runtime_inputs") or {}
@@ -198,22 +201,22 @@ class NativeBridgeStub:
             target_roll + center_offset[0] * offset_scale,
         )
 
-    def _apply_collider_response(self, chain, bone, bone_state, colliders):
-        if not colliders:
+    def _apply_collision_response(self, chain, bone, bone_state, collision_objects):
+        if not collision_objects:
             return
 
         point = (bone_state["roll"], bone_state["pitch"], 0.0)
         point_scale = max(0.05, bone.length)
-        for collider in colliders:
-            world_translation = getattr(collider, "world_translation", (0.0, 0.0, 0.0))
-            radius = max(0.0, float(getattr(collider, "radius", 0.0)))
+        for collision_object in collision_objects:
+            world_translation = getattr(collision_object, "world_translation", (0.0, 0.0, 0.0))
+            radius = max(0.0, float(getattr(collision_object, "radius", 0.0)))
             collider_center = (
                 world_translation[0] * 0.35,
                 world_translation[2] * 0.35,
                 0.0,
             )
-            if getattr(collider, "shape_type", "SPHERE") == "CAPSULE":
-                height = max(0.0, float(getattr(collider, "height", 0.0)))
+            if getattr(collision_object, "shape_type", "SPHERE") == "CAPSULE":
+                height = max(0.0, float(getattr(collision_object, "height", 0.0)))
                 a = (collider_center[0], collider_center[1] - height * 0.2, 0.0)
                 b = (collider_center[0], collider_center[1] + height * 0.2, 0.0)
                 closest = _closest_point_on_segment(point, a, b)
@@ -251,9 +254,9 @@ class NativeBridgeStub:
             max_velocity = 8.0
             chain_size = max(1, len(chain_state))
             runtime_input = self._find_runtime_input(scene, chain.component_id)
-            colliders = []
-            for group_id in getattr(chain, "collider_group_ids", []):
-                colliders.extend(scene.get("collider_lookup", {}).get(group_id, []))
+            collision_objects = []
+            for binding_id in getattr(chain, "collision_binding_ids", []):
+                collision_objects.extend(scene.get("collision_binding_lookup", {}).get(binding_id, []))
 
             for bone_index, bone_state in enumerate(chain_state):
                 bone = chain.bones[bone_index]
@@ -306,7 +309,7 @@ class NativeBridgeStub:
                     -max_angle,
                     max_angle,
                 )
-                self._apply_collider_response(chain, bone, bone_state, colliders)
+                self._apply_collision_response(chain, bone, bone_state, collision_objects)
 
 
 _STUB_BRIDGE = NativeBridgeStub()

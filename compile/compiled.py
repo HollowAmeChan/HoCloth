@@ -31,6 +31,7 @@ class CompiledSpringBone:
     gravity_strength: float
     gravity_direction: tuple[float, float, float]
     collider_group_ids: list[str] = field(default_factory=list)
+    collision_binding_ids: list[str] = field(default_factory=list)
     armature_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     joints: list[CompiledSpringJoint] = field(default_factory=list)
 
@@ -61,6 +62,30 @@ class CompiledColliderGroup:
 
 
 @dataclass
+class CompiledCollisionObject:
+    collision_object_id: str
+    owner_component_id: str
+    motion_type: str
+    shape_type: str
+    world_translation: tuple[float, float, float]
+    world_rotation: tuple[float, float, float, float]
+    linear_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    angular_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    radius: float = 0.0
+    height: float = 0.0
+    source_object_name: str = ""
+    source_group_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CompiledCollisionBinding:
+    binding_id: str
+    owner_component_id: str
+    source_group_ids: list[str] = field(default_factory=list)
+    collision_object_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class SimulationCacheDescriptor:
     component_id: str
     source_object_name: str
@@ -83,6 +108,8 @@ class CompiledScene:
     spring_bones: list[CompiledSpringBone] = field(default_factory=list)
     colliders: list[CompiledCollider] = field(default_factory=list)
     collider_groups: list[CompiledColliderGroup] = field(default_factory=list)
+    collision_objects: list[CompiledCollisionObject] = field(default_factory=list)
+    collision_bindings: list[CompiledCollisionBinding] = field(default_factory=list)
     cache_descriptors: list[SimulationCacheDescriptor] = field(default_factory=list)
 
     def total_bone_count(self) -> int:
@@ -98,6 +125,8 @@ class CompiledScene:
             f"bones={self.total_bone_count()}, "
             f"colliders={len(self.colliders)}, "
             f"collider_groups={len(self.collider_groups)}, "
+            f"collision_objects={len(self.collision_objects)}, "
+            f"collision_bindings={len(self.collision_bindings)}, "
             f"cache_outputs={len(self.cache_descriptors)}"
         )
 
@@ -112,6 +141,7 @@ class CompiledScene:
                     "center_bone_name": chain.center_bone_name,
                     "joint_radius": chain.joint_radius,
                     "collider_group_ids": list(chain.collider_group_ids),
+                    "collision_binding_ids": list(chain.collision_binding_ids),
                     "stiffness": chain.stiffness,
                     "damping": chain.damping,
                     "drag": chain.drag,
@@ -156,6 +186,32 @@ class CompiledScene:
                     "collider_ids": list(group.collider_ids),
                 }
                 for group in self.collider_groups
+            ],
+            "collision_objects": [
+                {
+                    "collision_object_id": collision_object.collision_object_id,
+                    "owner_component_id": collision_object.owner_component_id,
+                    "motion_type": collision_object.motion_type,
+                    "shape_type": collision_object.shape_type,
+                    "world_translation": collision_object.world_translation,
+                    "world_rotation": collision_object.world_rotation,
+                    "linear_velocity": collision_object.linear_velocity,
+                    "angular_velocity": collision_object.angular_velocity,
+                    "radius": collision_object.radius,
+                    "height": collision_object.height,
+                    "source_object_name": collision_object.source_object_name,
+                    "source_group_ids": list(collision_object.source_group_ids),
+                }
+                for collision_object in self.collision_objects
+            ],
+            "collision_bindings": [
+                {
+                    "binding_id": binding.binding_id,
+                    "owner_component_id": binding.owner_component_id,
+                    "source_group_ids": list(binding.source_group_ids),
+                    "collision_object_ids": list(binding.collision_object_ids),
+                }
+                for binding in self.collision_bindings
             ],
         }
         data["bone_chains"] = data["spring_bones"]

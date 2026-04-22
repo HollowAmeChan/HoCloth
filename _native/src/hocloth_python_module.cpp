@@ -78,6 +78,9 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
             if (chain_dict.contains("collider_group_ids")) {
                 chain.collider_group_ids = nb::cast<std::vector<std::string>>(chain_dict["collider_group_ids"]);
             }
+            if (chain_dict.contains("collision_binding_ids")) {
+                chain.collision_binding_ids = nb::cast<std::vector<std::string>>(chain_dict["collision_binding_ids"]);
+            }
 
             if (chain_dict.contains("bones") || chain_dict.contains("joints")) {
                 nb::handle bone_source = chain_dict.contains("joints")
@@ -184,6 +187,80 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
         }
     }
 
+    if (scene_dict.contains("collision_objects")) {
+        const nb::list collision_objects = nb::cast<nb::list>(scene_dict["collision_objects"]);
+        for (nb::handle item_handle : collision_objects) {
+            const nb::dict object_dict = nb::cast<nb::dict>(item_handle);
+            CollisionObjectDescriptor collision_object;
+            collision_object.collision_object_id = nb::cast<std::string>(object_dict["collision_object_id"]);
+            if (object_dict.contains("owner_component_id")) {
+                collision_object.owner_component_id = nb::cast<std::string>(object_dict["owner_component_id"]);
+            }
+            if (object_dict.contains("motion_type")) {
+                collision_object.motion_type = nb::cast<std::string>(object_dict["motion_type"]);
+            }
+            if (object_dict.contains("shape_type")) {
+                collision_object.shape_type = nb::cast<std::string>(object_dict["shape_type"]);
+            }
+            if (object_dict.contains("world_translation")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["world_translation"]),
+                    collision_object.world_translation
+                );
+            }
+            if (object_dict.contains("world_rotation")) {
+                copy_quat_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["world_rotation"]),
+                    collision_object.world_rotation
+                );
+            }
+            if (object_dict.contains("linear_velocity")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["linear_velocity"]),
+                    collision_object.linear_velocity
+                );
+            }
+            if (object_dict.contains("angular_velocity")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["angular_velocity"]),
+                    collision_object.angular_velocity
+                );
+            }
+            if (object_dict.contains("radius")) {
+                collision_object.radius = nb::cast<float>(object_dict["radius"]);
+            }
+            if (object_dict.contains("height")) {
+                collision_object.height = nb::cast<float>(object_dict["height"]);
+            }
+            if (object_dict.contains("source_object_name")) {
+                collision_object.source_object_name = nb::cast<std::string>(object_dict["source_object_name"]);
+            }
+            if (object_dict.contains("source_group_ids")) {
+                collision_object.source_group_ids = nb::cast<std::vector<std::string>>(object_dict["source_group_ids"]);
+            }
+            scene.collision_objects.push_back(collision_object);
+        }
+    }
+
+    if (scene_dict.contains("collision_bindings")) {
+        const nb::list collision_bindings = nb::cast<nb::list>(scene_dict["collision_bindings"]);
+        for (nb::handle item_handle : collision_bindings) {
+            const nb::dict binding_dict = nb::cast<nb::dict>(item_handle);
+            CollisionBindingDescriptor binding;
+            binding.binding_id = nb::cast<std::string>(binding_dict["binding_id"]);
+            if (binding_dict.contains("owner_component_id")) {
+                binding.owner_component_id = nb::cast<std::string>(binding_dict["owner_component_id"]);
+            }
+            if (binding_dict.contains("source_group_ids")) {
+                binding.source_group_ids = nb::cast<std::vector<std::string>>(binding_dict["source_group_ids"]);
+            }
+            if (binding_dict.contains("collision_object_ids")) {
+                binding.collision_object_ids = nb::cast<std::vector<std::string>>(binding_dict["collision_object_ids"]);
+            }
+            scene.collision_bindings.push_back(binding);
+        }
+    }
+
     return scene;
 }
 
@@ -244,6 +321,8 @@ nb::dict build_scene_dict(const nb::dict& scene_dict) {
                         ", bones=" + std::to_string(info.bone_count) +
                         ", colliders=" + std::to_string(info.collider_count) +
                         ", collider_groups=" + std::to_string(info.collider_group_count) +
+                        ", collision_objects=" + std::to_string(info.collision_object_count) +
+                        ", collision_bindings=" + std::to_string(info.collision_binding_count) +
                         ", cache_outputs=" + std::to_string(info.cache_descriptor_count);
     result["backend"] = info.backend;
     result["build_message"] = info.build_message;

@@ -1,6 +1,8 @@
 from mathutils import Matrix, Quaternion, Vector
 
 from .compiled import (
+    CompiledCollisionBinding,
+    CompiledCollisionObject,
     CompiledCollider,
     CompiledColliderGroup,
     CompiledScene,
@@ -281,6 +283,20 @@ def _compile_collider(item, typed_item):
     )
 
 
+def _compiled_collision_object_from_collider(compiled_collider: CompiledCollider) -> CompiledCollisionObject:
+    return CompiledCollisionObject(
+        collision_object_id=f"collision::{compiled_collider.component_id}",
+        owner_component_id=compiled_collider.component_id,
+        motion_type="KINEMATIC",
+        shape_type=compiled_collider.shape_type,
+        world_translation=compiled_collider.world_translation,
+        world_rotation=compiled_collider.world_rotation,
+        radius=float(compiled_collider.radius),
+        height=float(compiled_collider.height),
+        source_object_name=compiled_collider.object_name,
+    )
+
+
 def _resolve_component(scene, component_type: str, component_id: str):
     if component_type in {"SPRING_BONE", "BONE_CHAIN"}:
         return find_component_by_id(scene.hocloth_spring_bone_components, component_id)
@@ -305,6 +321,7 @@ def _build_topology_hash(source_object) -> str:
 def compile_scene_from_components(scene) -> CompiledScene:
     compiled = CompiledScene()
     compiled_collider_ids: set[str] = set()
+    collision_object_id_by_collider_id: dict[str, str] = {}
     deferred_collider_groups: list[tuple[str, object]] = []
     deferred_cache_outputs: list[tuple[str, object]] = []
 
@@ -341,6 +358,7 @@ def compile_scene_from_components(scene) -> CompiledScene:
                     center_bone_name=typed_item.center_bone_name if typed_item.center_source == "BONE" else "",
                     joint_radius=float(typed_item.joint_radius),
                     collider_group_ids=_parse_component_id_list(typed_item.collider_group_ids),
+                    collision_binding_ids=_parse_component_id_list(typed_item.collider_group_ids),
                     stiffness=typed_item.stiffness,
                     damping=typed_item.damping,
                     drag=typed_item.drag,
@@ -360,6 +378,9 @@ def compile_scene_from_components(scene) -> CompiledScene:
             if compiled_collider is not None:
                 compiled.colliders.append(compiled_collider)
                 compiled_collider_ids.add(compiled_collider.component_id)
+                collision_object = _compiled_collision_object_from_collider(compiled_collider)
+                compiled.collision_objects.append(collision_object)
+                collision_object_id_by_collider_id[compiled_collider.component_id] = collision_object.collision_object_id
             continue
 
         if item.component_type == "COLLIDER_GROUP":
@@ -385,6 +406,18 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 collider_ids=collider_ids,
             )
         )
+        compiled.collision_bindings.append(
+            CompiledCollisionBinding(
+                binding_id=component_id,
+                owner_component_id=component_id,
+                source_group_ids=[component_id],
+                collision_object_ids=[
+                    collision_object_id_by_collider_id[collider_id]
+                    for collider_id in collider_ids
+                    if collider_id in collision_object_id_by_collider_id
+                ],
+            )
+        )
 
     if compiled.colliders and not compiled.collider_groups:
         compiled.collider_groups.append(
@@ -393,16 +426,33 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 collider_ids=[collider.component_id for collider in compiled.colliders],
             )
         )
+        compiled.collision_bindings.append(
+            CompiledCollisionBinding(
+                binding_id="__auto_all_colliders__",
+                owner_component_id="__auto_all_colliders__",
+                source_group_ids=["__auto_all_colliders__"],
+                collision_object_ids=[
+                    collision_object_id_by_collider_id[collider.component_id]
+                    for collider in compiled.colliders
+                    if collider.component_id in collision_object_id_by_collider_id
+                ],
+            )
+        )
 
     if compiled.collider_groups:
         all_group_ids = {group.component_id for group in compiled.collider_groups}
+        all_binding_ids = {binding.binding_id for binding in compiled.collision_bindings}
         for spring_bone in compiled.spring_bones:
             if spring_bone.collider_group_ids:
                 spring_bone.collider_group_ids = [
                     group_id for group_id in spring_bone.collider_group_ids if group_id in all_group_ids
                 ]
+                spring_bone.collision_binding_ids = [
+                    binding_id for binding_id in spring_bone.collision_binding_ids if binding_id in all_binding_ids
+                ]
             elif "__auto_all_colliders__" in all_group_ids:
                 spring_bone.collider_group_ids = ["__auto_all_colliders__"]
+                spring_bone.collision_binding_ids = ["__auto_all_colliders__"]
 
     for component_id, typed_item in deferred_cache_outputs:
         source_object = typed_item.source_object
