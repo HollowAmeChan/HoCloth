@@ -8,7 +8,7 @@ from .compiled import (
     CompiledSpringJoint,
     SimulationCacheDescriptor,
 )
-from ..components.properties import _parse_component_id_list
+from ..components.properties import _parse_component_id_list, find_component_by_id
 
 
 def _scale_vector(value, scale) -> tuple[float, float, float]:
@@ -242,6 +242,18 @@ def _compile_collider(item, typed_item):
     )
 
 
+def _resolve_component(scene, component_type: str, component_id: str):
+    if component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+        return find_component_by_id(scene.hocloth_spring_bone_components, component_id)
+    if component_type == "COLLIDER":
+        return find_component_by_id(scene.hocloth_collider_components, component_id)
+    if component_type == "COLLIDER_GROUP":
+        return find_component_by_id(scene.hocloth_collider_group_components, component_id)
+    if component_type == "CACHE_OUTPUT":
+        return find_component_by_id(scene.hocloth_cache_output_components, component_id)
+    return None
+
+
 def _build_topology_hash(source_object) -> str:
     if source_object is None:
         return ""
@@ -258,14 +270,13 @@ def compile_scene_from_components(scene) -> CompiledScene:
     deferred_cache_outputs: list[tuple[str, object]] = []
 
     for item in scene.hocloth_components:
-        if not item.enabled or item.container_index < 0:
+        if not item.enabled:
             continue
 
         if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
-            if item.container_index >= len(scene.hocloth_spring_bone_components):
+            typed_item = _resolve_component(scene, item.component_type, item.component_id)
+            if typed_item is None:
                 continue
-
-            typed_item = scene.hocloth_spring_bone_components[item.container_index]
             armature_object = typed_item.armature_object
             if armature_object is None or armature_object.type != "ARMATURE":
                 continue
@@ -302,10 +313,9 @@ def compile_scene_from_components(scene) -> CompiledScene:
             continue
 
         if item.component_type == "COLLIDER":
-            if item.container_index >= len(scene.hocloth_collider_components):
+            typed_item = _resolve_component(scene, item.component_type, item.component_id)
+            if typed_item is None:
                 continue
-
-            typed_item = scene.hocloth_collider_components[item.container_index]
             compiled_collider = _compile_collider(item, typed_item)
             if compiled_collider is not None:
                 compiled.colliders.append(compiled_collider)
@@ -313,13 +323,15 @@ def compile_scene_from_components(scene) -> CompiledScene:
             continue
 
         if item.component_type == "COLLIDER_GROUP":
-            if item.container_index < len(scene.hocloth_collider_group_components):
-                deferred_collider_groups.append((item.component_id, scene.hocloth_collider_group_components[item.container_index]))
+            typed_item = _resolve_component(scene, item.component_type, item.component_id)
+            if typed_item is not None:
+                deferred_collider_groups.append((item.component_id, typed_item))
             continue
 
         if item.component_type == "CACHE_OUTPUT":
-            if item.container_index < len(scene.hocloth_cache_output_components):
-                deferred_cache_outputs.append((item.component_id, scene.hocloth_cache_output_components[item.container_index]))
+            typed_item = _resolve_component(scene, item.component_type, item.component_id)
+            if typed_item is not None:
+                deferred_cache_outputs.append((item.component_id, typed_item))
 
     for component_id, typed_item in deferred_collider_groups:
         collider_ids = [
@@ -333,6 +345,24 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 collider_ids=collider_ids,
             )
         )
+
+    if compiled.colliders and not compiled.collider_groups:
+        compiled.collider_groups.append(
+            CompiledColliderGroup(
+                component_id="__auto_all_colliders__",
+                collider_ids=[collider.component_id for collider in compiled.colliders],
+            )
+        )
+
+    if compiled.collider_groups:
+        all_group_ids = {group.component_id for group in compiled.collider_groups}
+        for spring_bone in compiled.spring_bones:
+            if spring_bone.collider_group_ids:
+                spring_bone.collider_group_ids = [
+                    group_id for group_id in spring_bone.collider_group_ids if group_id in all_group_ids
+                ]
+            elif "__auto_all_colliders__" in all_group_ids:
+                spring_bone.collider_group_ids = ["__auto_all_colliders__"]
 
     for component_id, typed_item in deferred_cache_outputs:
         source_object = typed_item.source_object

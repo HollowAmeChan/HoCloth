@@ -63,7 +63,7 @@ class HoClothSpringJointOverride(bpy.types.PropertyGroup):
     enabled: bpy.props.BoolProperty(name="Enabled", default=False)
     radius: bpy.props.FloatProperty(name="Radius", default=0.02, min=0.0)
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
-    damping: bpy.props.FloatProperty(name="Damping", default=0.2, min=0.0, max=1.0)
+    damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0)
     drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0)
     gravity_scale: bpy.props.FloatProperty(name="Gravity Scale", default=1.0, min=0.0, soft_max=2.0)
 
@@ -97,7 +97,7 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.02, min=0.0)
     collider_group_ids: bpy.props.StringProperty(name="Collider Group IDs")
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
-    damping: bpy.props.FloatProperty(name="Damping", default=0.2, min=0.0, max=1.0)
+    damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0)
     drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0)
     gravity_strength: bpy.props.FloatProperty(name="Gravity Strength", default=0.3, min=0.0, soft_max=2.0)
     gravity_direction: bpy.props.FloatVectorProperty(
@@ -218,6 +218,12 @@ def list_component_display_names(scene: bpy.types.Scene, component_ids: list[str
     return [name_by_id[component_id] for component_id in component_ids if component_id in name_by_id]
 
 
+def find_component_by_id(container, component_id: str):
+    if not component_id:
+        return None
+    return next((item for item in container if item.component_id == component_id), None)
+
+
 def rebuild_component_indices(scene: bpy.types.Scene) -> None:
     for item in scene.hocloth_components:
         definition = get_component_definition(item.component_type)
@@ -334,6 +340,28 @@ def register():
         name="Show Debug Tools",
         default=False,
     )
+    bpy.types.Scene.hocloth_viewport_overlay_enabled = bpy.props.BoolProperty(
+        name="Viewport Overlay",
+        default=True,
+    )
+    bpy.types.Scene.hocloth_viewport_draw_particle_radius = bpy.props.BoolProperty(
+        name="Particle Radius",
+        default=True,
+    )
+    bpy.types.Scene.hocloth_viewport_draw_colliders = bpy.props.BoolProperty(
+        name="Colliders",
+        default=True,
+    )
+    bpy.types.Scene.hocloth_viewport_draw_bones = bpy.props.BoolProperty(
+        name="Spring Bones",
+        default=True,
+    )
+    bpy.types.Scene.hocloth_viewport_overlay_alpha = bpy.props.FloatProperty(
+        name="Overlay Alpha",
+        default=0.65,
+        min=0.1,
+        max=1.0,
+    )
     bpy.types.Scene.hocloth_runtime_handle = bpy.props.IntProperty(
         name="Runtime Handle",
         default=0,
@@ -350,6 +378,11 @@ def unregister():
     del bpy.types.Scene.hocloth_runtime_substeps
     del bpy.types.Scene.hocloth_runtime_dt
     del bpy.types.Scene.hocloth_ui_debug_expanded
+    del bpy.types.Scene.hocloth_viewport_overlay_alpha
+    del bpy.types.Scene.hocloth_viewport_draw_bones
+    del bpy.types.Scene.hocloth_viewport_draw_colliders
+    del bpy.types.Scene.hocloth_viewport_draw_particle_radius
+    del bpy.types.Scene.hocloth_viewport_overlay_enabled
     del bpy.types.Scene.hocloth_compile_summary
     del bpy.types.Scene.hocloth_runtime_status
     del bpy.types.Scene.hocloth_cache_output_components

@@ -1,7 +1,7 @@
 import bpy
 
 from ..compile.compiler import resolve_bone_chain_names
-from ..components.properties import _parse_component_id_list, list_component_display_names
+from ..components.properties import _parse_component_id_list, find_component_by_id, list_component_display_names
 
 
 _BONE_CHAIN_PRESET_BUTTONS = (
@@ -12,12 +12,23 @@ _BONE_CHAIN_PRESET_BUTTONS = (
 )
 
 
+def _resolve_component(scene, item, container_name):
+    container = getattr(scene, container_name)
+    component = find_component_by_id(container, item.component_id)
+    if component is not None:
+        return component
+    if 0 <= item.container_index < len(container):
+        fallback = container[item.container_index]
+        if fallback.component_id == item.component_id:
+            return fallback
+    return None
+
+
 def _draw_spring_bone_details(layout, scene, item):
-    if item.container_index < 0 or item.container_index >= len(scene.hocloth_spring_bone_components):
-        layout.label(text="Spring-bone data is missing", icon="ERROR")
+    chain = _resolve_component(scene, item, "hocloth_spring_bone_components")
+    if chain is None:
         return
 
-    chain = scene.hocloth_spring_bone_components[item.container_index]
     armature_object = chain.armature_object
     bone_names = resolve_bone_chain_names(scene, armature_object, chain.root_bone_name)
     bone_count = len(bone_names)
@@ -158,11 +169,10 @@ def _draw_spring_bone_details(layout, scene, item):
 
 
 def _draw_collider_details(layout, scene, item):
-    if item.container_index < 0 or item.container_index >= len(scene.hocloth_collider_components):
-        layout.label(text="Collider data is missing", icon="ERROR")
+    collider = _resolve_component(scene, item, "hocloth_collider_components")
+    if collider is None:
         return
 
-    collider = scene.hocloth_collider_components[item.container_index]
     collider_object = collider.collider_object
 
     header = layout.row(align=True)
@@ -204,11 +214,10 @@ def _draw_collider_details(layout, scene, item):
 
 
 def _draw_collider_group_details(layout, scene, item):
-    if item.container_index < 0 or item.container_index >= len(scene.hocloth_collider_group_components):
-        layout.label(text="Collider-group data is missing", icon="ERROR")
+    group = _resolve_component(scene, item, "hocloth_collider_group_components")
+    if group is None:
         return
 
-    group = scene.hocloth_collider_group_components[item.container_index]
     collider_names = list_component_display_names(scene, _parse_component_id_list(group.collider_ids))
 
     header = layout.row(align=True)
@@ -234,11 +243,9 @@ def _draw_collider_group_details(layout, scene, item):
 
 
 def _draw_cache_output_details(layout, scene, item):
-    if item.container_index < 0 or item.container_index >= len(scene.hocloth_cache_output_components):
-        layout.label(text="Cache-output data is missing", icon="ERROR")
+    cache_output = _resolve_component(scene, item, "hocloth_cache_output_components")
+    if cache_output is None:
         return
-
-    cache_output = scene.hocloth_cache_output_components[item.container_index]
 
     header = layout.row(align=True)
     header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
@@ -325,6 +332,17 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         settings_col.prop(scene, "hocloth_runtime_dt", text="dt")
         settings_col.prop(scene, "hocloth_runtime_substeps", text="Substeps")
         settings_col.prop(scene, "hocloth_apply_pose_on_step", text="Apply Pose On Step")
+
+        overlay_box = layout.box()
+        overlay_box.label(text="Viewport Debug")
+        overlay_box.prop(scene, "hocloth_viewport_overlay_enabled", text="Enable Overlay")
+        overlay_col = overlay_box.column(align=True)
+        overlay_col.enabled = scene.hocloth_viewport_overlay_enabled
+        overlay_col.prop(scene, "hocloth_viewport_draw_bones")
+        overlay_col.prop(scene, "hocloth_viewport_draw_particle_radius")
+        overlay_col.prop(scene, "hocloth_viewport_draw_colliders")
+        overlay_col.prop(scene, "hocloth_viewport_overlay_alpha")
+
         status_box.label(text="Runtime")
         status_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
         status_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
