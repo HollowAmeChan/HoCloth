@@ -10,7 +10,11 @@ _runtime_state = {
     "backend": "none",
     "step_count": 0,
     "last_dt": 0.0,
-    "last_substeps": 0,
+    "simulation_frequency": 90,
+    "max_simulation_steps_per_frame": 5,
+    "last_executed_steps": 0,
+    "last_scheduled_steps": 0,
+    "last_skipped_steps": 0,
     "bone_transform_count": 0,
 }
 _active_bridge = None
@@ -54,7 +58,9 @@ def build_runtime(compiled_scene):
     _runtime_state.update(result)
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
-    _runtime_state["last_substeps"] = 0
+    _runtime_state["last_executed_steps"] = 0
+    _runtime_state["last_scheduled_steps"] = 0
+    _runtime_state["last_skipped_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
     return dict(_runtime_state)
 
@@ -75,7 +81,9 @@ def reset_runtime():
 
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
-    _runtime_state["last_substeps"] = 0
+    _runtime_state["last_executed_steps"] = 0
+    _runtime_state["last_scheduled_steps"] = 0
+    _runtime_state["last_skipped_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
     _last_transforms = []
     return dict(_runtime_state)
@@ -89,7 +97,12 @@ def set_runtime_inputs_only(runtime_inputs: dict | None = None):
     return dict(_runtime_state)
 
 
-def step_runtime(dt: float = 1.0 / 60.0, substeps: int = 1, runtime_inputs: dict | None = None):
+def step_runtime(
+    dt: float = 1.0 / 30.0,
+    simulation_frequency: int = 90,
+    max_simulation_steps_per_frame: int = 5,
+    runtime_inputs: dict | None = None,
+):
     global _last_transforms
     if not _runtime_state["handle"]:
         raise RuntimeError("Runtime has not been built yet.")
@@ -97,12 +110,21 @@ def step_runtime(dt: float = 1.0 / 60.0, substeps: int = 1, runtime_inputs: dict
     bridge = _current_bridge()
     if runtime_inputs is not None:
         bridge.set_runtime_inputs(_runtime_state["handle"], runtime_inputs)
-    result = bridge.step_scene(_runtime_state["handle"], dt, substeps)
+    result = bridge.step_scene(
+        _runtime_state["handle"],
+        dt,
+        simulation_frequency,
+        max_simulation_steps_per_frame,
+    )
     transforms = bridge.get_bone_transforms(_runtime_state["handle"])
     _last_transforms = transforms
     _runtime_state["step_count"] = result["steps"]
     _runtime_state["last_dt"] = dt
-    _runtime_state["last_substeps"] = substeps
+    _runtime_state["simulation_frequency"] = simulation_frequency
+    _runtime_state["max_simulation_steps_per_frame"] = max_simulation_steps_per_frame
+    _runtime_state["last_executed_steps"] = int(result.get("executed_steps", 0))
+    _runtime_state["last_scheduled_steps"] = int(result.get("scheduled_steps", _runtime_state["last_executed_steps"]))
+    _runtime_state["last_skipped_steps"] = int(result.get("skipped_steps", 0))
     _runtime_state["bone_transform_count"] = len(transforms)
     _write_runtime_debug_dump(runtime_inputs, transforms)
     return {
@@ -117,7 +139,11 @@ def reset_runtime_state():
     _runtime_state["backend"] = "none"
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
-    _runtime_state["last_substeps"] = 0
+    _runtime_state["simulation_frequency"] = 90
+    _runtime_state["max_simulation_steps_per_frame"] = 5
+    _runtime_state["last_executed_steps"] = 0
+    _runtime_state["last_scheduled_steps"] = 0
+    _runtime_state["last_skipped_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
 
 

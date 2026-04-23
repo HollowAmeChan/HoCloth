@@ -312,14 +312,25 @@ def register():
     )
     bpy.types.Scene.hocloth_runtime_dt = bpy.props.FloatProperty(
         name="Runtime dt",
-        default=1.0 / 60.0,
+        default=1.0 / 30.0,
         min=0.0001,
     )
-    bpy.types.Scene.hocloth_runtime_substeps = bpy.props.IntProperty(
-        name="Runtime Substeps",
-        default=1,
+    bpy.types.Scene.hocloth_simulation_frequency = bpy.props.IntProperty(
+        name="Simulation Frequency",
+        default=90,
+        min=30,
+        max=150,
+        soft_min=30,
+        soft_max=150,
+        description="Fixed simulation steps per second. Default matches MagicaCloth2.",
+    )
+    bpy.types.Scene.hocloth_max_simulation_steps_per_frame = bpy.props.IntProperty(
+        name="Max Steps Per Frame",
+        default=5,
         min=1,
+        max=16,
         soft_max=8,
+        description="Caps fixed simulation steps executed for one Blender frame.",
     )
     bpy.types.Scene.hocloth_apply_pose_on_step = bpy.props.BoolProperty(
         name="Apply Pose On Step",
@@ -332,6 +343,16 @@ def register():
     )
     bpy.types.Scene.hocloth_runtime_transform_count = bpy.props.IntProperty(
         name="Runtime Transform Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_last_fixed_steps = bpy.props.IntProperty(
+        name="Last Fixed Steps",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_last_skipped_steps = bpy.props.IntProperty(
+        name="Last Skipped Steps",
         default=0,
         options={"HIDDEN"},
     )
@@ -377,9 +398,12 @@ def unregister():
     del bpy.types.Scene.hocloth_runtime_handle
     del bpy.types.Scene.hocloth_runtime_live_running
     del bpy.types.Scene.hocloth_runtime_transform_count
+    del bpy.types.Scene.hocloth_runtime_last_fixed_steps
+    del bpy.types.Scene.hocloth_runtime_last_skipped_steps
     del bpy.types.Scene.hocloth_runtime_step_count
     del bpy.types.Scene.hocloth_apply_pose_on_step
-    del bpy.types.Scene.hocloth_runtime_substeps
+    del bpy.types.Scene.hocloth_simulation_frequency
+    del bpy.types.Scene.hocloth_max_simulation_steps_per_frame
     del bpy.types.Scene.hocloth_runtime_dt
     del bpy.types.Scene.hocloth_ui_debug_expanded
     del bpy.types.Scene.hocloth_viewport_overlay_alpha

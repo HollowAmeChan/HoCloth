@@ -265,10 +265,16 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
 }
 
 
-RuntimeInputs runtime_inputs_from_python(float dt, std::int32_t substeps, const nb::dict& input_dict) {
+RuntimeInputs runtime_inputs_from_python(
+    float dt,
+    std::int32_t simulation_frequency,
+    std::int32_t max_simulation_steps_per_frame,
+    const nb::dict& input_dict
+) {
     RuntimeInputs inputs;
     inputs.dt = dt;
-    inputs.substeps = substeps;
+    inputs.simulation_frequency = simulation_frequency;
+    inputs.max_simulation_steps_per_frame = max_simulation_steps_per_frame;
 
     if (!input_dict.contains("bone_chains")) {
         return inputs;
@@ -307,6 +313,40 @@ RuntimeInputs runtime_inputs_from_python(float dt, std::int32_t substeps, const 
         inputs.bone_chains.push_back(chain);
     }
 
+    if (input_dict.contains("collision_objects")) {
+        const nb::list collision_objects = nb::cast<nb::list>(input_dict["collision_objects"]);
+        for (nb::handle item_handle : collision_objects) {
+            const nb::dict object_dict = nb::cast<nb::dict>(item_handle);
+            CollisionObjectRuntimeInput collision_object;
+            collision_object.collision_object_id = nb::cast<std::string>(object_dict["collision_object_id"]);
+            if (object_dict.contains("world_translation")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["world_translation"]),
+                    collision_object.world_translation
+                );
+            }
+            if (object_dict.contains("world_rotation")) {
+                copy_quat_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["world_rotation"]),
+                    collision_object.world_rotation
+                );
+            }
+            if (object_dict.contains("linear_velocity")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["linear_velocity"]),
+                    collision_object.linear_velocity
+                );
+            }
+            if (object_dict.contains("angular_velocity")) {
+                copy_vec3_blender_to_solver(
+                    nb::cast<nb::tuple>(object_dict["angular_velocity"]),
+                    collision_object.angular_velocity
+                );
+            }
+            inputs.collision_objects.push_back(collision_object);
+        }
+    }
+
     return inputs;
 }
 
@@ -331,18 +371,32 @@ nb::dict build_scene_dict(const nb::dict& scene_dict) {
 }
 
 bool set_runtime_inputs_dict(SceneHandle handle, const nb::dict& input_dict) {
-    set_runtime_inputs(handle, runtime_inputs_from_python(1.0f / 60.0f, 1, input_dict));
+    set_runtime_inputs(handle, runtime_inputs_from_python(1.0f / 30.0f, 90, 5, input_dict));
     return true;
 }
 
 
-nb::dict step_scene_dict(SceneHandle handle, float dt, std::int32_t substeps) {
-    step_scene(handle, RuntimeInputs{dt, substeps, {}});
+nb::dict step_scene_dict(
+    SceneHandle handle,
+    float dt,
+    std::int32_t simulation_frequency,
+    std::int32_t max_simulation_steps_per_frame
+) {
+    RuntimeInputs inputs;
+    inputs.dt = dt;
+    inputs.simulation_frequency = simulation_frequency;
+    inputs.max_simulation_steps_per_frame = max_simulation_steps_per_frame;
+    const std::int32_t executed_steps = step_scene(handle, inputs);
+    const RuntimeStepInfo step_info = get_last_step_info(handle);
 
     nb::dict result;
     result["handle"] = handle;
     result["dt"] = dt;
-    result["substeps"] = substeps;
+    result["simulation_frequency"] = simulation_frequency;
+    result["max_simulation_steps_per_frame"] = max_simulation_steps_per_frame;
+    result["executed_steps"] = executed_steps;
+    result["scheduled_steps"] = step_info.scheduled_steps;
+    result["skipped_steps"] = step_info.skipped_steps;
     result["steps"] = get_step_count(handle);
     result["summary"] = "native step executed";
     return result;

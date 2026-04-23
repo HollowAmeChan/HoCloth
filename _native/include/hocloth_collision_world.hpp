@@ -14,6 +14,10 @@ struct CollisionWorldObject {
     std::string owner_component_id;
     std::string motion_type;
     std::string shape_type;
+    // Step-local previous pose. Updated by the runtime scheduler per fixed step.
+    // This lets collision response consider collider motion (MC2-style).
+    float previous_world_translation[3] = {0.0f, 0.0f, 0.0f};
+    float previous_world_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
     float world_translation[3] = {0.0f, 0.0f, 0.0f};
     float world_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
     float linear_velocity[3] = {0.0f, 0.0f, 0.0f};
@@ -35,6 +39,7 @@ class CollisionWorld {
 public:
     void clear();
     void build_from_scene(const SceneDescriptor& scene);
+    CollisionWorldObject* find_object(const std::string& collision_object_id);
 
     [[nodiscard]] std::size_t object_count() const;
     [[nodiscard]] std::size_t binding_count() const;

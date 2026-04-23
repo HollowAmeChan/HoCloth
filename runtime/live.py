@@ -149,7 +149,8 @@ def on_frame_change_post(scene, depsgraph):
     try:
         result = step_runtime(
             scene.hocloth_runtime_dt,
-            scene.hocloth_runtime_substeps,
+            scene.hocloth_simulation_frequency,
+            scene.hocloth_max_simulation_steps_per_frame,
             runtime_inputs,
         )
     except RuntimeError as exc:
@@ -161,6 +162,8 @@ def on_frame_change_post(scene, depsgraph):
     runtime_state = result["runtime_state"]
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+    scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
 
     status_suffix = ""
     if scene.hocloth_apply_pose_on_step:
@@ -176,6 +179,8 @@ def on_frame_change_post(scene, depsgraph):
     scene.hocloth_runtime_status = (
         f"Live stepping on frame {scene.frame_current}, "
         f"steps={runtime_state['step_count']}, "
+        f"fixed_steps={runtime_state.get('last_executed_steps', 0)}, "
+        f"skipped_steps={runtime_state.get('last_skipped_steps', 0)}, "
         f"transforms={runtime_state['bone_transform_count']}"
         f"{status_suffix}"
     )

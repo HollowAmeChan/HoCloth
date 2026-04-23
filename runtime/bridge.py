@@ -70,8 +70,10 @@ class NativeBridgeStub:
         self._scenes[handle] = {
             "compiled_scene": compiled_scene,
             "steps": 0,
+            "accumulated_time": 0.0,
             "runtime_inputs": {"bone_chains": []},
             "chain_states": self._make_chain_states(compiled_scene),
+            "collision_object_lookup": self._build_collision_object_lookup(compiled_scene),
             "collision_binding_lookup": self._build_collision_binding_lookup(compiled_scene),
         }
         return {
@@ -89,8 +91,10 @@ class NativeBridgeStub:
         scene = self._scenes.get(handle)
         if scene is not None:
             scene["steps"] = 0
+            scene["accumulated_time"] = 0.0
             scene["runtime_inputs"] = {"bone_chains": []}
             scene["chain_states"] = self._make_chain_states(scene["compiled_scene"])
+            scene["collision_object_lookup"] = self._build_collision_object_lookup(scene["compiled_scene"])
             scene["collision_binding_lookup"] = self._build_collision_binding_lookup(scene["compiled_scene"])
         return True
 
@@ -99,23 +103,38 @@ class NativeBridgeStub:
         if scene is None:
             raise RuntimeError(f"Unknown runtime handle: {handle}")
         scene["runtime_inputs"] = runtime_inputs or {"bone_chains": []}
+        self._apply_collision_object_inputs(scene, scene["runtime_inputs"])
         return True
 
-    def step_scene(self, handle, dt, substeps):
+    def step_scene(self, handle, dt, simulation_frequency, max_simulation_steps_per_frame):
         scene = self._scenes.get(handle)
         if scene is None:
             raise RuntimeError(f"Unknown runtime handle: {handle}")
-        step_count = max(1, int(substeps))
-        fixed_dt = dt if dt and dt > 0.0 else (1.0 / 60.0)
-        substep_dt = fixed_dt / step_count
+        frame_dt = dt if dt and dt > 0.0 else (1.0 / 30.0)
+        frequency = min(150, max(30, int(simulation_frequency or 90)))
+        max_steps = min(16, max(1, int(max_simulation_steps_per_frame or 5)))
+        simulation_dt = 1.0 / frequency
+        scene["accumulated_time"] = scene.get("accumulated_time", 0.0) + frame_dt
+        scheduled_steps = int((scene["accumulated_time"] + 1.0e-6) / simulation_dt)
+        step_count = min(scheduled_steps, max_steps)
+        skipped_steps = max(0, scheduled_steps - step_count)
+        if scheduled_steps > max_steps:
+            scene["accumulated_time"] -= scheduled_steps * simulation_dt
+        else:
+            scene["accumulated_time"] -= step_count * simulation_dt
+        scene["accumulated_time"] = min(simulation_dt, max(0.0, scene["accumulated_time"]))
         for _ in range(step_count):
-            self._step_scene_states(scene, substep_dt)
+            self._step_scene_states(scene, simulation_dt)
         scene["steps"] += step_count
         compiled_scene = scene["compiled_scene"]
         return {
             "handle": handle,
             "dt": dt,
-            "substeps": substeps,
+            "simulation_frequency": frequency,
+            "max_simulation_steps_per_frame": max_steps,
+            "executed_steps": step_count,
+            "scheduled_steps": scheduled_steps,
+            "skipped_steps": skipped_steps,
             "steps": scene["steps"],
             "summary": compiled_scene.summary(),
         }
@@ -168,11 +187,14 @@ class NativeBridgeStub:
             for chain in compiled_scene.bone_chains
         ]
 
-    def _build_collision_binding_lookup(self, compiled_scene):
-        object_lookup = {
+    def _build_collision_object_lookup(self, compiled_scene):
+        return {
             collision_object.collision_object_id: collision_object
             for collision_object in getattr(compiled_scene, "collision_objects", [])
         }
+
+    def _build_collision_binding_lookup(self, compiled_scene):
+        object_lookup = self._build_collision_object_lookup(compiled_scene)
         binding_lookup = {}
         for binding in getattr(compiled_scene, "collision_bindings", []):
             binding_lookup[binding.binding_id] = [
@@ -181,6 +203,17 @@ class NativeBridgeStub:
                 if collision_object_id in object_lookup
             ]
         return binding_lookup
+
+    def _apply_collision_object_inputs(self, scene, runtime_inputs):
+        object_lookup = scene.get("collision_object_lookup", {})
+        for collision_input in runtime_inputs.get("collision_objects", []):
+            collision_object = object_lookup.get(collision_input.get("collision_object_id"))
+            if collision_object is None:
+                continue
+            collision_object.world_translation = tuple(collision_input.get("world_translation", collision_object.world_translation))
+            collision_object.world_rotation = tuple(collision_input.get("world_rotation", collision_object.world_rotation))
+            if "linear_velocity" in collision_input:
+                collision_object.linear_velocity = tuple(collision_input.get("linear_velocity", collision_object.linear_velocity))
 
     def _find_runtime_input(self, scene, component_id):
         runtime_inputs = scene.get("runtime_inputs") or {}
@@ -328,8 +361,8 @@ class NativeModuleBridge:
     def reset_scene(self, handle):
         return self._module.reset_scene(handle)
 
-    def step_scene(self, handle, dt, substeps):
-        return self._module.step_scene(handle, dt, substeps)
+    def step_scene(self, handle, dt, simulation_frequency, max_simulation_steps_per_frame):
+        return self._module.step_scene(handle, dt, simulation_frequency, max_simulation_steps_per_frame)
 
     def set_runtime_inputs(self, handle, runtime_inputs):
         return self._module.set_runtime_inputs(handle, runtime_inputs)

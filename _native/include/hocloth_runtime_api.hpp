@@ -108,10 +108,20 @@ struct BoneChainRuntimeInput {
     float center_scale[3] = {1.0f, 1.0f, 1.0f};
 };
 
+struct CollisionObjectRuntimeInput {
+    std::string collision_object_id;
+    float world_translation[3] = {0.0f, 0.0f, 0.0f};
+    float world_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    float linear_velocity[3] = {0.0f, 0.0f, 0.0f};
+    float angular_velocity[3] = {0.0f, 0.0f, 0.0f};
+};
+
 struct RuntimeInputs {
     float dt = 1.0f / 60.0f;
-    std::int32_t substeps = 1;
+    std::int32_t simulation_frequency = 90;
+    std::int32_t max_simulation_steps_per_frame = 5;
     std::vector<BoneChainRuntimeInput> bone_chains;
+    std::vector<CollisionObjectRuntimeInput> collision_objects;
 };
 
 struct BoneTransform {
@@ -137,12 +147,19 @@ struct RuntimeSceneInfo {
     bool physics_scene_ready = false;
 };
 
+struct RuntimeStepInfo {
+    std::int32_t scheduled_steps = 0;
+    std::int32_t executed_steps = 0;
+    std::int32_t skipped_steps = 0;
+};
+
 SceneHandle build_scene(const SceneDescriptor& scene);
 void destroy_scene(SceneHandle handle);
 void reset_scene(SceneHandle handle);
 void set_runtime_inputs(SceneHandle handle, const RuntimeInputs& inputs);
-void step_scene(SceneHandle handle, const RuntimeInputs& inputs);
+std::int32_t step_scene(SceneHandle handle, const RuntimeInputs& inputs);
 std::uint64_t get_step_count(SceneHandle handle);
+RuntimeStepInfo get_last_step_info(SceneHandle handle);
 std::vector<BoneTransform> get_bone_transforms(SceneHandle handle);
 RuntimeSceneInfo get_scene_info(SceneHandle handle);
 

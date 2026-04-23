@@ -18,6 +18,13 @@ void CollisionWorld::build_from_scene(const SceneDescriptor& scene) {
         object.owner_component_id = descriptor.owner_component_id;
         object.motion_type = descriptor.motion_type;
         object.shape_type = descriptor.shape_type;
+        object.previous_world_translation[0] = descriptor.world_translation[0];
+        object.previous_world_translation[1] = descriptor.world_translation[1];
+        object.previous_world_translation[2] = descriptor.world_translation[2];
+        object.previous_world_rotation[0] = descriptor.world_rotation[0];
+        object.previous_world_rotation[1] = descriptor.world_rotation[1];
+        object.previous_world_rotation[2] = descriptor.world_rotation[2];
+        object.previous_world_rotation[3] = descriptor.world_rotation[3];
         object.world_translation[0] = descriptor.world_translation[0];
         object.world_translation[1] = descriptor.world_translation[1];
         object.world_translation[2] = descriptor.world_translation[2];
@@ -53,6 +60,14 @@ void CollisionWorld::build_from_scene(const SceneDescriptor& scene) {
         }
         bindings_.push_back(std::move(binding));
     }
+}
+
+CollisionWorldObject* CollisionWorld::find_object(const std::string& collision_object_id) {
+    const auto found = object_index_by_id_.find(collision_object_id);
+    if (found == object_index_by_id_.end() || found->second >= objects_.size()) {
+        return nullptr;
+    }
+    return &objects_[found->second];
 }
 
 std::size_t CollisionWorld::object_count() const {

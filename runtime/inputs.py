@@ -6,6 +6,7 @@ from ..compile.compiler import resolve_armature_object
 _INPUT_STATE = {
     "last_scene_frame": None,
     "chain_states": {},
+    "collision_object_states": {},
 }
 
 
@@ -62,12 +63,14 @@ def _bone_transform_input(scene, armature_name: str, bone_name: str):
 def reset_runtime_input_tracking():
     _INPUT_STATE["last_scene_frame"] = None
     _INPUT_STATE["chain_states"] = {}
+    _INPUT_STATE["collision_object_states"] = {}
 
 
 def build_runtime_inputs(scene, compiled_scene) -> dict:
     bone_chains = []
+    collision_objects = []
     if compiled_scene is None:
-        return {"bone_chains": bone_chains}
+        return {"bone_chains": bone_chains, "collision_objects": collision_objects}
 
     current_frame = int(scene.frame_current)
     previous_frame = _INPUT_STATE["last_scene_frame"]
@@ -75,6 +78,7 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
     fps = _safe_fps(scene)
     frame_dt = 1.0 / fps if fps > 1.0e-6 else (1.0 / 24.0)
     next_chain_states = {}
+    next_collision_object_states = {}
 
     for chain in compiled_scene.bone_chains:
         armature_object = resolve_armature_object(scene, chain.armature_name)
@@ -133,6 +137,30 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
             }
         )
 
+    for collision_object in getattr(compiled_scene, "collision_objects", []):
+        source_object_name = getattr(collision_object, "source_object_name", "")
+        source_object = scene.objects.get(source_object_name) if source_object_name else None
+        translation, rotation, _scale = _object_transform_input(source_object)
+        linear_velocity = (0.0, 0.0, 0.0)
+        previous_state = _INPUT_STATE["collision_object_states"].get(collision_object.collision_object_id)
+        if previous_state is not None and frame_delta in (-1, 1):
+            translation_delta = _vector_subtract(translation, previous_state["translation"])
+            linear_velocity = _vector_scale(translation_delta, 1.0 / max(frame_dt, 1.0e-6))
+
+        next_collision_object_states[collision_object.collision_object_id] = {
+            "translation": translation,
+            "rotation": rotation,
+        }
+        collision_objects.append(
+            {
+                "collision_object_id": collision_object.collision_object_id,
+                "world_translation": translation,
+                "world_rotation": rotation,
+                "linear_velocity": linear_velocity,
+            }
+        )
+
     _INPUT_STATE["last_scene_frame"] = current_frame
     _INPUT_STATE["chain_states"] = next_chain_states
-    return {"bone_chains": bone_chains}
+    _INPUT_STATE["collision_object_states"] = next_collision_object_states
+    return {"bone_chains": bone_chains, "collision_objects": collision_objects}

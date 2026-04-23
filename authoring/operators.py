@@ -96,6 +96,8 @@ def _build_runtime_from_scene(context, report=None) -> bool:
     scene.hocloth_runtime_handle = runtime_state["handle"]
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+    scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
     build_message = runtime_state.get("build_message", "")
     solver_ready = runtime_state.get("physics_scene_ready", False)
     scene.hocloth_runtime_status = (
@@ -387,6 +389,8 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
             set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+        context.scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
         if runtime_state["handle"]:
             context.scene.hocloth_runtime_status = "Runtime reset"
             return {"FINISHED"}
@@ -403,7 +407,8 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         try:
             result = step_runtime(
                 context.scene.hocloth_runtime_dt,
-                context.scene.hocloth_runtime_substeps,
+                context.scene.hocloth_simulation_frequency,
+                context.scene.hocloth_max_simulation_steps_per_frame,
                 build_runtime_inputs(context.scene, get_compiled_scene()),
             )
         except RuntimeError as exc:
@@ -413,6 +418,8 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         runtime_state = result["runtime_state"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+        context.scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
         status_suffix = ""
         if context.scene.hocloth_apply_pose_on_step:
             apply_result = apply_runtime_transforms_to_scene(
@@ -424,7 +431,10 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
             context.view_layer.update()
             status_suffix = f", applied={apply_result['applied_count']}"
         context.scene.hocloth_runtime_status = (
-            f"Stepped {runtime_state['step_count']} times, transforms={runtime_state['bone_transform_count']}"
+            f"Stepped {runtime_state['step_count']} fixed steps, "
+            f"last={runtime_state.get('last_executed_steps', 0)}, "
+            f"skipped={runtime_state.get('last_skipped_steps', 0)}, "
+            f"transforms={runtime_state['bone_transform_count']}"
             f"{status_suffix}"
         )
         return {"FINISHED"}
@@ -496,6 +506,8 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_handle = 0
         context.scene.hocloth_runtime_step_count = 0
         context.scene.hocloth_runtime_transform_count = 0
+        context.scene.hocloth_runtime_last_fixed_steps = 0
+        context.scene.hocloth_runtime_last_skipped_steps = 0
         context.scene.hocloth_runtime_status = "Runtime destroyed"
         return {"FINISHED"}
 
