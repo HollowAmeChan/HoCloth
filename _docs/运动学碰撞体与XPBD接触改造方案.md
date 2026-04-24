@@ -197,5 +197,6 @@ HoCloth 的 SpringBone 碰撞不再以通用 XPBD contact lambda 为主线，而
 - collider 保存 fixed step 的 previous/current pose，碰撞检测使用 MC2 moving-plane 思路：由上一姿态求法线，在当前姿态上构造推出平面。
 - SpringBone 碰撞不再靠调小 push，而是在几何投影后使用 `base_position + limitDistance` 做 soft collider 限制，并按 MC2 的 `lerp(projected, old, softness)` 把推出压软。
 - 摩擦衰减改为 MC2 的 `FrictionDampingRate = 0.6`。
+- HoCloth 当前需要重新收束到 MC2 的 BoneSpring 碰撞模型：BoneSpring 以点粒子为核心，外部 capsule collider 只作为“点 vs 胶囊”的碰撞体参与检测，不应把骨段自身扩展成连续胶囊或虚拟采样链。下一步候选方案是补齐 MC2 `ColliderManager.WorkData` 对应的数据流：每个 fixed step 先生成 collider 的 old/next 端点、半径、swept AABB、old inverse rotation 与 current rotation，再由 `PointSphere/PointCapsule` 风格的旧姿态法线和当前姿态推出平面解决交叉。但这部分必须以更小补丁逐步接入，避免破坏当前“不抽搐”的主循环。
 
 后续测试时优先观察：运动学碰撞体接触建立瞬间是否还会“整段硬推”、静态重叠是否能逐步脱出、贴着 collider 滑动时是否仍有明显能量注入。

@@ -2,9 +2,17 @@ import bpy
 import json
 import os
 
-from ..compile.compiler import compile_scene_from_components
+from ..compile.compiler import (
+    compile_scene_from_components,
+    resolve_bone_chain_branching_names,
+)
 from ..components.properties import create_component, delete_component, rebuild_component_indices, sync_joint_override_names
-from ..runtime.pose_apply import apply_runtime_transforms_to_scene, capture_pose_baseline
+from ..runtime.pose_apply import (
+    apply_runtime_transforms_to_scene,
+    capture_pose_baseline,
+    clear_pose_transforms,
+    restore_pose_state,
+)
 from ..runtime.inputs import build_runtime_inputs
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.session import (
@@ -24,29 +32,29 @@ from .extract import extract_active_bone_chain
 _BONE_CHAIN_PRESETS = {
     "SOFT_HAIR": {
         "label": "Soft Hair",
-        "stiffness": 0.18,
-        "damping": 0.50,
-        "drag": 0.01,
+        "stiffness": 0.10,
+        "damping": 0.22,
+        "drag": 0.00,
         "gravity_strength": 1.15,
     },
     "BALANCED": {
         "label": "Balanced",
-        "stiffness": 0.38,
-        "damping": 0.56,
-        "drag": 0.03,
+        "stiffness": 0.24,
+        "damping": 0.38,
+        "drag": 0.02,
         "gravity_strength": 0.85,
     },
     "ROPE": {
         "label": "Rope",
-        "stiffness": 0.56,
-        "damping": 0.62,
-        "drag": 0.08,
+        "stiffness": 0.48,
+        "damping": 0.58,
+        "drag": 0.07,
         "gravity_strength": 1.45,
     },
     "HEAVY": {
         "label": "Heavy",
-        "stiffness": 0.74,
-        "damping": 0.72,
+        "stiffness": 0.72,
+        "damping": 0.82,
         "drag": 0.16,
         "gravity_strength": 2.0,
     },
@@ -132,7 +140,19 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
         typed_item.root_bone_name = extracted.root_bone_name
         sync_joint_override_names(typed_item, extracted.bone_names)
         main_item.display_name = f"Spring Bone: {extracted.root_bone_name}"
-        context.scene.hocloth_runtime_status = f"Added {len(extracted.bone_names)} bones"
+        branching_bones = resolve_bone_chain_branching_names(
+            context.scene,
+            context.object,
+            extracted.root_bone_name,
+        )
+        context.scene.hocloth_runtime_status = (
+            f"Added {len(extracted.bone_names)} bones"
+            + (
+                f"; detected {len(branching_bones)} branch points"
+                if branching_bones
+                else ""
+            )
+        )
         return {"FINISHED"}
 
 
@@ -283,8 +303,20 @@ class HOCLOTH_OT_sync_spring_bone_joints(bpy.types.Operator):
         from ..compile.compiler import resolve_bone_chain_names
 
         bone_names = resolve_bone_chain_names(context.scene, armature_object, chain.root_bone_name)
+        branching_bones = resolve_bone_chain_branching_names(
+            context.scene,
+            armature_object,
+            chain.root_bone_name,
+        )
         synced_count = sync_joint_override_names(chain, bone_names)
-        context.scene.hocloth_runtime_status = f"Synced {synced_count} spring joints"
+        context.scene.hocloth_runtime_status = (
+            f"Synced {synced_count} spring joints"
+            + (
+                f"; detected {len(branching_bones)} branch points"
+                if branching_bones
+                else ""
+            )
+        )
         return {"FINISHED"}
 
 
@@ -396,6 +428,56 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
             return {"FINISHED"}
         self.report({"INFO"}, "Runtime is not built yet.")
         return {"CANCELLED"}
+
+
+class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
+    bl_idname = "hocloth.restart_runtime_from_baseline"
+    bl_label = "Restart From Frame 1"
+    bl_description = "Clear simulated pose, restore the captured baseline pose, and reset runtime to the first frame"
+
+    def execute(self, context):
+        stop_live_runtime(context.scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+
+        target_frame = max(1, int(context.scene.frame_start))
+        context.scene.frame_set(target_frame)
+
+        compiled_scene = get_compiled_scene()
+        restored_count = 0
+        if compiled_scene is not None:
+            baseline = capture_pose_baseline(context.scene, compiled_scene)
+            clear_pose_transforms(context.scene, compiled_scene)
+            set_pose_baseline(baseline)
+            restored_count = restore_pose_state(context.scene, compiled_scene, baseline)
+            if context.view_layer is not None:
+                context.view_layer.update()
+
+        if context.scene.hocloth_runtime_handle and compiled_scene is not None:
+            runtime_state = reset_runtime()
+            set_runtime_inputs_only(build_runtime_inputs(context.scene, compiled_scene))
+            set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
+            context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
+            context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+            context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+            context.scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
+            context.scene.hocloth_runtime_status = (
+                f"Returned to frame {target_frame} and restarted runtime ({restored_count} bones)"
+            )
+            return {"FINISHED"}
+
+        context.scene.hocloth_runtime_step_count = 0
+        context.scene.hocloth_runtime_transform_count = 0
+        context.scene.hocloth_runtime_last_fixed_steps = 0
+        context.scene.hocloth_runtime_last_skipped_steps = 0
+        context.scene.hocloth_runtime_status = (
+            f"Returned to frame {target_frame}"
+            + (f" and restored baseline pose ({restored_count} bones)" if restored_count else "")
+        )
+        if context.view_layer is not None:
+            context.view_layer.update()
+        return {"FINISHED"}
 
 
 class HOCLOTH_OT_step_runtime(bpy.types.Operator):
@@ -526,6 +608,7 @@ CLASSES = (
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_export_compiled_scene,
     HOCLOTH_OT_reset_runtime,
+    HOCLOTH_OT_restart_runtime_from_baseline,
     HOCLOTH_OT_step_runtime,
     HOCLOTH_OT_toggle_live_runtime,
     HOCLOTH_OT_apply_runtime_pose,

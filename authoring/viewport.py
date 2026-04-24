@@ -101,42 +101,62 @@ def _joint_radius(component, bone_name: str) -> float:
 def _joint_world_positions(component):
     armature_object = component.armature_object
     if armature_object is None or armature_object.type != "ARMATURE" or armature_object.pose is None:
-        return []
+        return {}, []
     bone_names = resolve_bone_chain_names(bpy.context.scene, armature_object, component.root_bone_name)
-    positions = []
+    bone_name_set = set(bone_names)
+    positions = {}
+    segments = []
     for bone_name in bone_names:
         pose_bone = armature_object.pose.bones.get(bone_name)
         if pose_bone is None:
             continue
         world_matrix = armature_object.matrix_world @ pose_bone.matrix
-        positions.append((bone_name, world_matrix.translation.copy()))
+        positions[bone_name] = world_matrix.translation.copy()
+
+    for bone_name in bone_names:
+        bone = armature_object.data.bones.get(bone_name)
+        if bone is None or bone.parent is None or bone.parent.name not in bone_name_set:
+            continue
+        parent_position = positions.get(bone.parent.name)
+        child_position = positions.get(bone_name)
+        if parent_position is not None and child_position is not None:
+            segments.append((bone.parent.name, bone_name))
+
     if positions and getattr(component, "append_tail_tip", False):
-        last_pose_bone = armature_object.pose.bones.get(positions[-1][0])
-        if last_pose_bone is not None:
-            positions.append(
-                (
-                    f"{last_pose_bone.name}{_TAIL_TIP_SUFFIX}",
-                    (armature_object.matrix_world @ last_pose_bone.tail).copy(),
-                )
-            )
-    return positions
+        for bone_name in bone_names:
+            bone = armature_object.data.bones.get(bone_name)
+            if bone is None:
+                continue
+            child_names = [child.name for child in bone.children if child.name in bone_name_set]
+            if child_names:
+                continue
+            pose_bone = armature_object.pose.bones.get(bone_name)
+            if pose_bone is None:
+                continue
+            tip_name = f"{bone_name}{_TAIL_TIP_SUFFIX}"
+            positions[tip_name] = (armature_object.matrix_world @ pose_bone.tail).copy()
+            segments.append((bone_name, tip_name))
+    return positions, segments
 
 
 def _append_spring_bone_segments(scene, region_data, spring_segments, radius_segments):
     right, up, _forward = _viewport_basis(region_data)
     for _item, component in _iter_enabled_spring_bones(scene):
-        joint_positions = _joint_world_positions(component)
+        joint_positions, joint_segments = _joint_world_positions(component)
         if len(joint_positions) < 1:
             continue
 
         if scene.hocloth_viewport_draw_bones:
-            for (_, start), (_, end) in zip(joint_positions, joint_positions[1:]):
-                spring_segments.append((start, end))
-            for _bone_name, position in joint_positions:
+            for start_name, end_name in joint_segments:
+                start = joint_positions.get(start_name)
+                end = joint_positions.get(end_name)
+                if start is not None and end is not None:
+                    spring_segments.append((start, end))
+            for _bone_name, position in joint_positions.items():
                 _append_cross(spring_segments, position, 0.01)
 
         if scene.hocloth_viewport_draw_particle_radius:
-            for bone_name, position in joint_positions:
+            for bone_name, position in joint_positions.items():
                 radius = _joint_radius(component, bone_name)
                 if radius <= 0.0:
                     continue

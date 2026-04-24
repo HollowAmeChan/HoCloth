@@ -79,6 +79,8 @@ def reset_runtime():
     if not _runtime_state["handle"]:
         return dict(_runtime_state)
 
+    _current_bridge().reset_scene(_runtime_state["handle"])
+
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0

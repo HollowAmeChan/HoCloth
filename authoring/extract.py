@@ -19,9 +19,13 @@ def _active_armature_object(context: bpy.types.Context):
 
 
 def _collect_bone_subtree_names(bone) -> list[str]:
-    names = [bone.name]
-    for child in bone.children:
-        names.extend(_collect_bone_subtree_names(child))
+    names = []
+    stack = [bone]
+    while stack:
+        current = stack.pop()
+        names.append(current.name)
+        children = sorted(current.children, key=lambda child: child.name)
+        stack.extend(reversed(children))
     return names
 
 

@@ -1,4 +1,4 @@
-from . import compiled, compiler
+from . import compiled, compiler, spring_prebuild
 
 
 def register():

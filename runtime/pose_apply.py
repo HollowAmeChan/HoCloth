@@ -1,5 +1,5 @@
 import bpy
-from mathutils import Quaternion, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 from ..compile.compiler import resolve_armature_object
 
@@ -49,6 +49,42 @@ def capture_pose_state(scene: bpy.types.Scene, compiled_scene) -> dict:
     return capture_pose_baseline(scene, compiled_scene)
 
 
+def clear_pose_transforms(scene: bpy.types.Scene, compiled_scene) -> int:
+    if compiled_scene is None:
+        return 0
+
+    component_lookup = _component_armature_lookup(compiled_scene)
+    armature_cache = {}
+    cleared_count = 0
+
+    for chain in compiled_scene.bone_chains:
+        armature_name = component_lookup.get(chain.component_id, chain.armature_name)
+        if armature_name not in armature_cache:
+            armature_cache[armature_name] = resolve_armature_object(scene, armature_name)
+        armature_object = armature_cache[armature_name]
+        if armature_object is None or armature_object.pose is None:
+            continue
+
+        for bone in chain.bones:
+            pose_bone = armature_object.pose.bones.get(bone.name)
+            if pose_bone is None:
+                continue
+
+            if pose_bone.rotation_mode != "QUATERNION":
+                pose_bone.rotation_mode = "QUATERNION"
+            pose_bone.location = Vector((0.0, 0.0, 0.0))
+            pose_bone.rotation_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+            pose_bone.rotation_euler = Vector((0.0, 0.0, 0.0))
+            pose_bone.scale = Vector((1.0, 1.0, 1.0))
+            pose_bone.matrix_basis = Matrix.Identity(4)
+            cleared_count += 1
+
+        armature_object.data.update_tag()
+        armature_object.update_tag()
+
+    return cleared_count
+
+
 def restore_pose_state(scene: bpy.types.Scene, compiled_scene, pose_state: dict | None) -> int:
     if compiled_scene is None or not pose_state:
         return 0
@@ -76,10 +112,16 @@ def restore_pose_state(scene: bpy.types.Scene, compiled_scene, pose_state: dict 
 
             if pose_bone.rotation_mode != "QUATERNION":
                 pose_bone.rotation_mode = "QUATERNION"
+            pose_bone.location = Vector((0.0, 0.0, 0.0))
+            pose_bone.rotation_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+            pose_bone.rotation_euler = Vector((0.0, 0.0, 0.0))
+            pose_bone.scale = Vector((1.0, 1.0, 1.0))
+            pose_bone.matrix_basis = Matrix.Identity(4)
             pose_bone.location = Vector(state["location"])
             pose_bone.rotation_quaternion = Quaternion(state["rotation_quaternion"])
             restored_count += 1
 
+        armature_object.data.update_tag()
         armature_object.update_tag()
 
     return restored_count

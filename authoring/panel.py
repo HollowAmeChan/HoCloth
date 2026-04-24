@@ -1,6 +1,6 @@
 import bpy
 
-from ..compile.compiler import resolve_bone_chain_names
+from ..compile.compiler import resolve_bone_chain_branching_names, resolve_bone_chain_names
 from ..components.properties import _parse_component_id_list, find_component_by_id, list_component_display_names
 
 
@@ -31,6 +31,7 @@ def _draw_spring_bone_details(layout, scene, item):
 
     armature_object = chain.armature_object
     bone_names = resolve_bone_chain_names(scene, armature_object, chain.root_bone_name)
+    branching_bones = resolve_bone_chain_branching_names(scene, armature_object, chain.root_bone_name)
     bone_count = len(bone_names)
     root_bone_is_valid = (
         armature_object is not None
@@ -109,6 +110,7 @@ def _draw_spring_bone_details(layout, scene, item):
     params.prop(chain, "drag")
     params.prop(chain, "gravity_strength")
     params.prop(chain, "gravity_direction")
+    params.label(text="MC2-style BoneSpring currently ignores gravity strength.", icon="INFO")
     params.separator()
     params.label(text="Collision")
     params.prop(chain, "collider_group_ids", text="Collision Bindings")
@@ -136,6 +138,8 @@ def _draw_spring_bone_details(layout, scene, item):
     else:
         summary_box.label(text="Center: None", icon="INFO")
     summary_box.label(text=f"Collision Bindings: {len(group_names)}", icon="LINKED")
+    if branching_bones:
+        summary_box.label(text=f"Branch Points: {len(branching_bones)}", icon="NODETREE")
 
     if chain.joint_overrides:
         joint_box = body.box()
@@ -163,6 +167,14 @@ def _draw_spring_bone_details(layout, scene, item):
     if not bone_names:
         body.label(text="No bones resolved from root", icon="INFO")
         return
+
+    if branching_bones:
+        info = body.box()
+        info.label(text="Branching topology detected", icon="NODETREE")
+        for branch_name in branching_bones[:4]:
+            info.label(text=branch_name, icon="DOT")
+        if len(branching_bones) > 4:
+            info.label(text=f"... and {len(branching_bones) - 4} more", icon="INFO")
 
     preview_count = min(8, bone_count)
     for bone_name in bone_names[:preview_count]:
@@ -308,6 +320,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             debug_row = debug_box.row(align=True)
             debug_row.operator("hocloth.export_compiled_scene", icon="EXPORT")
             debug_row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
+            debug_row.operator("hocloth.restart_runtime_from_baseline", icon="ARMATURE_DATA")
             debug_row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
             debug_row.operator("hocloth.destroy_runtime", icon="TRASH")
 

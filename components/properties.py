@@ -30,6 +30,22 @@ def _update_root_bone_name(self, context):
     _validate_root_bone(self)
 
 
+def _sync_disabled_joint_overrides(component) -> None:
+    for entry in getattr(component, "joint_overrides", []):
+        if getattr(entry, "enabled", False):
+            continue
+        entry.radius = component.joint_radius
+        entry.stiffness = component.stiffness
+        entry.damping = component.damping
+        entry.drag = component.drag
+        entry.gravity_scale = 1.0
+
+
+def _update_spring_defaults(self, context):
+    _ = context
+    _sync_disabled_joint_overrides(self)
+
+
 def _validate_center_bone(component) -> None:
     armature_object = component.center_armature_object
     if armature_object is None or armature_object.type != "ARMATURE" or not armature_object.data:
@@ -98,11 +114,11 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
         name="Append Tail Tip Joint",
         default=False,
     )
-    joint_radius: bpy.props.FloatProperty(name="Particle Radius", default=0.02, min=0.0)
+    joint_radius: bpy.props.FloatProperty(name="Particle Radius", default=0.02, min=0.0, update=_update_spring_defaults)
     collider_group_ids: bpy.props.StringProperty(name="Collision Bindings")
-    stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
-    damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0)
-    drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0)
+    stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0, update=_update_spring_defaults)
+    damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0, update=_update_spring_defaults)
+    drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0, update=_update_spring_defaults)
     gravity_strength: bpy.props.FloatProperty(name="Gravity Strength", default=0.3, min=0.0, soft_max=2.0)
     gravity_direction: bpy.props.FloatVectorProperty(
         name="Gravity Direction",

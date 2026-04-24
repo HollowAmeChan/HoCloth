@@ -11,6 +11,7 @@ using SceneHandle = std::uint64_t;
 struct BoneDescriptor {
     std::string name;
     std::int32_t parent_index = -1;
+    std::int32_t depth = 0;
     float length = 0.0f;
     float radius = 0.0f;
     float stiffness = 0.6f;
@@ -23,6 +24,15 @@ struct BoneDescriptor {
     float rest_local_rotation[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 };
 
+struct BoneLineDescriptor {
+    std::int32_t start_index = -1;
+    std::int32_t end_index = -1;
+};
+
+struct BoneBaselineDescriptor {
+    std::vector<std::int32_t> joint_indices;
+};
+
 struct BoneChainDescriptor {
     std::string component_id;
     std::string armature_name;
@@ -32,11 +42,19 @@ struct BoneChainDescriptor {
     float stiffness = 0.6f;
     float damping = 0.2f;
     float drag = 0.1f;
-    float gravity_strength = 0.3f;
+    float gravity_strength = 0.0f;
     float gravity_direction[3] = {0.0f, -1.0f, 0.0f};
     std::vector<std::string> collider_group_ids;
     std::vector<std::string> collision_binding_ids;
     std::vector<BoneDescriptor> bones;
+    std::vector<BoneLineDescriptor> lines;
+    std::vector<BoneBaselineDescriptor> baselines;
+    std::vector<std::int32_t> line_start_indices;
+    std::vector<std::int32_t> line_counts;
+    std::vector<std::int32_t> line_data;
+    std::vector<std::int32_t> baseline_start_indices;
+    std::vector<std::int32_t> baseline_counts;
+    std::vector<std::int32_t> baseline_data;
 };
 
 struct ColliderDescriptor {

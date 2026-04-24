@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 class CompiledSpringJoint:
     name: str
     parent_index: int
+    depth: int
     length: float
     radius: float
     stiffness: float
@@ -15,6 +16,17 @@ class CompiledSpringJoint:
     rest_tail_local: tuple[float, float, float]
     rest_local_translation: tuple[float, float, float]
     rest_local_rotation: tuple[float, float, float, float]
+
+
+@dataclass
+class CompiledSpringLine:
+    start_index: int
+    end_index: int
+
+
+@dataclass
+class CompiledSpringBaseline:
+    joint_indices: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -34,6 +46,14 @@ class CompiledSpringBone:
     collision_binding_ids: list[str] = field(default_factory=list)
     armature_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     joints: list[CompiledSpringJoint] = field(default_factory=list)
+    lines: list[CompiledSpringLine] = field(default_factory=list)
+    baselines: list[CompiledSpringBaseline] = field(default_factory=list)
+    line_start_indices: list[int] = field(default_factory=list)
+    line_counts: list[int] = field(default_factory=list)
+    line_data: list[int] = field(default_factory=list)
+    baseline_start_indices: list[int] = field(default_factory=list)
+    baseline_counts: list[int] = field(default_factory=list)
+    baseline_data: list[int] = field(default_factory=list)
 
     @property
     def bone_names(self) -> list[str]:
@@ -152,6 +172,7 @@ class CompiledScene:
                         {
                             "name": joint.name,
                             "parent_index": joint.parent_index,
+                            "depth": joint.depth,
                             "length": joint.length,
                             "radius": joint.radius,
                             "stiffness": joint.stiffness,
@@ -165,6 +186,25 @@ class CompiledScene:
                         }
                         for joint in chain.joints
                     ],
+                    "lines": [
+                        {
+                            "start_index": line.start_index,
+                            "end_index": line.end_index,
+                        }
+                        for line in chain.lines
+                    ],
+                    "line_start_indices": list(chain.line_start_indices),
+                    "line_counts": list(chain.line_counts),
+                    "line_data": list(chain.line_data),
+                    "baselines": [
+                        {
+                            "joint_indices": list(baseline.joint_indices),
+                        }
+                        for baseline in chain.baselines
+                    ],
+                    "baseline_start_indices": list(chain.baseline_start_indices),
+                    "baseline_counts": list(chain.baseline_counts),
+                    "baseline_data": list(chain.baseline_data),
                 }
                 for chain in self.spring_bones
             ],

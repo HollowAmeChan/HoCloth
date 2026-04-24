@@ -92,6 +92,9 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
                     BoneDescriptor bone;
                     bone.name = nb::cast<std::string>(bone_dict["name"]);
                     bone.parent_index = nb::cast<std::int32_t>(bone_dict["parent_index"]);
+                    if (bone_dict.contains("depth")) {
+                        bone.depth = nb::cast<std::int32_t>(bone_dict["depth"]);
+                    }
                     bone.length = nb::cast<float>(bone_dict["length"]);
                     if (bone_dict.contains("radius")) {
                         bone.radius = nb::cast<float>(bone_dict["radius"]);
@@ -114,6 +117,48 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
                     copy_quat_blender_to_solver(nb::cast<nb::tuple>(bone_dict["rest_local_rotation"]), bone.rest_local_rotation);
                     chain.bones.push_back(bone);
                 }
+            }
+
+            if (chain_dict.contains("lines")) {
+                const nb::list lines = nb::cast<nb::list>(chain_dict["lines"]);
+                for (nb::handle line_handle : lines) {
+                    const nb::dict line_dict = nb::cast<nb::dict>(line_handle);
+                    BoneLineDescriptor line;
+                    line.start_index = nb::cast<std::int32_t>(line_dict["start_index"]);
+                    line.end_index = nb::cast<std::int32_t>(line_dict["end_index"]);
+                    chain.lines.push_back(line);
+                }
+            }
+            if (chain_dict.contains("line_start_indices")) {
+                chain.line_start_indices = nb::cast<std::vector<std::int32_t>>(chain_dict["line_start_indices"]);
+            }
+            if (chain_dict.contains("line_counts")) {
+                chain.line_counts = nb::cast<std::vector<std::int32_t>>(chain_dict["line_counts"]);
+            }
+            if (chain_dict.contains("line_data")) {
+                chain.line_data = nb::cast<std::vector<std::int32_t>>(chain_dict["line_data"]);
+            }
+
+            if (chain_dict.contains("baselines")) {
+                const nb::list baselines = nb::cast<nb::list>(chain_dict["baselines"]);
+                for (nb::handle baseline_handle : baselines) {
+                    const nb::dict baseline_dict = nb::cast<nb::dict>(baseline_handle);
+                    BoneBaselineDescriptor baseline;
+                    if (baseline_dict.contains("joint_indices")) {
+                        baseline.joint_indices = nb::cast<std::vector<std::int32_t>>(baseline_dict["joint_indices"]);
+                    }
+                    chain.baselines.push_back(baseline);
+                }
+            }
+
+            if (chain_dict.contains("baseline_start_indices")) {
+                chain.baseline_start_indices = nb::cast<std::vector<std::int32_t>>(chain_dict["baseline_start_indices"]);
+            }
+            if (chain_dict.contains("baseline_counts")) {
+                chain.baseline_counts = nb::cast<std::vector<std::int32_t>>(chain_dict["baseline_counts"]);
+            }
+            if (chain_dict.contains("baseline_data")) {
+                chain.baseline_data = nb::cast<std::vector<std::int32_t>>(chain_dict["baseline_data"]);
             }
 
             scene.bone_chains.push_back(chain);

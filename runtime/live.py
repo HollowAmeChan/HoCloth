@@ -10,6 +10,8 @@ from .pose_apply import (
 from .session import (
     get_compiled_scene,
     get_pose_baseline,
+    reset_runtime,
+    set_runtime_inputs_only,
     set_pose_baseline,
     step_runtime,
 )
@@ -89,6 +91,8 @@ def on_animation_playback_pre(scene, depsgraph):
 
     _LIVE_STATE["active_scene_name"] = scene.name
     _reset_runtime_tracking()
+    reset_runtime()
+    set_runtime_inputs_only(build_runtime_inputs(scene, get_compiled_scene()))
     set_pose_baseline(capture_pose_baseline(scene, get_compiled_scene()))
     scene.hocloth_runtime_status = "Live runtime playback started"
 
