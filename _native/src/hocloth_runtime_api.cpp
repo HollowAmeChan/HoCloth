@@ -53,13 +53,17 @@ struct RuntimeBoneChainState {
 struct RuntimeSceneState {
     SceneDescriptor scene;
     RuntimeInputs inputs;
+    RuntimeInputs previous_inputs;
     std::vector<RuntimeBoneChainState> chain_states;
     CollisionWorld collision_world;
     std::string backend = "xpbd";
     std::string build_message;
     bool physics_scene_ready = false;
+    bool has_previous_inputs = false;
+    float accumulated_time = 0.0f;
     std::uint64_t steps = 0;
     std::int32_t last_executed_steps = 0;
+    std::int32_t last_skipped_steps = 0;
 };
 
 struct CollisionObjectStepStart {
@@ -120,10 +124,13 @@ constexpr float kCollisionFrictionDamping = 0.60f;
 constexpr float kSpringCollisionLimitDistance = 0.05f;
 constexpr float kDistanceVelocityAttenuation = 0.30f;
 constexpr float kDirectionVelocityAttenuation = 0.80f;
+constexpr float kAngleLimitVelocityAttenuation = 0.90f;
+constexpr bool kImplicitSpringAngleLimit = false;
 constexpr float kDefaultSimulationFrequency = 90.0f;
 constexpr float kReferenceFrameDt = 1.0f / 90.0f;
 constexpr float kResetStabilizationTime = 0.10f;
 constexpr float kDepthMass = 5.0f;
+constexpr std::int32_t kMaxSimulationStepsPerFrame = 5;
 constexpr const char* kTailTipSuffix = "__hocloth_tail_tip__";
 
 float clamp_unit(float value) {
@@ -151,6 +158,12 @@ float calc_inverse_mass(float depth) {
     const float a = 1.0f - std::clamp(depth, 0.0f, 1.0f);
     const float mass = 1.0f + a * a * kDepthMass;
     return 1.0f / std::max(mass, 1.0e-6f);
+}
+
+float restoration_velocity_attenuation_for_bone(const BoneDescriptor& bone) {
+    const float stiffness = clamp_unit(bone.stiffness);
+    const float damping = clamp_unit(bone.damping);
+    return std::clamp(0.90f - stiffness * 0.55f - damping * 0.15f, 0.40f, 0.80f);
 }
 
 struct SimulationPower {
@@ -547,6 +560,184 @@ const BoneChainRuntimeInput* find_chain_input(const RuntimeInputs& inputs, const
     return nullptr;
 }
 
+const BoneChainRuntimeInput* find_chain_input_by_component(
+    const RuntimeInputs& inputs,
+    const std::string& component_id
+) {
+    for (const BoneChainRuntimeInput& input : inputs.bone_chains) {
+        if (input.component_id == component_id) {
+            return &input;
+        }
+    }
+    return nullptr;
+}
+
+const CollisionObjectRuntimeInput* find_collision_object_input(
+    const RuntimeInputs& inputs,
+    const std::string& collision_object_id
+) {
+    for (const CollisionObjectRuntimeInput& input : inputs.collision_objects) {
+        if (input.collision_object_id == collision_object_id) {
+            return &input;
+        }
+    }
+    return nullptr;
+}
+
+bool runtime_input_has_basic_positions(const BoneChainRuntimeInput* chain_input, std::size_t bone_count) {
+    return chain_input != nullptr &&
+        chain_input->basic_head_positions.size() >= bone_count * 3 &&
+        chain_input->basic_tail_positions.size() >= bone_count * 3;
+}
+
+bool runtime_input_has_basic_rotations(const BoneChainRuntimeInput* chain_input, std::size_t bone_count) {
+    return chain_input != nullptr && chain_input->basic_rotations.size() >= bone_count * 4;
+}
+
+Vec3 runtime_basic_head(const BoneChainRuntimeInput& chain_input, std::size_t bone_index) {
+    const std::size_t base = bone_index * 3;
+    return Vec3{
+        chain_input.basic_head_positions[base],
+        chain_input.basic_head_positions[base + 1],
+        chain_input.basic_head_positions[base + 2],
+    };
+}
+
+Vec3 runtime_basic_tail(const BoneChainRuntimeInput& chain_input, std::size_t bone_index) {
+    const std::size_t base = bone_index * 3;
+    return Vec3{
+        chain_input.basic_tail_positions[base],
+        chain_input.basic_tail_positions[base + 1],
+        chain_input.basic_tail_positions[base + 2],
+    };
+}
+
+Quat runtime_basic_rotation(const BoneChainRuntimeInput& chain_input, std::size_t bone_index) {
+    const std::size_t base = bone_index * 4;
+    return normalize_or_identity(Quat{
+        chain_input.basic_rotations[base],
+        chain_input.basic_rotations[base + 1],
+        chain_input.basic_rotations[base + 2],
+        chain_input.basic_rotations[base + 3],
+    });
+}
+
+void lerp_vec3_fields(const float start[3], const float target[3], float alpha, float out[3]) {
+    const Vec3 blended = lerp(make_vec3(start), make_vec3(target), alpha);
+    copy_vec3(blended, out);
+}
+
+void nlerp_quat_fields(const float start[4], const float target[4], float alpha, float out[4]) {
+    const Quat blended = nlerp(
+        normalize_or_identity(make_quat(start)),
+        normalize_or_identity(make_quat(target)),
+        alpha
+    );
+    copy_quat(blended, out);
+}
+
+std::vector<float> lerp_vec3_triplets(const std::vector<float>& start, const std::vector<float>& target, float alpha) {
+    if (start.size() != target.size() || (target.size() % 3) != 0) {
+        return target;
+    }
+    std::vector<float> result(target.size(), 0.0f);
+    for (std::size_t index = 0; index < target.size(); index += 3) {
+        const Vec3 blended = lerp(
+            Vec3{start[index], start[index + 1], start[index + 2]},
+            Vec3{target[index], target[index + 1], target[index + 2]},
+            alpha
+        );
+        result[index] = blended.x;
+        result[index + 1] = blended.y;
+        result[index + 2] = blended.z;
+    }
+    return result;
+}
+
+std::vector<float> nlerp_quat_quads(const std::vector<float>& start, const std::vector<float>& target, float alpha) {
+    if (start.size() != target.size() || (target.size() % 4) != 0) {
+        return target;
+    }
+    std::vector<float> result(target.size(), 0.0f);
+    for (std::size_t index = 0; index < target.size(); index += 4) {
+        const Quat blended = nlerp(
+            normalize_or_identity(Quat{start[index], start[index + 1], start[index + 2], start[index + 3]}),
+            normalize_or_identity(Quat{target[index], target[index + 1], target[index + 2], target[index + 3]}),
+            alpha
+        );
+        result[index] = blended.w;
+        result[index + 1] = blended.x;
+        result[index + 2] = blended.y;
+        result[index + 3] = blended.z;
+    }
+    return result;
+}
+
+BoneChainRuntimeInput interpolate_chain_input(
+    const BoneChainRuntimeInput* start,
+    const BoneChainRuntimeInput& target,
+    float alpha
+) {
+    if (start == nullptr) {
+        return target;
+    }
+    BoneChainRuntimeInput result = target;
+    lerp_vec3_fields(start->root_translation, target.root_translation, alpha, result.root_translation);
+    nlerp_quat_fields(start->root_rotation_quaternion, target.root_rotation_quaternion, alpha, result.root_rotation_quaternion);
+    lerp_vec3_fields(start->root_linear_velocity, target.root_linear_velocity, alpha, result.root_linear_velocity);
+    lerp_vec3_fields(start->root_scale, target.root_scale, alpha, result.root_scale);
+    lerp_vec3_fields(start->center_translation, target.center_translation, alpha, result.center_translation);
+    nlerp_quat_fields(start->center_rotation_quaternion, target.center_rotation_quaternion, alpha, result.center_rotation_quaternion);
+    lerp_vec3_fields(start->center_linear_velocity, target.center_linear_velocity, alpha, result.center_linear_velocity);
+    lerp_vec3_fields(start->center_scale, target.center_scale, alpha, result.center_scale);
+    result.basic_head_positions = lerp_vec3_triplets(start->basic_head_positions, target.basic_head_positions, alpha);
+    result.basic_tail_positions = lerp_vec3_triplets(start->basic_tail_positions, target.basic_tail_positions, alpha);
+    result.basic_rotations = nlerp_quat_quads(start->basic_rotations, target.basic_rotations, alpha);
+    return result;
+}
+
+CollisionObjectRuntimeInput interpolate_collision_object_input(
+    const CollisionObjectRuntimeInput* start,
+    const CollisionObjectRuntimeInput& target,
+    float alpha
+) {
+    if (start == nullptr) {
+        return target;
+    }
+    CollisionObjectRuntimeInput result = target;
+    lerp_vec3_fields(start->world_translation, target.world_translation, alpha, result.world_translation);
+    nlerp_quat_fields(start->world_rotation, target.world_rotation, alpha, result.world_rotation);
+    lerp_vec3_fields(start->linear_velocity, target.linear_velocity, alpha, result.linear_velocity);
+    lerp_vec3_fields(start->angular_velocity, target.angular_velocity, alpha, result.angular_velocity);
+    return result;
+}
+
+RuntimeInputs build_interpolated_runtime_inputs(
+    const RuntimeSceneState& scene_state,
+    float alpha,
+    float dt,
+    std::int32_t simulation_frequency
+) {
+    RuntimeInputs result;
+    result.dt = dt;
+    result.simulation_frequency = simulation_frequency;
+    result.bone_chains.reserve(scene_state.inputs.bone_chains.size());
+    result.collision_objects.reserve(scene_state.inputs.collision_objects.size());
+    for (const BoneChainRuntimeInput& target : scene_state.inputs.bone_chains) {
+        const BoneChainRuntimeInput* start = scene_state.has_previous_inputs
+            ? find_chain_input_by_component(scene_state.previous_inputs, target.component_id)
+            : nullptr;
+        result.bone_chains.push_back(interpolate_chain_input(start, target, alpha));
+    }
+    for (const CollisionObjectRuntimeInput& target : scene_state.inputs.collision_objects) {
+        const CollisionObjectRuntimeInput* start = scene_state.has_previous_inputs
+            ? find_collision_object_input(scene_state.previous_inputs, target.collision_object_id)
+            : nullptr;
+        result.collision_objects.push_back(interpolate_collision_object_input(start, target, alpha));
+    }
+    return result;
+}
+
 std::vector<RuntimeBoneChainState> make_chain_states(const SceneDescriptor& scene) {
     std::vector<RuntimeBoneChainState> states;
     states.reserve(scene.bone_chains.size());
@@ -705,6 +896,7 @@ std::vector<std::pair<std::size_t, std::size_t>> line_pairs_for_chain(const Bone
 BaselineStepBuffers build_baseline_step_buffers(
     const BoneChainDescriptor& chain,
     const RuntimeBoneChainState& chain_state,
+    const BoneChainRuntimeInput* chain_input,
     const Vec3& root_translation,
     const std::vector<std::vector<std::size_t>>& baseline_paths
 ) {
@@ -739,6 +931,7 @@ BaselineStepBuffers build_baseline_step_buffers(
     buffers.local_rotations.resize(buffers.joint_indices.size(), Quat{});
     buffers.limit_vectors.resize(buffers.joint_indices.size(), Vec3{});
     buffers.restoration_vectors.resize(buffers.joint_indices.size(), Vec3{});
+    const bool has_runtime_basic_positions = runtime_input_has_basic_positions(chain_input, chain.bones.size());
 
     for (std::size_t baseline_index = 0; baseline_index < buffers.start_indices.size(); ++baseline_index) {
         const std::int32_t start = buffers.start_indices[baseline_index];
@@ -782,7 +975,11 @@ BaselineStepBuffers build_baseline_step_buffers(
                 const std::int32_t parent_joint_index = buffers.joint_indices[data_index - 1];
                 Vec3 basic_head = root_translation;
                 Vec3 current_head = root_translation;
+                if (has_runtime_basic_positions && chain_input != nullptr) {
+                    basic_head = runtime_basic_head(*chain_input, static_cast<std::size_t>(joint_index));
+                }
                 if (parent_joint_index >= 0 &&
+                    !has_runtime_basic_positions &&
                     static_cast<std::size_t>(parent_joint_index) < chain_state.step_basic_positions.size()) {
                     basic_head = chain_state.step_basic_positions[static_cast<std::size_t>(parent_joint_index)];
                 }
@@ -846,7 +1043,11 @@ void initialize_chain_state(
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
         const BoneDescriptor& bone = chain.bones[bone_index];
         RuntimeBoneState& state = chain_state.bones[bone_index];
-        state.position = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        Vec3 initial_tail = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        if (runtime_input_has_basic_positions(chain_input, chain.bones.size())) {
+            initial_tail = runtime_basic_tail(*chain_input, bone_index);
+        }
+        state.position = initial_tail;
         state.base_position = state.position;
         state.previous_position = state.position;
         state.velocity_position = state.position;
@@ -856,7 +1057,11 @@ void initialize_chain_state(
         state.static_friction = 0.0f;
         state.stretch_lambda = 0.0f;
         chain_state.step_basic_positions[bone_index] = state.position;
-        chain_state.step_basic_rotations[bone_index] = Quat{};
+        if (runtime_input_has_basic_rotations(chain_input, chain.bones.size())) {
+            chain_state.step_basic_rotations[bone_index] = runtime_basic_rotation(*chain_input, bone_index);
+        } else {
+            chain_state.step_basic_rotations[bone_index] = Quat{};
+        }
     }
 
     chain_state.last_root_translation = root_translation;
@@ -870,6 +1075,7 @@ void initialize_chain_state(
 void update_step_basic_pose_for_chain(
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
+    const BoneChainRuntimeInput* chain_input,
     const Vec3& root_translation,
     const Quat& root_rotation,
     const Vec3& root_rest_head,
@@ -882,16 +1088,29 @@ void update_step_basic_pose_for_chain(
         chain_state.step_basic_rotations.resize(chain.bones.size());
     }
 
+    const bool has_basic_positions = runtime_input_has_basic_positions(chain_input, chain.bones.size());
+    const bool has_basic_rotations = runtime_input_has_basic_rotations(chain_input, chain.bones.size());
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
         const BoneDescriptor& bone = chain.bones[bone_index];
-        chain_state.step_basic_positions[bone_index] = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
-        chain_state.step_basic_rotations[bone_index] = Quat{};
+        chain_state.step_basic_positions[bone_index] = has_basic_positions
+            ? runtime_basic_tail(*chain_input, bone_index)
+            : rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        chain_state.step_basic_rotations[bone_index] = has_basic_rotations
+            ? runtime_basic_rotation(*chain_input, bone_index)
+            : Quat{};
+    }
+
+    if (has_basic_positions && has_basic_rotations) {
+        return;
     }
 
     for (const std::vector<std::size_t>& path : baseline_paths) {
         for (std::size_t path_index = 0; path_index < path.size(); ++path_index) {
             const std::size_t bone_index = path[path_index];
             const BoneDescriptor& bone = chain.bones[bone_index];
+            if (has_basic_rotations) {
+                continue;
+            }
             Quat basic_rotation = normalize_or_identity(quat_multiply(root_rotation, make_quat(bone.rest_local_rotation)));
             if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.step_basic_rotations.size()) {
                 basic_rotation = normalize_or_identity(
@@ -1370,6 +1589,7 @@ void apply_pair_directional_constraint(
     const Vec3& target_direction,
     float rest_length,
     float weight,
+    float velocity_attenuation,
     float rotation_center_ratio,
     float parent_inverse_mass,
     float child_inverse_mass
@@ -1398,13 +1618,13 @@ void apply_pair_directional_constraint(
         move_position_with_velocity_attenuation(
             *parent_state,
             mul(sub(target_parent, parent_state->position), parent_directional_correction_scale),
-            kDirectionVelocityAttenuation
+            velocity_attenuation
         );
     }
     move_position_with_velocity_attenuation(
         child_state,
         mul(sub(target_child, child_state.position), child_directional_correction_scale),
-        kDirectionVelocityAttenuation
+        velocity_attenuation
     );
 }
 
@@ -1573,6 +1793,7 @@ void solve_limit_constraint_for_buffer_entry(
         clamped_direction,
         std::max(1.0e-5f, bone.length),
         limit_weight,
+        kAngleLimitVelocityAttenuation,
         limit_rotation_center_ratio,
         context.parent_inverse_mass,
         context.child_inverse_mass
@@ -1608,6 +1829,7 @@ void solve_restoration_constraint_for_buffer_entry(
     const BoneDescriptor& bone = chain.bones[context.bone_index];
     const float alignment_fraction = (0.010f + context.stiffness_factor * 0.040f) * simulation_power_alignment;
     const float alignment_weight = fraction_for_dt(alignment_fraction, dt) / iterations;
+    const float restoration_velocity_attenuation = restoration_velocity_attenuation_for_bone(bone);
     const float restoration_rotation_center_ratio = 0.10f + 0.40f * std::clamp(iteration_ratio, 0.0f, 1.0f);
     apply_pair_directional_constraint(
         context.parent_state,
@@ -1616,6 +1838,7 @@ void solve_restoration_constraint_for_buffer_entry(
         context.basic_direction,
         std::max(1.0e-5f, bone.length),
         alignment_weight * context.visit_scale,
+        restoration_velocity_attenuation,
         restoration_rotation_center_ratio,
         context.parent_inverse_mass,
         context.child_inverse_mass
@@ -1633,16 +1856,18 @@ void solve_bone_constraints_for_buffer_entry(
     float iteration_ratio,
     float simulation_power_alignment
 ) {
-    solve_limit_constraint_for_buffer_entry(
-        chain,
-        chain_state,
-        baseline_buffers,
-        buffer_index,
-        root_translation,
-        dt,
-        iterations,
-        iteration_ratio
-    );
+    if (kImplicitSpringAngleLimit) {
+        solve_limit_constraint_for_buffer_entry(
+            chain,
+            chain_state,
+            baseline_buffers,
+            buffer_index,
+            root_translation,
+            dt,
+            iterations,
+            iteration_ratio
+        );
+    }
     solve_restoration_constraint_for_buffer_entry(
         chain,
         chain_state,
@@ -1841,6 +2066,7 @@ void solve_collision_phase(
 void start_simulation_step_for_chain(
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
+    const BoneChainRuntimeInput* chain_input,
     const Vec3& root_translation,
     const Quat& root_rotation,
     const Vec3& root_rest_head,
@@ -1850,27 +2076,19 @@ void start_simulation_step_for_chain(
     float dt,
     const SimulationPower& simulation_power
 ) {
-    std::int32_t max_bone_depth = 0;
-    for (const BoneDescriptor& depth_bone : chain.bones) {
-        max_bone_depth = std::max(max_bone_depth, depth_bone.depth);
-    }
-
+    (void)root_delta;
+    (void)center_delta;
+    const bool has_basic_positions = runtime_input_has_basic_positions(chain_input, chain.bones.size());
     for (std::size_t bone_index = 0; bone_index < chain.bones.size(); ++bone_index) {
         const BoneDescriptor& bone = chain.bones[bone_index];
         RuntimeBoneState& state = chain_state.bones[bone_index];
-        const float stiffness = std::clamp(bone.stiffness, 0.0f, 1.0f);
         const float damping = remap_bone_damping(bone.damping);
         const float drag = clamp_unit(bone.drag);
-        const float depth = chain.bones.empty()
-            ? 0.0f
-            : std::clamp(
-                static_cast<float>(bone.depth + 1) /
-                    static_cast<float>(std::max<std::int32_t>(1, max_bone_depth + 1)),
-                0.0f,
-                1.0f
-            );
         const Vec3 old_position = state.position;
-        const Vec3 base_tail = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        Vec3 base_tail = rest_tail_world(bone, root_translation, root_rotation, root_rest_head);
+        if (has_basic_positions) {
+            base_tail = runtime_basic_tail(*chain_input, bone_index);
+        }
         state.base_position = base_tail;
 
         if (bone.parent_index < 0) {
@@ -1882,11 +2100,6 @@ void start_simulation_step_for_chain(
             continue;
         }
 
-        const float inertia_depth = 1.0f - depth * depth;
-        const float root_inertia_mix = std::clamp(0.06f + stiffness * 0.12f - drag * 0.04f, 0.02f, 0.18f);
-        Vec3 inertia_offset = mul(root_delta, root_inertia_mix * inertia_depth * chain_state.velocity_weight);
-        inertia_offset = add(inertia_offset, mul(center_delta, 0.03f * inertia_depth * chain_state.velocity_weight));
-
         Vec3 velocity = mul(state.velocity, chain_state.velocity_weight);
         velocity = mul(velocity, std::clamp(1.0f - damping * simulation_power.z, 0.0f, 1.0f));
 
@@ -1894,7 +2107,7 @@ void start_simulation_step_for_chain(
         velocity = add(velocity, mul(gravity, gravity_motion_scale * dt));
         velocity = mul(velocity, std::clamp(1.0f - drag * 0.28f * simulation_power.z, 0.0f, 1.0f));
 
-        const Vec3 shifted_position = add(old_position, inertia_offset);
+        const Vec3 shifted_position = old_position;
         const Vec3 predicted = add(shifted_position, mul(velocity, dt));
         const Vec3 stabilized_shifted = lerp(base_tail, shifted_position, chain_state.blend_weight);
         const Vec3 stabilized_predicted = lerp(base_tail, predicted, chain_state.blend_weight);
@@ -1968,6 +2181,7 @@ void step_bone_chain(
     start_simulation_step_for_chain(
         chain,
         chain_state,
+        chain_input,
         root_translation,
         root_rotation,
         root_rest_head,
@@ -1985,6 +2199,7 @@ void step_bone_chain(
     update_step_basic_pose_for_chain(
         chain,
         chain_state,
+        chain_input,
         root_translation,
         root_rotation,
         root_rest_head,
@@ -1993,6 +2208,7 @@ void step_bone_chain(
     BaselineStepBuffers baseline_buffers = build_baseline_step_buffers(
         chain,
         chain_state,
+        chain_input,
         root_translation,
         baseline_paths
     );
@@ -2015,23 +2231,24 @@ void step_bone_chain(
         iterations,
         power_alignment
     );
-    solve_collision_phase(
+    if (!colliders.empty()) {
+        solve_collision_phase(
+            chain,
+            chain_state,
+            colliders,
+            baseline_buffers,
+            root_translation,
+            dt
+        );
+    }
+    solve_distance_phase(
         chain,
         chain_state,
-        colliders,
-        baseline_buffers,
-        root_translation,
-        dt
-    );
-    solve_direction_phase(
-        chain,
-        chain_state,
-        baseline_buffers,
+        line_pairs,
         root_translation,
         dt,
-        solver_iterations,
-        iterations,
-        power_alignment
+        power_distance,
+        solver_iterations
     );
     finalize_end_step_for_chain(chain_state, dt);
 
@@ -2042,10 +2259,33 @@ void step_bone_chain(
 
 std::int32_t advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs& inputs) {
     const std::int32_t simulation_frequency = std::clamp(inputs.simulation_frequency, 30, 150);
-    const float simulation_dt = 1.0f / static_cast<float>(simulation_frequency);
+    const float frame_dt = std::max(inputs.dt, 0.0f);
+    const float simulation_dt = 1.0f / std::max(1.0f, static_cast<float>(simulation_frequency));
     const SimulationPower simulation_power = simulation_power_for_frequency(simulation_frequency);
     constexpr std::size_t kFixedStepSolverIterations = 3;
     const std::size_t solver_iterations_per_step = kFixedStepSolverIterations;
+    if (frame_dt <= 0.0f) {
+        scene_state.last_skipped_steps = 0;
+        return 0;
+    }
+
+    const float accumulated_before_frame = std::max(0.0f, scene_state.accumulated_time);
+    scene_state.accumulated_time = accumulated_before_frame + frame_dt;
+    const std::int32_t scheduled_steps = static_cast<std::int32_t>(
+        std::floor(scene_state.accumulated_time / std::max(simulation_dt, 1.0e-6f))
+    );
+    if (scheduled_steps <= 0) {
+        scene_state.last_skipped_steps = 0;
+        return 0;
+    }
+    const std::int32_t executed_steps = std::min(scheduled_steps, kMaxSimulationStepsPerFrame);
+    const std::int32_t skipped_steps = std::max(0, scheduled_steps - executed_steps);
+    scene_state.last_skipped_steps = skipped_steps;
+    scene_state.accumulated_time = std::max(
+        0.0f,
+        scene_state.accumulated_time - static_cast<float>(scheduled_steps) * simulation_dt
+    );
+
     std::vector<CollisionObjectStepStart> start_collision_objects;
     start_collision_objects.reserve(inputs.collision_objects.size());
     for (const CollisionObjectRuntimeInput& collision_input : inputs.collision_objects) {
@@ -2060,22 +2300,39 @@ std::int32_t advance_runtime(RuntimeSceneState& scene_state, const RuntimeInputs
         start_collision_objects.push_back(std::move(start));
     }
 
-    apply_collision_inputs_for_step(scene_state, inputs, start_collision_objects, 0.0f, 1.0f);
-    for (std::size_t chain_index = 0; chain_index < scene_state.scene.bone_chains.size(); ++chain_index) {
-        const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
-        RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
-        step_bone_chain(
+    const float safe_frame_dt = std::max(frame_dt, 1.0e-6f);
+    const float first_step_time = std::max(0.0f, simulation_dt - accumulated_before_frame);
+    const float skipped_start_time = skipped_steps > 0
+        ? std::max(0.0f, first_step_time + static_cast<float>(skipped_steps - 1) * simulation_dt)
+        : 0.0f;
+    float previous_alpha = std::clamp(skipped_start_time / safe_frame_dt, 0.0f, 1.0f);
+    for (std::int32_t step_index = skipped_steps; step_index < scheduled_steps; ++step_index) {
+        const float step_time = first_step_time + static_cast<float>(step_index) * simulation_dt;
+        const float alpha = std::clamp(step_time / safe_frame_dt, previous_alpha, 1.0f);
+        const RuntimeInputs step_inputs = build_interpolated_runtime_inputs(
             scene_state,
-            chain,
-            chain_state,
-            find_chain_input(scene_state.inputs, chain),
+            alpha,
             simulation_dt,
-            solver_iterations_per_step,
-            simulation_power
+            simulation_frequency
         );
+        apply_collision_inputs_for_step(scene_state, inputs, start_collision_objects, previous_alpha, alpha);
+        for (std::size_t chain_index = 0; chain_index < scene_state.scene.bone_chains.size(); ++chain_index) {
+            const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
+            RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
+            step_bone_chain(
+                scene_state,
+                chain,
+                chain_state,
+                find_chain_input(step_inputs, chain),
+                simulation_dt,
+                solver_iterations_per_step,
+                simulation_power
+            );
+        }
+        previous_alpha = alpha;
     }
 
-    return 1;
+    return executed_steps;
 }
 
 std::vector<BoneTransform> build_transforms(const RuntimeSceneState& scene_state) {
@@ -2085,6 +2342,7 @@ std::vector<BoneTransform> build_transforms(const RuntimeSceneState& scene_state
         const BoneChainDescriptor& chain = scene_state.scene.bone_chains[chain_index];
         const RuntimeBoneChainState& chain_state = scene_state.chain_states[chain_index];
         const BoneChainRuntimeInput* chain_input = find_chain_input(scene_state.inputs, chain);
+        const bool has_runtime_basic_positions = runtime_input_has_basic_positions(chain_input, chain.bones.size());
         const Vec3 root_rest_head = chain.bones.empty()
             ? Vec3{}
             : make_vec3(chain.bones.front().rest_head_local);
@@ -2102,9 +2360,13 @@ std::vector<BoneTransform> build_transforms(const RuntimeSceneState& scene_state
             const bool emit_transform = bone.parent_index >= 0 && !ends_with(bone.name, kTailTipSuffix);
             Vec3 current_head = root_translation;
             Vec3 basic_head = root_translation;
+            if (has_runtime_basic_positions && chain_input != nullptr) {
+                basic_head = runtime_basic_head(*chain_input, bone_index);
+            }
             if (bone.parent_index >= 0 && static_cast<std::size_t>(bone.parent_index) < chain_state.bones.size()) {
                 current_head = chain_state.bones[static_cast<std::size_t>(bone.parent_index)].position;
-                if (static_cast<std::size_t>(bone.parent_index) < chain_state.step_basic_positions.size()) {
+                if (!has_runtime_basic_positions &&
+                    static_cast<std::size_t>(bone.parent_index) < chain_state.step_basic_positions.size()) {
                     basic_head = chain_state.step_basic_positions[static_cast<std::size_t>(bone.parent_index)];
                 }
             }

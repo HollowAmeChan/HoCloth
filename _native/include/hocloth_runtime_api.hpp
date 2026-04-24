@@ -124,6 +124,9 @@ struct BoneChainRuntimeInput {
     float center_rotation_quaternion[4] = {1.0f, 0.0f, 0.0f, 0.0f};
     float center_linear_velocity[3] = {0.0f, 0.0f, 0.0f};
     float center_scale[3] = {1.0f, 1.0f, 1.0f};
+    std::vector<float> basic_head_positions;
+    std::vector<float> basic_tail_positions;
+    std::vector<float> basic_rotations;
 };
 
 struct CollisionObjectRuntimeInput {

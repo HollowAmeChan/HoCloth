@@ -40,6 +40,39 @@ void copy_quat_blender_to_solver(const nb::tuple& tuple_value, float out[4]) {
     blender_to_solver_quaternion(blender_value, out);
 }
 
+std::vector<float> vec3_array_blender_to_solver(const nb::tuple& values) {
+    std::vector<float> result;
+    result.reserve(values.size());
+    for (std::size_t index = 0; index + 2 < values.size(); index += 3) {
+        float solver_value[3];
+        copy_vec3_blender_to_solver(
+            nb::make_tuple(values[index], values[index + 1], values[index + 2]),
+            solver_value
+        );
+        result.push_back(solver_value[0]);
+        result.push_back(solver_value[1]);
+        result.push_back(solver_value[2]);
+    }
+    return result;
+}
+
+std::vector<float> quat_array_blender_to_solver(const nb::tuple& values) {
+    std::vector<float> result;
+    result.reserve(values.size());
+    for (std::size_t index = 0; index + 3 < values.size(); index += 4) {
+        float solver_value[4];
+        copy_quat_blender_to_solver(
+            nb::make_tuple(values[index], values[index + 1], values[index + 2], values[index + 3]),
+            solver_value
+        );
+        result.push_back(solver_value[0]);
+        result.push_back(solver_value[1]);
+        result.push_back(solver_value[2]);
+        result.push_back(solver_value[3]);
+    }
+    return result;
+}
+
 SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
     SceneDescriptor scene;
 
@@ -352,6 +385,21 @@ RuntimeInputs runtime_inputs_from_python(
         }
         if (chain_dict.contains("center_scale")) {
             copy_vec3(nb::cast<nb::tuple>(chain_dict["center_scale"]), chain.center_scale);
+        }
+        if (chain_dict.contains("basic_head_positions")) {
+            chain.basic_head_positions = vec3_array_blender_to_solver(
+                nb::cast<nb::tuple>(chain_dict["basic_head_positions"])
+            );
+        }
+        if (chain_dict.contains("basic_tail_positions")) {
+            chain.basic_tail_positions = vec3_array_blender_to_solver(
+                nb::cast<nb::tuple>(chain_dict["basic_tail_positions"])
+            );
+        }
+        if (chain_dict.contains("basic_rotations")) {
+            chain.basic_rotations = quat_array_blender_to_solver(
+                nb::cast<nb::tuple>(chain_dict["basic_rotations"])
+            );
         }
         inputs.bone_chains.push_back(chain);
     }

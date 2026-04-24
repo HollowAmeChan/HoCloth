@@ -13,6 +13,8 @@ _runtime_state = {
     "simulation_frequency": 90,
     "last_executed_steps": 0,
     "bone_transform_count": 0,
+    "fixed_step_dt": 1.0 / 90.0,
+    "accumulated_time": 0.0,
 }
 _active_bridge = None
 _compiled_scene = None
@@ -57,6 +59,8 @@ def build_runtime(compiled_scene):
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["fixed_step_dt"] = 1.0 / max(int(_runtime_state["simulation_frequency"]), 1)
+    _runtime_state["accumulated_time"] = 0.0
     return dict(_runtime_state)
 
 
@@ -80,6 +84,7 @@ def reset_runtime():
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["accumulated_time"] = 0.0
     _last_transforms = []
     return dict(_runtime_state)
 
@@ -104,9 +109,13 @@ def step_runtime(
     bridge = _current_bridge()
     if runtime_inputs is not None:
         bridge.set_runtime_inputs(_runtime_state["handle"], runtime_inputs)
+
+    fixed_step_dt = 1.0 / max(int(simulation_frequency), 1)
+    _runtime_state["fixed_step_dt"] = fixed_step_dt
+    _runtime_state["accumulated_time"] += max(float(dt), 0.0)
     result = bridge.step_scene(
         _runtime_state["handle"],
-        dt,
+        fixed_step_dt,
         simulation_frequency,
     )
     transforms = bridge.get_bone_transforms(_runtime_state["handle"])
@@ -116,6 +125,10 @@ def step_runtime(
     _runtime_state["simulation_frequency"] = simulation_frequency
     _runtime_state["last_executed_steps"] = int(result.get("executed_steps", 0))
     _runtime_state["bone_transform_count"] = len(transforms)
+    _runtime_state["accumulated_time"] = max(
+        0.0,
+        _runtime_state["accumulated_time"] - (fixed_step_dt * _runtime_state["last_executed_steps"]),
+    )
     _write_runtime_debug_dump(runtime_inputs, transforms)
     return {
         "runtime_state": dict(_runtime_state),
@@ -132,6 +145,8 @@ def reset_runtime_state():
     _runtime_state["simulation_frequency"] = 90
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["fixed_step_dt"] = 1.0 / 90.0
+    _runtime_state["accumulated_time"] = 0.0
 
 
 def get_runtime_state():
