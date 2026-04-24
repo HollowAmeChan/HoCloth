@@ -94,6 +94,39 @@ Quat Mul(const Quat& a, const Quat& b)
     };
 }
 
+Quat Conjugate(const Quat& value)
+{
+    return Quat{value.w, -value.x, -value.y, -value.z};
+}
+
+Quat NormalizeQuat(const Quat& value)
+{
+    const float length = std::sqrt(
+        value.w * value.w
+        + value.x * value.x
+        + value.y * value.y
+        + value.z * value.z
+    );
+    if (length <= 1.0e-8f) {
+        return Quat{};
+    }
+    const float inv_length = 1.0f / length;
+    return Quat{
+        value.w * inv_length,
+        value.x * inv_length,
+        value.y * inv_length,
+        value.z * inv_length,
+    };
+}
+
+Vec3 RotateVector(const Quat& rotation, const Vec3& value)
+{
+    const Quat q = NormalizeQuat(rotation);
+    const Quat p{0.0f, value.x, value.y, value.z};
+    const Quat result = Mul(Mul(q, p), Conjugate(q));
+    return Vec3{result.x, result.y, result.z};
+}
+
 Quat QuaternionFromPitchRoll(float pitch, float roll)
 {
     const float half_pitch = pitch * 0.5f;
@@ -190,6 +223,9 @@ struct ChainCache {
     std::vector<CompiledSpringLine> line_indices;
     std::vector<std::vector<int>> baseline_paths;
     std::vector<JointState> joint_states;
+    Quat last_root_rotation;
+    Quat last_center_rotation;
+    bool has_runtime_rotation = false;
 };
 
 RuntimeChainInput* FindRuntimeChainInput(RuntimeInputs& inputs, const std::string& component_id)
@@ -474,6 +510,30 @@ void StepChain(
     const Vec3 gravity_direction = Normalize(chain.gravity_direction);
     (void)gravity_direction;
 
+    Vec3 root_rotation_offset{};
+    Vec3 center_rotation_offset{};
+    if (runtime_input != nullptr && cache.has_runtime_rotation) {
+        // From MC2: baseRot / center inertia changes affect spring direction and follow.
+        const Quat root_delta = NormalizeQuat(
+            Mul(runtime_input->root_rotation_quaternion, Conjugate(cache.last_root_rotation))
+        );
+        const Quat center_delta = NormalizeQuat(
+            Mul(runtime_input->center_rotation_quaternion, Conjugate(cache.last_center_rotation))
+        );
+        const Vec3 root_up = RotateVector(root_delta, Vec3{0.0f, 1.0f, 0.0f});
+        const Vec3 center_up = RotateVector(center_delta, Vec3{0.0f, 1.0f, 0.0f});
+        root_rotation_offset = Vec3{
+            Clamp(-root_up.x, -1.0f, 1.0f),
+            Clamp(root_up.z, -1.0f, 1.0f),
+            0.0f,
+        };
+        center_rotation_offset = Vec3{
+            Clamp(-center_up.x, -1.0f, 1.0f),
+            Clamp(center_up.z, -1.0f, 1.0f),
+            0.0f,
+        };
+    }
+
     for (const std::vector<int>& path : cache.baseline_paths) {
         if (path.size() < 2) {
             continue;
@@ -494,15 +554,21 @@ void StepChain(
             const float inherit = kMc2BoneSpringTetherCompressionLimit * (0.55f + stiffness * 0.25f);
             const float center_offset_scale = 0.16f * (1.0f - depth_ratio * 0.35f);
             const float inertia_scale = 0.014f * (1.0f - depth_ratio * 0.45f);
+            const float root_rotation_scale = 0.26f * (1.0f - depth_ratio * 0.25f);
+            const float center_rotation_scale = 0.34f * (1.0f - depth_ratio * 0.15f);
 
             const float target_pitch =
                 parent_state.pitch * inherit
                 + center_offset.y * center_offset_scale
-                + center_velocity.y * inertia_scale;
+                + center_velocity.y * inertia_scale
+                + root_rotation_offset.y * root_rotation_scale
+                + center_rotation_offset.y * center_rotation_scale;
             const float target_roll =
                 parent_state.roll * inherit
                 + center_offset.x * center_offset_scale
-                + center_velocity.x * inertia_scale;
+                + center_velocity.x * inertia_scale
+                + root_rotation_offset.x * root_rotation_scale
+                + center_rotation_offset.x * center_rotation_scale;
 
             const float spring_gain =
                 (0.45f + stiffness * 0.55f)
@@ -558,6 +624,12 @@ void StepChain(
             continue;
         }
         ApplyCollisionResponse(scene, chain, joint, cache.joint_states[joint_index]);
+    }
+
+    if (runtime_input != nullptr) {
+        cache.last_root_rotation = runtime_input->root_rotation_quaternion;
+        cache.last_center_rotation = runtime_input->center_rotation_quaternion;
+        cache.has_runtime_rotation = true;
     }
 }
 

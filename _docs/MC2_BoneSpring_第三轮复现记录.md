@@ -129,3 +129,52 @@
 
 - `MC2` 没有的 HoCloth 自定义特性
 - 为了抽象整洁而提前重写现在这条已验证有效的复现路线
+
+---
+
+## 7. 后续补记
+
+在第三轮之后又继续做了两处重要修正，和当前 BoneSpring 手感直接相关：
+
+### 7.1 `center = NONE` 时不再退回世界原点
+
+之前 runtime 输入里如果没有显式 center，会把 center 当成 `(0, 0, 0)`。
+
+这会导致：
+
+- `center - root` 从第一帧开始就出现错误偏移
+- BoneSpring 在“开始模拟时静止不动”这件事上偏离 `MC2`
+
+现在已经改成：
+
+- 没有显式 center 时，直接退回当前 root transform
+
+这更符合当前 `MC2 BoneSpring` 需要的静止起始状态。
+
+### 7.2 native 开始接入 root / center 旋转增量
+
+之前当前 native 主要只利用了：
+
+- center 平移
+- center 速度
+
+但 `MC2` 的 `Spring(...)` 明确依赖 `baseRot` 来定义 spring 限制方向。
+
+现在 native 已经开始记录并使用：
+
+- root rotation delta
+- center rotation delta
+
+把它们折算成 BoneSpring 的目标偏移，改善“旋转时效果远不如 MC2”的问题。
+
+这还不是 `MC2 InertiaConstraint` 的全量移植，但已经补上了一条之前明显缺失的主干。
+
+### 7.3 CurveSerializeData 暂时只保留接口
+
+根据当前阶段目标，`CurveSerializeData` 暂时只保留数据接口：
+
+- 保留 `use_curve`
+- 保留 `value`
+- 不继续扩 Blender 侧曲线编辑 UI
+
+等后面专门设计曲线数据结构时再统一实现。

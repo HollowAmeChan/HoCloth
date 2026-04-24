@@ -117,8 +117,15 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
                 center_bone_name,
             )
         else:
-            center_object = scene.objects.get(center_object_name) if center_object_name else None
-            center_translation, center_rotation, center_scale = _object_transform_input(center_object)
+            if center_object_name:
+                center_object = scene.objects.get(center_object_name)
+                center_translation, center_rotation, center_scale = _object_transform_input(center_object)
+            else:
+                # MC2-style fallback: when BoneSpring has no explicit center, use the
+                # current root transform as the simulation center instead of world origin.
+                center_translation = translation
+                center_rotation = rotation
+                center_scale = armature_scale
         linear_velocity = (0.0, 0.0, 0.0)
         previous_state = _INPUT_STATE["chain_states"].get(chain.component_id)
         if previous_state is not None and frame_delta in (-1, 1):

@@ -87,8 +87,6 @@ class HoClothSpringJointOverride(bpy.types.PropertyGroup):
 class HoClothCurveParameter(bpy.types.PropertyGroup):
     use_curve: bpy.props.BoolProperty(name="Use Curve", default=False)
     value: bpy.props.FloatProperty(name="Value", default=0.0)
-    curve_start: bpy.props.FloatProperty(name="Curve Start", default=1.0, min=0.0, max=1.0)
-    curve_end: bpy.props.FloatProperty(name="Curve End", default=1.0, min=0.0, max=1.0)
 
 
 class HoClothCheckSliderParameter(bpy.types.PropertyGroup):

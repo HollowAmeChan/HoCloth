@@ -121,6 +121,7 @@ def _draw_spring_bone_details(layout, scene, item):
     collision_box.label(text="MC2 Collider Collision Constraint")
     collision_box.prop(chain.collider_collision_constraint, "friction")
     collision_box.prop(chain.collider_collision_constraint.limit_distance, "value", text="Push Limit Distance")
+    collision_box.label(text="Curve interface reserved only. Curve UI will be implemented later.", icon="INFO")
     collision_box.label(text="BoneSpring uses MC2 collision push limit from collider constraint.", icon="INFO")
     params.separator()
     params.label(text="Collision")
@@ -150,10 +151,7 @@ def _draw_spring_bone_details(layout, scene, item):
         ),
         icon="FORCE_HARMONIC",
     )
-    summary_box.label(
-        text=f"Collision Push Limit: {chain.collider_collision_constraint.limit_distance.value:.3f}",
-        icon="MOD_PHYSICS",
-    )
+    summary_box.label(text=f"Collision Push Limit: {chain.collider_collision_constraint.limit_distance.value:.3f}", icon="MOD_PHYSICS")
     if chain.center_source == "OBJECT" and chain.center_object is not None:
         summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")
     elif chain.center_source == "BONE" and chain.center_bone_name:
@@ -183,7 +181,7 @@ def _draw_spring_bone_details(layout, scene, item):
                 detail.prop(entry, "stiffness")
                 detail.prop(entry, "damping")
                 detail.prop(entry, "drag")
-                detail.prop(entry, "gravity_scale")
+                detail.label(text="Per-joint gravity is reserved and not part of current MC2 BoneSpring path.", icon="INFO")
         if len(chain.joint_overrides) > preview_count:
             joint_box.label(text=f"... and {len(chain.joint_overrides) - preview_count} more joints", icon="INFO")
 
