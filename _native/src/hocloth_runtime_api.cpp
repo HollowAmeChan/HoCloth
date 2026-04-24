@@ -81,6 +81,33 @@ struct BaselineStepBuffers {
     std::vector<Vec3> restoration_vectors;
 };
 
+struct CollisionAccumulation {
+    Vec3 correction_sum;
+    Vec3 normal_sum;
+    std::int32_t correction_count = 0;
+    Vec3 friction_normal_sum;
+    float friction_max = 0.0f;
+};
+
+struct ColliderStepWorkData {
+    std::string motion_type;
+    std::string shape_type;
+    Vec3 previous_translation;
+    Quat previous_rotation;
+    Vec3 previous_axis;
+    Vec3 current_translation;
+    Quat current_rotation;
+    Vec3 current_axis;
+    Vec3 previous_point_a;
+    Vec3 previous_point_b;
+    Vec3 current_point_a;
+    Vec3 current_point_b;
+    Vec3 swept_aabb_min;
+    Vec3 swept_aabb_max;
+    float radius = 0.0f;
+    float height = 0.0f;
+};
+
 std::unordered_map<SceneHandle, RuntimeSceneState> g_scenes;
 SceneHandle g_next_handle = 1;
 
@@ -175,6 +202,22 @@ Vec3 sub(const Vec3& a, const Vec3& b) {
 
 Vec3 mul(const Vec3& value, float scalar) {
     return Vec3{value.x * scalar, value.y * scalar, value.z * scalar};
+}
+
+Vec3 min_components(const Vec3& a, const Vec3& b) {
+    return Vec3{
+        std::min(a.x, b.x),
+        std::min(a.y, b.y),
+        std::min(a.z, b.z),
+    };
+}
+
+Vec3 max_components(const Vec3& a, const Vec3& b) {
+    return Vec3{
+        std::max(a.x, b.x),
+        std::max(a.y, b.y),
+        std::max(a.z, b.z),
+    };
 }
 
 Vec3 lerp(const Vec3& a, const Vec3& b, float t) {
@@ -863,11 +906,51 @@ void update_step_basic_pose_for_chain(
     }
 }
 
-std::vector<const CollisionWorldObject*> collision_objects_for_chain(
+ColliderStepWorkData build_collider_step_work_data(const CollisionWorldObject& collider) {
+    ColliderStepWorkData work;
+    work.motion_type = collider.motion_type;
+    work.shape_type = collider.shape_type;
+    work.previous_translation = make_vec3(collider.previous_world_translation);
+    work.previous_rotation = normalize_or_identity(make_quat(collider.previous_world_rotation));
+    work.current_translation = make_vec3(collider.world_translation);
+    work.current_rotation = normalize_or_identity(make_quat(collider.world_rotation));
+    work.radius = collider.radius;
+    work.height = collider.height;
+    if (work.shape_type == "CAPSULE") {
+        const float half_height = std::max(0.0f, work.height) * 0.5f;
+        work.previous_axis = rotate_vector(work.previous_rotation, Vec3{0.0f, 1.0f, 0.0f});
+        work.previous_point_a = add(work.previous_translation, mul(work.previous_axis, -half_height));
+        work.previous_point_b = add(work.previous_translation, mul(work.previous_axis, half_height));
+        work.current_axis = rotate_vector(work.current_rotation, Vec3{0.0f, 1.0f, 0.0f});
+        work.current_point_a = add(work.current_translation, mul(work.current_axis, -half_height));
+        work.current_point_b = add(work.current_translation, mul(work.current_axis, half_height));
+    } else {
+        work.previous_axis = Vec3{};
+        work.current_axis = Vec3{};
+        work.previous_point_a = work.previous_translation;
+        work.previous_point_b = work.previous_translation;
+        work.current_point_a = work.current_translation;
+        work.current_point_b = work.current_translation;
+    }
+    const Vec3 radius_extent{work.radius, work.radius, work.radius};
+    Vec3 point_min = min_components(
+        min_components(work.previous_point_a, work.previous_point_b),
+        min_components(work.current_point_a, work.current_point_b)
+    );
+    Vec3 point_max = max_components(
+        max_components(work.previous_point_a, work.previous_point_b),
+        max_components(work.current_point_a, work.current_point_b)
+    );
+    work.swept_aabb_min = sub(point_min, radius_extent);
+    work.swept_aabb_max = add(point_max, radius_extent);
+    return work;
+}
+
+std::vector<ColliderStepWorkData> build_collider_work_data_for_chain(
     const RuntimeSceneState& scene_state,
     const BoneChainDescriptor& chain
 ) {
-    std::vector<const CollisionWorldObject*> result;
+    std::vector<ColliderStepWorkData> result;
     if (chain.collision_binding_ids.empty() || scene_state.collision_world.binding_count() == 0) {
         return result;
     }
@@ -881,7 +964,7 @@ std::vector<const CollisionWorldObject*> collision_objects_for_chain(
                 if (object_index >= scene_state.collision_world.objects().size()) {
                     continue;
                 }
-                result.push_back(&scene_state.collision_world.objects()[object_index]);
+                result.push_back(build_collider_step_work_data(scene_state.collision_world.objects()[object_index]));
             }
         }
     }
@@ -950,22 +1033,17 @@ ColliderContact evaluate_collider_contact(
     const RuntimeBoneState& state,
     float bone_length,
     float particle_radius,
-    const CollisionWorldObject& collider
+    const ColliderStepWorkData& collider
 ) {
     const Vec3 bone_tail = state.position;
     const bool use_bone_capsule = bone_length > 1.0e-6f && particle_radius > 0.0f;
-    const Vec3 center = make_vec3(collider.world_translation);
+    const Vec3 center = collider.current_translation;
     Vec3 closest = center;
     Vec3 bone_closest = bone_tail;
     float bone_t = 1.0f;
     if (collider.shape_type == "CAPSULE") {
-        const Quat rotation = normalize_or_identity(make_quat(collider.world_rotation));
-        const float half_height = std::max(0.0f, collider.height) * 0.5f;
-        // Collider authoring uses Blender's local Z axis; after the
-        // Blender->solver basis conversion that becomes solver +Y.
-        const Vec3 axis = rotate_vector(rotation, Vec3{0.0f, 1.0f, 0.0f});
-        const Vec3 a = add(center, mul(axis, -half_height));
-        const Vec3 b = add(center, mul(axis, half_height));
+        const Vec3 a = collider.current_point_a;
+        const Vec3 b = collider.current_point_b;
         if (use_bone_capsule) {
             const auto segment_pair = closest_points_between_segments(head_position, bone_tail, a, b);
             bone_closest = segment_pair.first;
@@ -1022,24 +1100,21 @@ ColliderContact evaluate_collider_contact(
 }
 
 Vec3 collider_axis_closest_point_at(
-    const CollisionWorldObject& collider,
-    const Vec3& translation,
-    const Quat& rotation,
+    const Vec3& a,
+    const Vec3& b,
+    const Vec3& fallback_translation,
+    const std::string& shape_type,
     const Vec3& point
 ) {
-    if (collider.shape_type == "CAPSULE") {
-        const float half_height = std::max(0.0f, collider.height) * 0.5f;
-        const Vec3 axis = rotate_vector(rotation, Vec3{0.0f, 1.0f, 0.0f});
-        const Vec3 a = add(translation, mul(axis, -half_height));
-        const Vec3 b = add(translation, mul(axis, half_height));
+    if (shape_type == "CAPSULE") {
         return closest_point_on_segment(point, a, b);
     }
-    return translation;  // SPHERE and fallback.
+    return fallback_translation;  // SPHERE and fallback.
 }
 
 bool compute_contact_push(
     const ColliderContact& contact,
-    const CollisionWorldObject& collider,
+    const ColliderStepWorkData& collider,
     float dt,
     Vec3& out_normal,
     float& out_push_distance,
@@ -1051,13 +1126,23 @@ bool compute_contact_push(
 
     // If not overlapping in the usual sense, we still may have a kinematic "moving plane"
     // overlap. We'll check that below when we have motion.
-    const Vec3 prev_translation = make_vec3(collider.previous_world_translation);
-    const Quat prev_rotation = normalize_or_identity(make_quat(collider.previous_world_rotation));
-    const Vec3 curr_translation = make_vec3(collider.world_translation);
-    const Quat curr_rotation = normalize_or_identity(make_quat(collider.world_rotation));
+    const Vec3 prev_translation = collider.previous_translation;
+    const Vec3 curr_translation = collider.current_translation;
 
-    const Vec3 old_axis = collider_axis_closest_point_at(collider, prev_translation, prev_rotation, contact.bone_closest);
-    const Vec3 new_axis = collider_axis_closest_point_at(collider, curr_translation, curr_rotation, contact.bone_closest);
+    const Vec3 old_axis = collider_axis_closest_point_at(
+        collider.previous_point_a,
+        collider.previous_point_b,
+        prev_translation,
+        collider.shape_type,
+        contact.bone_closest
+    );
+    const Vec3 new_axis = collider_axis_closest_point_at(
+        collider.current_point_a,
+        collider.current_point_b,
+        curr_translation,
+        collider.shape_type,
+        contact.bone_closest
+    );
     const Vec3 axis_motion = sub(new_axis, old_axis);
     const float axis_motion_len = length(axis_motion);
 
@@ -1097,100 +1182,135 @@ bool compute_contact_push(
     return out_push_distance > 0.0f;
 }
 
+bool bone_segment_intersects_swept_aabb(
+    Vec3 head_position,
+    const RuntimeBoneState& state,
+    float particle_radius,
+    const ColliderStepWorkData& collider
+) {
+    const Vec3 radius_extent{particle_radius, particle_radius, particle_radius};
+    const Vec3 segment_min = sub(min_components(head_position, state.position), radius_extent);
+    const Vec3 segment_max = add(max_components(head_position, state.position), radius_extent);
+    return !(segment_max.x < collider.swept_aabb_min.x || segment_min.x > collider.swept_aabb_max.x ||
+        segment_max.y < collider.swept_aabb_min.y || segment_min.y > collider.swept_aabb_max.y ||
+        segment_max.z < collider.swept_aabb_min.z || segment_min.z > collider.swept_aabb_max.z);
+}
+
+void accumulate_collider_contacts(
+    Vec3 head_position,
+    const RuntimeBoneState& state,
+    float bone_length,
+    float particle_radius,
+    const std::vector<ColliderStepWorkData>& colliders,
+    float dt,
+    CollisionAccumulation& accumulation
+) {
+    const float friction_range = std::max(1.0e-4f, particle_radius);
+    for (const ColliderStepWorkData& collider : colliders) {
+        if (!bone_segment_intersects_swept_aabb(head_position, state, particle_radius, collider)) {
+            continue;
+        }
+        const ColliderContact contact = evaluate_collider_contact(head_position, state, bone_length, particle_radius, collider);
+
+        const float surface_dist = std::max(0.0f, contact.distance - contact.target_radius);
+        const float local_friction = 1.0f - std::clamp(surface_dist / friction_range, 0.0f, 1.0f);
+
+        Vec3 push_normal = contact.normal;
+        float push_distance = 0.0f;
+        float penetration_ratio = 0.0f;
+        const bool should_push = compute_contact_push(contact, collider, dt, push_normal, push_distance, penetration_ratio);
+
+        const float effective_friction = std::max(local_friction, penetration_ratio);
+        if (effective_friction > 1.0e-6f) {
+            accumulation.friction_max = std::max(accumulation.friction_max, effective_friction);
+            accumulation.friction_normal_sum = add(
+                accumulation.friction_normal_sum,
+                mul(push_normal, effective_friction)
+            );
+        }
+
+        if (!should_push) {
+            continue;
+        }
+
+        const float tail_weight = contact.bone_t >= 0.999f
+            ? 1.0f
+            : std::clamp(contact.bone_t * 0.85f, 0.08f, 0.85f);
+        const Vec3 correction = mul(push_normal, push_distance * tail_weight);
+        accumulation.correction_sum = add(accumulation.correction_sum, correction);
+        accumulation.normal_sum = add(accumulation.normal_sum, push_normal);
+        accumulation.correction_count += 1;
+    }
+}
+
+void apply_soft_collider_correction(
+    Vec3 head_position,
+    RuntimeBoneState& state,
+    float bone_length,
+    float particle_radius,
+    const CollisionAccumulation& accumulation
+) {
+    if (accumulation.correction_count <= 0) {
+        return;
+    }
+
+    const Vec3 average_normal = mul(accumulation.normal_sum, 1.0f / static_cast<float>(accumulation.correction_count));
+    const float average_normal_length = length(average_normal);
+    if (average_normal_length <= 1.0e-6f) {
+        return;
+    }
+
+    const float normal_scale = std::min(average_normal_length, 1.0f);
+    const Vec3 average_correction = mul(
+        accumulation.correction_sum,
+        (1.0f / static_cast<float>(accumulation.correction_count)) * normal_scale
+    );
+    const Vec3 old_position = state.position;
+    Vec3 solved_position = add(state.position, average_correction);
+
+    const float max_length = std::max(
+        1.0e-4f,
+        std::max(kSpringCollisionLimitDistance, std::max(particle_radius * 2.0f, bone_length * 0.12f))
+    );
+    solved_position = clamp_distance_from(state.base_position, solved_position, max_length);
+    const float base_distance = length(sub(solved_position, state.base_position));
+    float softness = std::clamp(base_distance / std::max(particle_radius, 1.0e-5f), 0.0f, 1.0f);
+    softness = 0.85f * softness;
+    solved_position = lerp(solved_position, old_position, softness);
+
+    move_position_preserve_velocity(state, sub(solved_position, state.position));
+    project_bone_tail_preserve_velocity(head_position, state, bone_length);
+}
+
 void apply_collider_constraints(
     Vec3 head_position,
     RuntimeBoneState& state,
     float bone_length,
     float particle_radius,
-    const std::vector<const CollisionWorldObject*>& colliders,
+    const std::vector<ColliderStepWorkData>& colliders,
     float dt
 ) {
     if (colliders.empty()) {
         return;
     }
 
-    struct CollisionAccumulation {
-        Vec3 correction_sum{};
-        Vec3 normal_sum{};
-        std::int32_t correction_count = 0;
-        Vec3 friction_normal_sum{};
-        float friction_max = 0.0f;
-    };
-
-    const auto accumulate_contacts = [&](
-        CollisionAccumulation& accumulation
-    ) {
-        const float friction_range = std::max(1.0e-4f, particle_radius);
-        for (const CollisionWorldObject* collider : colliders) {
-            const ColliderContact contact = evaluate_collider_contact(head_position, state, bone_length, particle_radius, *collider);
-
-            const float surface_dist = std::max(0.0f, contact.distance - contact.target_radius);
-            const float local_friction = 1.0f - std::clamp(surface_dist / friction_range, 0.0f, 1.0f);
-
-            Vec3 push_normal = contact.normal;
-            float push_distance = 0.0f;
-            float penetration_ratio = 0.0f;
-            const bool should_push = compute_contact_push(contact, *collider, dt, push_normal, push_distance, penetration_ratio);
-
-            const float effective_friction = std::max(local_friction, penetration_ratio);
-            if (effective_friction > 1.0e-6f) {
-                accumulation.friction_max = std::max(accumulation.friction_max, effective_friction);
-                accumulation.friction_normal_sum = add(
-                    accumulation.friction_normal_sum,
-                    mul(push_normal, effective_friction)
-                );
-            }
-
-            if (!should_push) {
-                continue;
-            }
-
-            const float tail_weight = contact.bone_t >= 0.999f
-                ? 1.0f
-                : std::clamp(contact.bone_t * 0.85f, 0.08f, 0.85f);
-            const Vec3 correction = mul(push_normal, push_distance * tail_weight);
-            accumulation.correction_sum = add(accumulation.correction_sum, correction);
-            accumulation.normal_sum = add(accumulation.normal_sum, push_normal);
-            accumulation.correction_count += 1;
-        }
-    };
-
-    const auto apply_soft_correction = [&](
-        const CollisionAccumulation& accumulation
-    ) {
-        if (accumulation.correction_count <= 0) {
-            return;
-        }
-        const Vec3 avg_n = mul(accumulation.normal_sum, 1.0f / static_cast<float>(accumulation.correction_count));
-        const float len = length(avg_n);
-        if (len <= 1.0e-6f) {
-            return;
-        }
-        const float t = std::min(len, 1.0f);
-        const Vec3 avg_pos = mul(
-            accumulation.correction_sum,
-            (1.0f / static_cast<float>(accumulation.correction_count)) * t
-        );
-        const Vec3 old_position = state.position;
-        Vec3 solved_position = add(state.position, avg_pos);
-
-        const float max_length = std::max(
-            1.0e-4f,
-            std::max(kSpringCollisionLimitDistance, std::max(particle_radius * 2.0f, bone_length * 0.12f))
-        );
-        solved_position = clamp_distance_from(state.base_position, solved_position, max_length);
-        const float base_distance = length(sub(solved_position, state.base_position));
-        float softness = std::clamp(base_distance / std::max(particle_radius, 1.0e-5f), 0.0f, 1.0f);
-        softness = 0.85f * softness;
-        solved_position = lerp(solved_position, old_position, softness);
-
-        move_position_preserve_velocity(state, sub(solved_position, state.position));
-        project_bone_tail_preserve_velocity(head_position, state, bone_length);
-    };
-
     CollisionAccumulation accumulation;
-    accumulate_contacts(accumulation);
-    apply_soft_correction(accumulation);
+    accumulate_collider_contacts(
+        head_position,
+        state,
+        bone_length,
+        particle_radius,
+        colliders,
+        dt,
+        accumulation
+    );
+    apply_soft_collider_correction(
+        head_position,
+        state,
+        bone_length,
+        particle_radius,
+        accumulation
+    );
 
     if (accumulation.friction_max > 1.0e-6f && length_squared(accumulation.friction_normal_sum) > 1.0e-8f) {
         record_collision_contact(state, accumulation.friction_normal_sum, accumulation.friction_max);
@@ -1676,7 +1796,7 @@ void solve_distance_phase(
 void solve_collision_phase(
     const BoneChainDescriptor& chain,
     RuntimeBoneChainState& chain_state,
-    const std::vector<const CollisionWorldObject*>& colliders,
+    const std::vector<ColliderStepWorkData>& colliders,
     BaselineStepBuffers& baseline_buffers,
     const Vec3& root_translation,
     float dt
@@ -1844,7 +1964,7 @@ void step_bone_chain(
     }
     chain_state.blend_weight = chain_state.velocity_weight;
     solver_iterations = std::max<std::size_t>(1, solver_iterations);
-    const std::vector<const CollisionWorldObject*> colliders = collision_objects_for_chain(scene_state, chain);
+    const std::vector<ColliderStepWorkData> colliders = build_collider_work_data_for_chain(scene_state, chain);
     start_simulation_step_for_chain(
         chain,
         chain_state,
