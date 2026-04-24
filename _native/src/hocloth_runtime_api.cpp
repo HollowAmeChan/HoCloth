@@ -336,6 +336,7 @@ void ApplyCollisionResponse(
 {
     Vec3 point = ToAnglePoint(joint_state);
     const float point_scale = std::max(0.05f, joint.length);
+    const float max_push_distance = std::max(0.0001f, chain.collider_limit_distance) / point_scale;
 
     for (const std::string& binding_id : chain.collision_binding_ids) {
         auto binding_it = scene.collision_binding_lookup.find(binding_id);
@@ -368,8 +369,15 @@ void ApplyCollisionResponse(
 
             Vec3 normal = distance <= 1.0e-6f ? Vec3{0.0f, 1.0f, 0.0f} : Scale(delta, 1.0f / distance);
             const float penetration = influence_radius - distance;
-            const float push_scale = 1.0f - (kMc2BoneSpringCollisionFriction * 0.3f);
+            const float push_scale = 1.0f - (Clamp(chain.collider_friction, 0.0f, 0.5f) * 0.3f);
             point = Add(point, Scale(normal, penetration * push_scale));
+
+            // From MC2: MagicaCloth2/Scripts/Core/Cloth/Constraints/ColliderCollisionConstraint.cs
+            // BoneSpring limits how far collider push can move a particle away from its origin.
+            const float point_len = Length(point);
+            if (point_len > max_push_distance && point_len > 1.0e-6f) {
+                point = Scale(point, max_push_distance / point_len);
+            }
         }
     }
 

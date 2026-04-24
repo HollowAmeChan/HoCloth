@@ -84,6 +84,31 @@ class HoClothSpringJointOverride(bpy.types.PropertyGroup):
     gravity_scale: bpy.props.FloatProperty(name="Gravity Scale", default=1.0, min=0.0, soft_max=2.0)
 
 
+class HoClothCurveParameter(bpy.types.PropertyGroup):
+    use_curve: bpy.props.BoolProperty(name="Use Curve", default=False)
+    value: bpy.props.FloatProperty(name="Value", default=0.0)
+    curve_start: bpy.props.FloatProperty(name="Curve Start", default=1.0, min=0.0, max=1.0)
+    curve_end: bpy.props.FloatProperty(name="Curve End", default=1.0, min=0.0, max=1.0)
+
+
+class HoClothCheckSliderParameter(bpy.types.PropertyGroup):
+    use: bpy.props.BoolProperty(name="Use", default=False)
+    value: bpy.props.FloatProperty(name="Value", default=0.0)
+
+
+class HoClothBoneSpringSpringConstraint(bpy.types.PropertyGroup):
+    use_spring: bpy.props.BoolProperty(name="Use Spring", default=True)
+    spring_power: bpy.props.FloatProperty(name="Spring Power", default=0.04, min=0.0, max=1.0)
+    limit_distance: bpy.props.FloatProperty(name="Limit Distance", default=0.1, min=0.0, soft_max=0.5)
+    normal_limit_ratio: bpy.props.FloatProperty(name="Normal Limit Ratio", default=1.0, min=0.0, max=1.0)
+    spring_noise: bpy.props.FloatProperty(name="Spring Noise", default=0.0, min=0.0, max=1.0)
+
+
+class HoClothBoneSpringCollisionConstraint(bpy.types.PropertyGroup):
+    friction: bpy.props.FloatProperty(name="Friction", default=0.05, min=0.0, max=0.5)
+    limit_distance: bpy.props.PointerProperty(name="Limit Distance", type=HoClothCurveParameter)
+
+
 class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     armature_object: bpy.props.PointerProperty(
@@ -119,16 +144,16 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0, update=_update_spring_defaults)
     damping: bpy.props.FloatProperty(name="Damping", default=0.5, min=0.0, max=1.0, update=_update_spring_defaults)
     drag: bpy.props.FloatProperty(name="Drag", default=0.1, min=0.0, max=1.0, update=_update_spring_defaults)
-    use_spring: bpy.props.BoolProperty(name="Use MC2 Spring", default=True)
-    spring_power: bpy.props.FloatProperty(name="Spring Power", default=0.04, min=0.0, max=1.0)
-    limit_distance: bpy.props.FloatProperty(name="Limit Distance", default=0.1, min=0.0, soft_max=0.5)
-    normal_limit_ratio: bpy.props.FloatProperty(name="Normal Limit Ratio", default=1.0, min=0.0, max=1.0)
-    spring_noise: bpy.props.FloatProperty(name="Spring Noise", default=0.0, min=0.0, max=1.0)
     gravity_strength: bpy.props.FloatProperty(name="Gravity Strength", default=0.3, min=0.0, soft_max=2.0)
     gravity_direction: bpy.props.FloatVectorProperty(
         name="Gravity Direction",
         size=3,
         default=(0.0, 0.0, -1.0),
+    )
+    spring_constraint: bpy.props.PointerProperty(name="Spring Constraint", type=HoClothBoneSpringSpringConstraint)
+    collider_collision_constraint: bpy.props.PointerProperty(
+        name="Collider Collision Constraint",
+        type=HoClothBoneSpringCollisionConstraint,
     )
     joint_overrides: bpy.props.CollectionProperty(type=HoClothSpringJointOverride)
     joint_override_index: bpy.props.IntProperty(name="Joint Override Index", default=0)
@@ -306,6 +331,10 @@ def delete_component(scene: bpy.types.Scene, component_id: str) -> bool:
 CLASSES = (
     HoClothComponentItem,
     HoClothSpringJointOverride,
+    HoClothCurveParameter,
+    HoClothCheckSliderParameter,
+    HoClothBoneSpringSpringConstraint,
+    HoClothBoneSpringCollisionConstraint,
     HoClothSpringBoneComponent,
     HoClothColliderComponent,
     HoClothColliderGroupComponent,

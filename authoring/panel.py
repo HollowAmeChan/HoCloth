@@ -108,16 +108,20 @@ def _draw_spring_bone_details(layout, scene, item):
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")
     params.prop(chain, "drag")
-    params.prop(chain, "use_spring")
-    spring_col = params.column(align=True)
-    spring_col.enabled = chain.use_spring
-    spring_col.prop(chain, "spring_power")
-    spring_col.prop(chain, "limit_distance")
-    spring_col.prop(chain, "normal_limit_ratio")
-    spring_col.prop(chain, "spring_noise")
-    params.prop(chain, "gravity_strength")
-    params.prop(chain, "gravity_direction")
-    params.label(text="MC2-style BoneSpring currently ignores gravity strength.", icon="INFO")
+    spring_box = body.box()
+    spring_box.label(text="MC2 Spring Constraint")
+    spring_box.prop(chain.spring_constraint, "use_spring")
+    spring_col = spring_box.column(align=True)
+    spring_col.enabled = chain.spring_constraint.use_spring
+    spring_col.prop(chain.spring_constraint, "spring_power")
+    spring_col.prop(chain.spring_constraint, "limit_distance")
+    spring_col.prop(chain.spring_constraint, "normal_limit_ratio")
+    spring_col.prop(chain.spring_constraint, "spring_noise")
+    collision_box = body.box()
+    collision_box.label(text="MC2 Collider Collision Constraint")
+    collision_box.prop(chain.collider_collision_constraint, "friction")
+    collision_box.prop(chain.collider_collision_constraint.limit_distance, "value", text="Push Limit Distance")
+    collision_box.label(text="BoneSpring uses MC2 collision push limit from collider constraint.", icon="INFO")
     params.separator()
     params.label(text="Collision")
     params.prop(chain, "collider_group_ids", text="Collision Bindings")
@@ -140,11 +144,15 @@ def _draw_spring_bone_details(layout, scene, item):
     summary_box.label(text=f"Tail Tip: {'On' if chain.append_tail_tip else 'Off'}", icon="BONE_DATA")
     summary_box.label(
         text=(
-            f"Spring: {'On' if chain.use_spring else 'Off'}"
-            f" / power {chain.spring_power:.3f}"
-            f" / limit {chain.limit_distance:.3f}"
+            f"Spring: {'On' if chain.spring_constraint.use_spring else 'Off'}"
+            f" / power {chain.spring_constraint.spring_power:.3f}"
+            f" / limit {chain.spring_constraint.limit_distance:.3f}"
         ),
         icon="FORCE_HARMONIC",
+    )
+    summary_box.label(
+        text=f"Collision Push Limit: {chain.collider_collision_constraint.limit_distance.value:.3f}",
+        icon="MOD_PHYSICS",
     )
     if chain.center_source == "OBJECT" and chain.center_object is not None:
         summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")

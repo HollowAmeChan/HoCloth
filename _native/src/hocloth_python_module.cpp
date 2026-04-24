@@ -180,6 +180,8 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         chain.limit_distance = ReadFloat(chain_dict, "limit_distance", 0.1f);
         chain.normal_limit_ratio = ReadFloat(chain_dict, "normal_limit_ratio", 1.0f);
         chain.spring_noise = ReadFloat(chain_dict, "spring_noise", 0.0f);
+        chain.collider_friction = ReadFloat(chain_dict, "collider_friction", 0.5f);
+        chain.collider_limit_distance = ReadFloat(chain_dict, "collider_limit_distance", 0.05f);
         chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);

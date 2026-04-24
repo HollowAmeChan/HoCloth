@@ -294,11 +294,15 @@ class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
         chain.stiffness = preset["stiffness"]
         chain.damping = preset["damping"]
         chain.drag = preset["drag"]
-        chain.use_spring = preset["use_spring"]
-        chain.spring_power = preset["spring_power"]
-        chain.limit_distance = preset["limit_distance"]
-        chain.normal_limit_ratio = preset["normal_limit_ratio"]
-        chain.spring_noise = preset["spring_noise"]
+        chain.spring_constraint.use_spring = preset["use_spring"]
+        chain.spring_constraint.spring_power = preset["spring_power"]
+        chain.spring_constraint.limit_distance = preset["limit_distance"]
+        chain.spring_constraint.normal_limit_ratio = preset["normal_limit_ratio"]
+        chain.spring_constraint.spring_noise = preset["spring_noise"]
+        chain.collider_collision_constraint.limit_distance.value = min(preset["limit_distance"], 0.05)
+        chain.collider_collision_constraint.limit_distance.use_curve = False
+        chain.collider_collision_constraint.limit_distance.curve_start = 1.0
+        chain.collider_collision_constraint.limit_distance.curve_end = 1.0
         chain.gravity_strength = preset["gravity_strength"]
         context.scene.hocloth_runtime_status = (
             f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
