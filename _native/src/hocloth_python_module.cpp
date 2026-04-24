@@ -172,6 +172,14 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         chain.stiffness = ReadFloat(chain_dict, "stiffness");
         chain.damping = ReadFloat(chain_dict, "damping");
         chain.drag = ReadFloat(chain_dict, "drag");
+        chain.use_spring = ReadInt(chain_dict, "use_spring", 1) != 0;
+        if (chain_dict.contains("use_spring")) {
+            chain.use_spring = nb::cast<bool>(chain_dict["use_spring"]);
+        }
+        chain.spring_power = ReadFloat(chain_dict, "spring_power", 0.04f);
+        chain.limit_distance = ReadFloat(chain_dict, "limit_distance", 0.1f);
+        chain.normal_limit_ratio = ReadFloat(chain_dict, "normal_limit_ratio", 1.0f);
+        chain.spring_noise = ReadFloat(chain_dict, "spring_noise", 0.0f);
         chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);

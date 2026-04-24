@@ -35,6 +35,11 @@ _BONE_CHAIN_PRESETS = {
         "stiffness": 0.10,
         "damping": 0.22,
         "drag": 0.00,
+        "use_spring": True,
+        "spring_power": 0.030,
+        "limit_distance": 0.060,
+        "normal_limit_ratio": 0.90,
+        "spring_noise": 0.18,
         "gravity_strength": 1.15,
     },
     "BALANCED": {
@@ -42,6 +47,11 @@ _BONE_CHAIN_PRESETS = {
         "stiffness": 0.24,
         "damping": 0.38,
         "drag": 0.02,
+        "use_spring": True,
+        "spring_power": 0.040,
+        "limit_distance": 0.100,
+        "normal_limit_ratio": 1.00,
+        "spring_noise": 0.10,
         "gravity_strength": 0.85,
     },
     "ROPE": {
@@ -49,6 +59,11 @@ _BONE_CHAIN_PRESETS = {
         "stiffness": 0.48,
         "damping": 0.58,
         "drag": 0.07,
+        "use_spring": True,
+        "spring_power": 0.055,
+        "limit_distance": 0.120,
+        "normal_limit_ratio": 0.80,
+        "spring_noise": 0.06,
         "gravity_strength": 1.45,
     },
     "HEAVY": {
@@ -56,6 +71,11 @@ _BONE_CHAIN_PRESETS = {
         "stiffness": 0.72,
         "damping": 0.82,
         "drag": 0.16,
+        "use_spring": True,
+        "spring_power": 0.075,
+        "limit_distance": 0.080,
+        "normal_limit_ratio": 0.65,
+        "spring_noise": 0.02,
         "gravity_strength": 2.0,
     },
 }
@@ -274,6 +294,11 @@ class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
         chain.stiffness = preset["stiffness"]
         chain.damping = preset["damping"]
         chain.drag = preset["drag"]
+        chain.use_spring = preset["use_spring"]
+        chain.spring_power = preset["spring_power"]
+        chain.limit_distance = preset["limit_distance"]
+        chain.normal_limit_ratio = preset["normal_limit_ratio"]
+        chain.spring_noise = preset["spring_noise"]
         chain.gravity_strength = preset["gravity_strength"]
         context.scene.hocloth_runtime_status = (
             f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"

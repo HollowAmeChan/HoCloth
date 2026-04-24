@@ -40,6 +40,11 @@ class CompiledSpringBone:
     stiffness: float
     damping: float
     drag: float
+    use_spring: bool
+    spring_power: float
+    limit_distance: float
+    normal_limit_ratio: float
+    spring_noise: float
     gravity_strength: float
     gravity_direction: tuple[float, float, float]
     collider_group_ids: list[str] = field(default_factory=list)
@@ -165,6 +170,11 @@ class CompiledScene:
                     "stiffness": chain.stiffness,
                     "damping": chain.damping,
                     "drag": chain.drag,
+                    "use_spring": chain.use_spring,
+                    "spring_power": chain.spring_power,
+                    "limit_distance": chain.limit_distance,
+                    "normal_limit_ratio": chain.normal_limit_ratio,
+                    "spring_noise": chain.spring_noise,
                     "gravity_strength": chain.gravity_strength,
                     "gravity_direction": chain.gravity_direction,
                     "armature_scale": chain.armature_scale,

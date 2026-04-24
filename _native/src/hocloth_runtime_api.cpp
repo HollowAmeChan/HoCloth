@@ -34,6 +34,17 @@ float Clamp01(float value)
     return Clamp(value, 0.0f, 1.0f);
 }
 
+float Sign(float value)
+{
+    if (value > 0.0f) {
+        return 1.0f;
+    }
+    if (value < 0.0f) {
+        return -1.0f;
+    }
+    return 0.0f;
+}
+
 Vec3 Add(const Vec3& a, const Vec3& b)
 {
     return Vec3{a.x + b.x, a.y + b.y, a.z + b.z};
@@ -57,6 +68,11 @@ float Dot(const Vec3& a, const Vec3& b)
 float Length(const Vec3& value)
 {
     return std::sqrt(Dot(value, value));
+}
+
+float AverageAbsScale(const Vec3& value)
+{
+    return (std::abs(value.x) + std::abs(value.y) + std::abs(value.z)) / 3.0f;
 }
 
 Vec3 Normalize(const Vec3& value)
@@ -360,6 +376,66 @@ void ApplyCollisionResponse(
     FromAnglePoint(point, joint_state);
 }
 
+void ApplyMc2SpringConstraint(
+    const RuntimeModule::SceneState& scene,
+    const CompiledSpringBone& chain,
+    const RuntimeChainInput* runtime_input,
+    const CompiledSpringJoint& joint,
+    std::size_t joint_index,
+    JointState& joint_state
+)
+{
+    if (!chain.use_spring || chain.spring_power <= 1.0e-6f) {
+        return;
+    }
+
+    Vec3 point = ToAnglePoint(joint_state);
+    Vec3 v = point;
+
+    const Vec3 scale_source = runtime_input ? runtime_input->root_scale : chain.armature_scale;
+    const float scale_ratio = std::max(0.0001f, AverageAbsScale(scale_source));
+
+    // From MC2: MagicaCloth2/Scripts/Core/Manager/Simulation/SimulationManager.cs Spring(...)
+    const float limit_distance = std::max(0.0f, chain.limit_distance * scale_ratio) / std::max(0.05f, joint.length);
+    if (limit_distance > 1.0e-8f) {
+        const float len = Length(v);
+        if (len > limit_distance) {
+            v = Scale(v, limit_distance / len);
+        }
+
+        if (chain.normal_limit_ratio < 1.0f) {
+            const float ylen = v.y;
+            Vec3 vx = v;
+            vx.y = 0.0f;
+            const float xlen = Length(vx);
+            const float t = Clamp01(limit_distance > 1.0e-8f ? xlen / limit_distance : 0.0f);
+            float y = std::cos(std::asin(t));
+            y *= limit_distance * Clamp01(chain.normal_limit_ratio);
+
+            if (std::abs(ylen) > y) {
+                v.y -= (std::abs(ylen) - y) * Sign(ylen);
+            }
+        }
+    } else {
+        v = Vec3{};
+    }
+
+    float power = Clamp(chain.spring_power, 0.0f, 1.0f);
+    if (chain.spring_noise > 0.0f) {
+        const float noise_time =
+            static_cast<float>((scene.steps + 1) * 24512ULL) * 0.0001f
+            + static_cast<float>(joint_index) * 49.6198f
+            + point.x
+            + point.y;
+        float noise = std::sin(noise_time);
+        noise *= Clamp01(chain.spring_noise) * 0.6f;
+        power = std::max(power + power * noise, 0.0f);
+    }
+
+    v = Sub(v, Scale(v, power));
+    FromAnglePoint(v, joint_state);
+}
+
 void StepChain(
     RuntimeModule::SceneState& scene,
     const CompiledSpringBone& chain,
@@ -451,6 +527,8 @@ void StepChain(
                 -1.2f,
                 1.2f
             );
+
+            ApplyMc2SpringConstraint(scene, chain, runtime_input, joint, static_cast<std::size_t>(joint_index), state);
         }
     }
 

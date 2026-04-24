@@ -108,6 +108,13 @@ def _draw_spring_bone_details(layout, scene, item):
     params.prop(chain, "stiffness")
     params.prop(chain, "damping")
     params.prop(chain, "drag")
+    params.prop(chain, "use_spring")
+    spring_col = params.column(align=True)
+    spring_col.enabled = chain.use_spring
+    spring_col.prop(chain, "spring_power")
+    spring_col.prop(chain, "limit_distance")
+    spring_col.prop(chain, "normal_limit_ratio")
+    spring_col.prop(chain, "spring_noise")
     params.prop(chain, "gravity_strength")
     params.prop(chain, "gravity_direction")
     params.label(text="MC2-style BoneSpring currently ignores gravity strength.", icon="INFO")
@@ -131,6 +138,14 @@ def _draw_spring_bone_details(layout, scene, item):
     summary_box.label(text=f"Joints: {bone_count}", icon="ARMATURE_DATA")
     summary_box.label(text=f"Particle Radius: {chain.joint_radius:.3f}", icon="MESH_UVSPHERE")
     summary_box.label(text=f"Tail Tip: {'On' if chain.append_tail_tip else 'Off'}", icon="BONE_DATA")
+    summary_box.label(
+        text=(
+            f"Spring: {'On' if chain.use_spring else 'Off'}"
+            f" / power {chain.spring_power:.3f}"
+            f" / limit {chain.limit_distance:.3f}"
+        ),
+        icon="FORCE_HARMONIC",
+    )
     if chain.center_source == "OBJECT" and chain.center_object is not None:
         summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")
     elif chain.center_source == "BONE" and chain.center_bone_name:

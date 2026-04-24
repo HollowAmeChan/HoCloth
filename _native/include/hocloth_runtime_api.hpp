@@ -58,6 +58,11 @@ struct CompiledSpringBone {
     float stiffness = 0.0f;
     float damping = 0.0f;
     float drag = 0.0f;
+    bool use_spring = true;
+    float spring_power = 0.04f;
+    float limit_distance = 0.1f;
+    float normal_limit_ratio = 1.0f;
+    float spring_noise = 0.0f;
     float gravity_strength = 0.0f;
     Vec3 gravity_direction{0.0f, -1.0f, 0.0f};
     std::vector<std::string> collider_group_ids;
