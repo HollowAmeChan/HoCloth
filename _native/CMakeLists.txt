@@ -32,7 +32,7 @@ set(HOCLOTH_PYTHON_VERSION "3.11" CACHE STRING "Required Python ABI version for 
 message(STATUS "HoCloth native module skeleton configured.")
 message(STATUS "HoCloth runtime output directory: ${HOCLOTH_RUNTIME_DIR}")
 message(STATUS "HoCloth intermediate output directory: ${HOCLOTH_INTERMEDIATE_DIR}")
-message(STATUS "HoCloth solver backend: built-in XPBD placeholder")
+message(STATUS "HoCloth solver backend: MC2 BoneSpring bootstrap")
 
 set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
 
