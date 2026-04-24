@@ -340,14 +340,6 @@ def register():
         soft_max=150,
         description="Fixed simulation steps per second. Default matches MagicaCloth2.",
     )
-    bpy.types.Scene.hocloth_max_simulation_steps_per_frame = bpy.props.IntProperty(
-        name="Max Steps Per Frame",
-        default=5,
-        min=1,
-        max=16,
-        soft_max=8,
-        description="Caps fixed simulation steps executed for one Blender frame.",
-    )
     bpy.types.Scene.hocloth_apply_pose_on_step = bpy.props.BoolProperty(
         name="Apply Pose On Step",
         default=True,
@@ -364,11 +356,6 @@ def register():
     )
     bpy.types.Scene.hocloth_runtime_last_fixed_steps = bpy.props.IntProperty(
         name="Last Fixed Steps",
-        default=0,
-        options={"HIDDEN"},
-    )
-    bpy.types.Scene.hocloth_runtime_last_skipped_steps = bpy.props.IntProperty(
-        name="Last Skipped Steps",
         default=0,
         options={"HIDDEN"},
     )
@@ -415,11 +402,9 @@ def unregister():
     del bpy.types.Scene.hocloth_runtime_live_running
     del bpy.types.Scene.hocloth_runtime_transform_count
     del bpy.types.Scene.hocloth_runtime_last_fixed_steps
-    del bpy.types.Scene.hocloth_runtime_last_skipped_steps
     del bpy.types.Scene.hocloth_runtime_step_count
     del bpy.types.Scene.hocloth_apply_pose_on_step
     del bpy.types.Scene.hocloth_simulation_frequency
-    del bpy.types.Scene.hocloth_max_simulation_steps_per_frame
     del bpy.types.Scene.hocloth_runtime_dt
     del bpy.types.Scene.hocloth_ui_debug_expanded
     del bpy.types.Scene.hocloth_viewport_overlay_alpha

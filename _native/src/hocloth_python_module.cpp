@@ -313,13 +313,11 @@ SceneDescriptor scene_from_python(const nb::dict& scene_dict) {
 RuntimeInputs runtime_inputs_from_python(
     float dt,
     std::int32_t simulation_frequency,
-    std::int32_t max_simulation_steps_per_frame,
     const nb::dict& input_dict
 ) {
     RuntimeInputs inputs;
     inputs.dt = dt;
     inputs.simulation_frequency = simulation_frequency;
-    inputs.max_simulation_steps_per_frame = max_simulation_steps_per_frame;
 
     if (!input_dict.contains("bone_chains")) {
         return inputs;
@@ -416,7 +414,7 @@ nb::dict build_scene_dict(const nb::dict& scene_dict) {
 }
 
 bool set_runtime_inputs_dict(SceneHandle handle, const nb::dict& input_dict) {
-    set_runtime_inputs(handle, runtime_inputs_from_python(1.0f / 30.0f, 90, 5, input_dict));
+    set_runtime_inputs(handle, runtime_inputs_from_python(1.0f / 30.0f, 90, input_dict));
     return true;
 }
 
@@ -424,24 +422,18 @@ bool set_runtime_inputs_dict(SceneHandle handle, const nb::dict& input_dict) {
 nb::dict step_scene_dict(
     SceneHandle handle,
     float dt,
-    std::int32_t simulation_frequency,
-    std::int32_t max_simulation_steps_per_frame
+    std::int32_t simulation_frequency
 ) {
     RuntimeInputs inputs;
     inputs.dt = dt;
     inputs.simulation_frequency = simulation_frequency;
-    inputs.max_simulation_steps_per_frame = max_simulation_steps_per_frame;
     const std::int32_t executed_steps = step_scene(handle, inputs);
-    const RuntimeStepInfo step_info = get_last_step_info(handle);
 
     nb::dict result;
     result["handle"] = handle;
     result["dt"] = dt;
     result["simulation_frequency"] = simulation_frequency;
-    result["max_simulation_steps_per_frame"] = max_simulation_steps_per_frame;
     result["executed_steps"] = executed_steps;
-    result["scheduled_steps"] = step_info.scheduled_steps;
-    result["skipped_steps"] = step_info.skipped_steps;
     result["steps"] = get_step_count(handle);
     result["summary"] = "native step executed";
     return result;

@@ -137,7 +137,6 @@ struct CollisionObjectRuntimeInput {
 struct RuntimeInputs {
     float dt = 1.0f / 60.0f;
     std::int32_t simulation_frequency = 90;
-    std::int32_t max_simulation_steps_per_frame = 5;
     std::vector<BoneChainRuntimeInput> bone_chains;
     std::vector<CollisionObjectRuntimeInput> collision_objects;
 };
@@ -166,9 +165,7 @@ struct RuntimeSceneInfo {
 };
 
 struct RuntimeStepInfo {
-    std::int32_t scheduled_steps = 0;
     std::int32_t executed_steps = 0;
-    std::int32_t skipped_steps = 0;
 };
 
 SceneHandle build_scene(const SceneDescriptor& scene);

@@ -124,7 +124,6 @@ class NativeBridgeStub:
         self._scenes[handle] = {
             "compiled_scene": compiled_scene,
             "steps": 0,
-            "accumulated_time": 0.0,
             "runtime_inputs": {"bone_chains": []},
             "chain_states": self._make_chain_states(compiled_scene),
             "collision_object_lookup": self._build_collision_object_lookup(compiled_scene),
@@ -145,7 +144,6 @@ class NativeBridgeStub:
         scene = self._scenes.get(handle)
         if scene is not None:
             scene["steps"] = 0
-            scene["accumulated_time"] = 0.0
             scene["runtime_inputs"] = {"bone_chains": []}
             scene["chain_states"] = self._make_chain_states(scene["compiled_scene"])
             scene["collision_object_lookup"] = self._build_collision_object_lookup(scene["compiled_scene"])
@@ -160,35 +158,20 @@ class NativeBridgeStub:
         self._apply_collision_object_inputs(scene, scene["runtime_inputs"])
         return True
 
-    def step_scene(self, handle, dt, simulation_frequency, max_simulation_steps_per_frame):
+    def step_scene(self, handle, dt, simulation_frequency):
         scene = self._scenes.get(handle)
         if scene is None:
             raise RuntimeError(f"Unknown runtime handle: {handle}")
-        frame_dt = dt if dt and dt > 0.0 else (1.0 / 30.0)
         frequency = min(150, max(30, int(simulation_frequency or 90)))
-        max_steps = min(16, max(1, int(max_simulation_steps_per_frame or 5)))
         simulation_dt = 1.0 / frequency
-        scene["accumulated_time"] = scene.get("accumulated_time", 0.0) + frame_dt
-        scheduled_steps = int((scene["accumulated_time"] + 1.0e-6) / simulation_dt)
-        step_count = min(scheduled_steps, max_steps)
-        skipped_steps = max(0, scheduled_steps - step_count)
-        if scheduled_steps > max_steps:
-            scene["accumulated_time"] -= scheduled_steps * simulation_dt
-        else:
-            scene["accumulated_time"] -= step_count * simulation_dt
-        scene["accumulated_time"] = min(simulation_dt, max(0.0, scene["accumulated_time"]))
-        for _ in range(step_count):
-            self._step_scene_states(scene, simulation_dt)
-        scene["steps"] += step_count
+        self._step_scene_states(scene, simulation_dt)
+        scene["steps"] += 1
         compiled_scene = scene["compiled_scene"]
         return {
             "handle": handle,
             "dt": dt,
             "simulation_frequency": frequency,
-            "max_simulation_steps_per_frame": max_steps,
-            "executed_steps": step_count,
-            "scheduled_steps": scheduled_steps,
-            "skipped_steps": skipped_steps,
+            "executed_steps": 1,
             "steps": scene["steps"],
             "summary": compiled_scene.summary(),
         }
@@ -472,8 +455,8 @@ class NativeModuleBridge:
     def reset_scene(self, handle):
         return self._module.reset_scene(handle)
 
-    def step_scene(self, handle, dt, simulation_frequency, max_simulation_steps_per_frame):
-        return self._module.step_scene(handle, dt, simulation_frequency, max_simulation_steps_per_frame)
+    def step_scene(self, handle, dt, simulation_frequency):
+        return self._module.step_scene(handle, dt, simulation_frequency)
 
     def set_runtime_inputs(self, handle, runtime_inputs):
         return self._module.set_runtime_inputs(handle, runtime_inputs)
