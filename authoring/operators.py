@@ -433,7 +433,7 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
 class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
     bl_idname = "hocloth.restart_runtime_from_baseline"
     bl_label = "Restart From Frame 1"
-    bl_description = "Clear simulated pose, restore the captured baseline pose, and reset runtime to the first frame"
+    bl_description = "Jump back to the first frame and clear simulated bone transforms beyond the captured baseline"
 
     def execute(self, context):
         stop_live_runtime(context.scene, "Live runtime stopped")
@@ -445,12 +445,11 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
         context.scene.frame_set(target_frame)
 
         compiled_scene = get_compiled_scene()
-        restored_count = 0
+        cleared_count = 0
         if compiled_scene is not None:
             baseline = capture_pose_baseline(context.scene, compiled_scene)
-            clear_pose_transforms(context.scene, compiled_scene)
+            cleared_count = clear_pose_transforms(context.scene, compiled_scene)
             set_pose_baseline(baseline)
-            restored_count = restore_pose_state(context.scene, compiled_scene, baseline)
             if context.view_layer is not None:
                 context.view_layer.update()
 
@@ -463,7 +462,7 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
             context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
             context.scene.hocloth_runtime_last_skipped_steps = runtime_state.get("last_skipped_steps", 0)
             context.scene.hocloth_runtime_status = (
-                f"Returned to frame {target_frame} and restarted runtime ({restored_count} bones)"
+                f"Returned to frame {target_frame} and cleared simulated pose ({cleared_count} bones)"
             )
             return {"FINISHED"}
 
@@ -473,7 +472,7 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
         context.scene.hocloth_runtime_last_skipped_steps = 0
         context.scene.hocloth_runtime_status = (
             f"Returned to frame {target_frame}"
-            + (f" and restored baseline pose ({restored_count} bones)" if restored_count else "")
+            + (f" and cleared simulated pose ({cleared_count} bones)" if cleared_count else "")
         )
         if context.view_layer is not None:
             context.view_layer.update()
@@ -624,3 +623,4 @@ def register():
 def unregister():
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
+
