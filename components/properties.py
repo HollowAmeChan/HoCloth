@@ -5,6 +5,14 @@ import bpy
 from .registry import COMPONENT_DEFINITIONS, get_component_definition
 
 
+HOCLOTH_MC2_PRESET_ITEMS = (
+    ("MIDDLE_SPRING", "MiddleSpring", "Match MC2 MiddleSpring preset"),
+    ("SOFT_SPRING", "SoftSpring", "Match MC2 SoftSpring preset"),
+    ("HARD_SPRING", "HardSpring", "Match MC2 HardSpring preset"),
+    ("TAIL", "Tail", "Match MC2 Tail preset"),
+)
+
+
 def _poll_armature_object(self, obj):
     _ = self
     return obj is not None and obj.type == "ARMATURE"
@@ -31,13 +39,16 @@ def _update_root_bone_name(self, context):
 
 
 def _sync_disabled_joint_overrides(component) -> None:
+    runtime_stiffness = get_runtime_stiffness(component)
+    runtime_damping = get_runtime_damping(component)
+    runtime_drag = get_runtime_drag(component)
     for entry in getattr(component, "joint_overrides", []):
         if getattr(entry, "enabled", False):
             continue
         entry.radius = component.joint_radius
-        entry.stiffness = component.stiffness
-        entry.damping = component.damping
-        entry.drag = component.drag
+        entry.stiffness = runtime_stiffness
+        entry.damping = runtime_damping
+        entry.drag = runtime_drag
         entry.gravity_scale = 1.0
 
 
@@ -107,6 +118,33 @@ class HoClothBoneSpringCollisionConstraint(bpy.types.PropertyGroup):
     limit_distance: bpy.props.PointerProperty(name="Limit Distance", type=HoClothCurveParameter)
 
 
+class HoClothBoneSpringInertiaConstraint(bpy.types.PropertyGroup):
+    world_inertia: bpy.props.FloatProperty(name="World Inertia", default=1.0, min=0.0, max=1.0)
+    movement_inertia_smoothing: bpy.props.FloatProperty(name="Movement Inertia Smoothing", default=0.4, min=0.0, max=1.0)
+    movement_speed_limit: bpy.props.PointerProperty(name="Movement Speed Limit", type=HoClothCheckSliderParameter)
+    rotation_speed_limit: bpy.props.PointerProperty(name="Rotation Speed Limit", type=HoClothCheckSliderParameter)
+    local_inertia: bpy.props.FloatProperty(name="Local Inertia", default=1.0, min=0.0, max=1.0)
+    local_movement_speed_limit: bpy.props.PointerProperty(name="Local Movement Speed Limit", type=HoClothCheckSliderParameter)
+    local_rotation_speed_limit: bpy.props.PointerProperty(name="Local Rotation Speed Limit", type=HoClothCheckSliderParameter)
+    depth_inertia: bpy.props.FloatProperty(name="Depth Inertia", default=0.0, min=0.0, max=1.0)
+    centrifugal_acceleration: bpy.props.FloatProperty(name="Centrifugal Acceleration", default=0.0, min=0.0, max=1.0)
+    particle_speed_limit: bpy.props.PointerProperty(name="Particle Speed Limit", type=HoClothCheckSliderParameter)
+
+
+class HoClothBoneSpringDistanceConstraint(bpy.types.PropertyGroup):
+    stiffness: bpy.props.PointerProperty(name="Stiffness", type=HoClothCurveParameter)
+
+
+class HoClothBoneSpringTetherConstraint(bpy.types.PropertyGroup):
+    distance_compression: bpy.props.FloatProperty(name="Distance Compression", default=0.099, min=0.0, max=1.0)
+
+
+class HoClothBoneSpringAngleRestorationConstraint(bpy.types.PropertyGroup):
+    use_angle_restoration: bpy.props.BoolProperty(name="Use Angle Restoration", default=True)
+    stiffness: bpy.props.PointerProperty(name="Stiffness", type=HoClothCurveParameter)
+    velocity_attenuation: bpy.props.FloatProperty(name="Velocity Attenuation", default=0.6, min=0.0, max=1.0)
+
+
 class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     armature_object: bpy.props.PointerProperty(
@@ -133,6 +171,11 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
         update=_update_center_armature_object,
     )
     center_bone_name: bpy.props.StringProperty(name="Center Bone", update=_update_center_bone_name)
+    preset_profile: bpy.props.EnumProperty(
+        name="Preset",
+        items=HOCLOTH_MC2_PRESET_ITEMS,
+        default="MIDDLE_SPRING",
+    )
     append_tail_tip: bpy.props.BoolProperty(
         name="Append Tail Tip Joint",
         default=False,
@@ -147,6 +190,14 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
         name="Gravity Direction",
         size=3,
         default=(0.0, 0.0, -1.0),
+    )
+    damping_curve: bpy.props.PointerProperty(name="Damping", type=HoClothCurveParameter)
+    inertia_constraint: bpy.props.PointerProperty(name="Inertia Constraint", type=HoClothBoneSpringInertiaConstraint)
+    tether_constraint: bpy.props.PointerProperty(name="Tether Constraint", type=HoClothBoneSpringTetherConstraint)
+    distance_constraint: bpy.props.PointerProperty(name="Distance Constraint", type=HoClothBoneSpringDistanceConstraint)
+    angle_restoration_constraint: bpy.props.PointerProperty(
+        name="Angle Restoration Constraint",
+        type=HoClothBoneSpringAngleRestorationConstraint,
     )
     spring_constraint: bpy.props.PointerProperty(name="Spring Constraint", type=HoClothBoneSpringSpringConstraint)
     collider_collision_constraint: bpy.props.PointerProperty(
@@ -207,9 +258,9 @@ def ensure_joint_override_entry(component: HoClothSpringBoneComponent, bone_name
     entry = component.joint_overrides.add()
     entry.bone_name = bone_name
     entry.radius = component.joint_radius
-    entry.stiffness = component.stiffness
-    entry.damping = component.damping
-    entry.drag = component.drag
+    entry.stiffness = get_runtime_stiffness(component)
+    entry.damping = get_runtime_damping(component)
+    entry.drag = get_runtime_drag(component)
     entry.gravity_scale = 1.0
     return entry
 
@@ -239,9 +290,9 @@ def sync_joint_override_names(component: HoClothSpringBoneComponent, bone_names:
         if state is None:
             entry.enabled = False
             entry.radius = component.joint_radius
-            entry.stiffness = component.stiffness
-            entry.damping = component.damping
-            entry.drag = component.drag
+            entry.stiffness = get_runtime_stiffness(component)
+            entry.damping = get_runtime_damping(component)
+            entry.drag = get_runtime_drag(component)
             entry.gravity_scale = 1.0
         else:
             entry.enabled = state["enabled"]
@@ -257,6 +308,75 @@ def sync_joint_override_names(component: HoClothSpringBoneComponent, bone_names:
         component.joint_override_index = 0
 
     return len(component.joint_overrides)
+
+
+def get_runtime_stiffness(component: HoClothSpringBoneComponent) -> float:
+    distance_constraint = getattr(component, "distance_constraint", None)
+    if distance_constraint is not None and getattr(distance_constraint, "stiffness", None) is not None:
+        return float(distance_constraint.stiffness.value)
+    return float(component.stiffness)
+
+
+def get_runtime_damping(component: HoClothSpringBoneComponent) -> float:
+    damping_curve = getattr(component, "damping_curve", None)
+    if damping_curve is not None:
+        return float(damping_curve.value)
+    return float(component.damping)
+
+
+def get_runtime_drag(component: HoClothSpringBoneComponent) -> float:
+    angle_restoration = getattr(component, "angle_restoration_constraint", None)
+    if angle_restoration is not None:
+        return max(0.0, min(1.0, 1.0 - float(angle_restoration.velocity_attenuation)))
+    return float(component.drag)
+
+
+def sync_runtime_compat_fields(component: HoClothSpringBoneComponent) -> None:
+    component.stiffness = get_runtime_stiffness(component)
+    component.damping = get_runtime_damping(component)
+    component.drag = get_runtime_drag(component)
+    _sync_disabled_joint_overrides(component)
+
+
+def initialize_mc2_middle_spring_defaults(component: HoClothSpringBoneComponent) -> None:
+    # From MC2: Res/Preset/MC2_Preset_MiddleSpring.json
+    component.preset_profile = "MIDDLE_SPRING"
+    component.joint_radius = 0.02
+    component.gravity_strength = 0.0
+    component.gravity_direction = (0.0, -1.0, 0.0)
+    component.damping_curve.use_curve = False
+    component.damping_curve.value = 0.3
+    component.inertia_constraint.world_inertia = 1.0
+    component.inertia_constraint.movement_inertia_smoothing = 0.4
+    component.inertia_constraint.movement_speed_limit.use = True
+    component.inertia_constraint.movement_speed_limit.value = 1.0
+    component.inertia_constraint.rotation_speed_limit.use = True
+    component.inertia_constraint.rotation_speed_limit.value = 360.0
+    component.inertia_constraint.local_inertia = 1.0
+    component.inertia_constraint.local_movement_speed_limit.use = True
+    component.inertia_constraint.local_movement_speed_limit.value = 1.0
+    component.inertia_constraint.local_rotation_speed_limit.use = True
+    component.inertia_constraint.local_rotation_speed_limit.value = 360.0
+    component.inertia_constraint.depth_inertia = 0.0
+    component.inertia_constraint.centrifugal_acceleration = 0.0
+    component.inertia_constraint.particle_speed_limit.use = True
+    component.inertia_constraint.particle_speed_limit.value = 4.0
+    component.tether_constraint.distance_compression = 0.099
+    component.distance_constraint.stiffness.use_curve = False
+    component.distance_constraint.stiffness.value = 0.242
+    component.angle_restoration_constraint.use_angle_restoration = True
+    component.angle_restoration_constraint.stiffness.use_curve = False
+    component.angle_restoration_constraint.stiffness.value = 0.4
+    component.angle_restoration_constraint.velocity_attenuation = 0.6
+    component.spring_constraint.use_spring = True
+    component.spring_constraint.spring_power = 0.03
+    component.spring_constraint.limit_distance = 0.05
+    component.spring_constraint.normal_limit_ratio = 1.0
+    component.spring_constraint.spring_noise = 0.0
+    component.collider_collision_constraint.friction = 0.2
+    component.collider_collision_constraint.limit_distance.use_curve = False
+    component.collider_collision_constraint.limit_distance.value = 0.05
+    sync_runtime_compat_fields(component)
 
 
 def list_component_display_names(scene: bpy.types.Scene, component_ids: list[str]) -> list[str]:
@@ -288,6 +408,8 @@ def create_component(scene: bpy.types.Scene, component_type: str, display_name: 
 
     typed_item = getattr(scene, definition.container_name).add()
     typed_item.component_id = component_id
+    if component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+        initialize_mc2_middle_spring_defaults(typed_item)
 
     main_item = scene.hocloth_components.add()
     main_item.component_id = component_id
@@ -333,6 +455,10 @@ CLASSES = (
     HoClothCheckSliderParameter,
     HoClothBoneSpringSpringConstraint,
     HoClothBoneSpringCollisionConstraint,
+    HoClothBoneSpringInertiaConstraint,
+    HoClothBoneSpringDistanceConstraint,
+    HoClothBoneSpringTetherConstraint,
+    HoClothBoneSpringAngleRestorationConstraint,
     HoClothSpringBoneComponent,
     HoClothColliderComponent,
     HoClothColliderGroupComponent,

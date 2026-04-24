@@ -6,7 +6,13 @@ from ..compile.compiler import (
     compile_scene_from_components,
     resolve_bone_chain_branching_names,
 )
-from ..components.properties import create_component, delete_component, rebuild_component_indices, sync_joint_override_names
+from ..components.properties import (
+    create_component,
+    delete_component,
+    rebuild_component_indices,
+    sync_joint_override_names,
+    sync_runtime_compat_fields,
+)
 from ..runtime.pose_apply import (
     apply_runtime_transforms_to_scene,
     capture_pose_baseline,
@@ -30,53 +36,145 @@ from .extract import extract_active_bone_chain
 
 
 _BONE_CHAIN_PRESETS = {
-    "SOFT_HAIR": {
-        "label": "Soft Hair",
-        "stiffness": 0.10,
-        "damping": 0.22,
-        "drag": 0.00,
+    "SOFT_SPRING": {
+        "label": "MC2 SoftSpring",
+        # From MC2: Res/Preset/MC2_Preset_SoftSpring.json
+        "joint_radius": 0.02,
+        "damping": 0.2,
+        "distance_stiffness": 0.242,
+        "world_inertia": 1.0,
+        "movement_inertia_smoothing": 0.4,
+        "movement_speed_limit_use": True,
+        "movement_speed_limit": 1.0,
+        "rotation_speed_limit_use": True,
+        "rotation_speed_limit": 360.0,
+        "local_inertia": 1.0,
+        "local_movement_speed_limit_use": True,
+        "local_movement_speed_limit": 1.0,
+        "local_rotation_speed_limit_use": True,
+        "local_rotation_speed_limit": 360.0,
+        "depth_inertia": 0.0,
+        "centrifugal_acceleration": 0.0,
+        "particle_speed_limit_use": True,
+        "particle_speed_limit": 4.0,
+        "tether_distance_compression": 0.099,
+        "angle_restoration_enabled": True,
+        "angle_restoration_stiffness": 0.2,
+        "angle_restoration_velocity_attenuation": 0.8,
         "use_spring": True,
-        "spring_power": 0.030,
-        "limit_distance": 0.060,
-        "normal_limit_ratio": 0.90,
-        "spring_noise": 0.18,
-        "gravity_strength": 1.15,
+        "spring_power": 0.01,
+        "limit_distance": 0.05,
+        "normal_limit_ratio": 1.0,
+        "spring_noise": 0.0,
+        "collider_friction": 0.2,
+        "collider_limit_distance": 0.05,
+        "gravity_strength": 0.0,
+        "gravity_direction": (0.0, -1.0, 0.0),
     },
-    "BALANCED": {
-        "label": "Balanced",
-        "stiffness": 0.24,
-        "damping": 0.38,
-        "drag": 0.02,
+    "MIDDLE_SPRING": {
+        "label": "MC2 MiddleSpring",
+        # From MC2: Res/Preset/MC2_Preset_MiddleSpring.json
+        "joint_radius": 0.02,
+        "damping": 0.3,
+        "distance_stiffness": 0.242,
+        "world_inertia": 1.0,
+        "movement_inertia_smoothing": 0.4,
+        "movement_speed_limit_use": True,
+        "movement_speed_limit": 1.0,
+        "rotation_speed_limit_use": True,
+        "rotation_speed_limit": 360.0,
+        "local_inertia": 1.0,
+        "local_movement_speed_limit_use": True,
+        "local_movement_speed_limit": 1.0,
+        "local_rotation_speed_limit_use": True,
+        "local_rotation_speed_limit": 360.0,
+        "depth_inertia": 0.0,
+        "centrifugal_acceleration": 0.0,
+        "particle_speed_limit_use": True,
+        "particle_speed_limit": 4.0,
+        "tether_distance_compression": 0.099,
+        "angle_restoration_enabled": True,
+        "angle_restoration_stiffness": 0.4,
+        "angle_restoration_velocity_attenuation": 0.6,
         "use_spring": True,
-        "spring_power": 0.040,
-        "limit_distance": 0.100,
-        "normal_limit_ratio": 1.00,
-        "spring_noise": 0.10,
-        "gravity_strength": 0.85,
+        "spring_power": 0.03,
+        "limit_distance": 0.05,
+        "normal_limit_ratio": 1.0,
+        "spring_noise": 0.0,
+        "collider_friction": 0.2,
+        "collider_limit_distance": 0.05,
+        "gravity_strength": 0.0,
+        "gravity_direction": (0.0, -1.0, 0.0),
     },
-    "ROPE": {
-        "label": "Rope",
-        "stiffness": 0.48,
-        "damping": 0.58,
-        "drag": 0.07,
+    "HARD_SPRING": {
+        "label": "MC2 HardSpring",
+        # From MC2: Res/Preset/MC2_Preset_HardSpring.json
+        "joint_radius": 0.02,
+        "damping": 0.3,
+        "distance_stiffness": 0.242,
+        "world_inertia": 1.0,
+        "movement_inertia_smoothing": 0.4,
+        "movement_speed_limit_use": True,
+        "movement_speed_limit": 1.0,
+        "rotation_speed_limit_use": True,
+        "rotation_speed_limit": 360.0,
+        "local_inertia": 1.0,
+        "local_movement_speed_limit_use": True,
+        "local_movement_speed_limit": 1.0,
+        "local_rotation_speed_limit_use": True,
+        "local_rotation_speed_limit": 360.0,
+        "depth_inertia": 0.0,
+        "centrifugal_acceleration": 0.0,
+        "particle_speed_limit_use": True,
+        "particle_speed_limit": 4.0,
+        "tether_distance_compression": 0.099,
+        "angle_restoration_enabled": True,
+        "angle_restoration_stiffness": 0.6,
+        "angle_restoration_velocity_attenuation": 0.4,
         "use_spring": True,
-        "spring_power": 0.055,
-        "limit_distance": 0.120,
-        "normal_limit_ratio": 0.80,
-        "spring_noise": 0.06,
-        "gravity_strength": 1.45,
+        "spring_power": 0.06,
+        "limit_distance": 0.05,
+        "normal_limit_ratio": 1.0,
+        "spring_noise": 0.0,
+        "collider_friction": 0.2,
+        "collider_limit_distance": 0.05,
+        "gravity_strength": 0.0,
+        "gravity_direction": (0.0, -1.0, 0.0),
     },
-    "HEAVY": {
-        "label": "Heavy",
-        "stiffness": 0.72,
-        "damping": 0.82,
-        "drag": 0.16,
+    "TAIL": {
+        "label": "MC2 Tail",
+        # From MC2: Res/Preset/MC2_Preset_Tail.json
+        "joint_radius": 0.02,
+        "damping": 0.05,
+        "distance_stiffness": 1.0,
+        "world_inertia": 1.0,
+        "movement_inertia_smoothing": 0.5,
+        "movement_speed_limit_use": True,
+        "movement_speed_limit": 5.0,
+        "rotation_speed_limit_use": True,
+        "rotation_speed_limit": 720.0,
+        "local_inertia": 1.0,
+        "local_movement_speed_limit_use": True,
+        "local_movement_speed_limit": 3.0,
+        "local_rotation_speed_limit_use": True,
+        "local_rotation_speed_limit": 360.0,
+        "depth_inertia": 0.0,
+        "centrifugal_acceleration": 0.0,
+        "particle_speed_limit_use": True,
+        "particle_speed_limit": 4.0,
+        "tether_distance_compression": 0.8,
+        "angle_restoration_enabled": True,
+        "angle_restoration_stiffness": 0.1,
+        "angle_restoration_velocity_attenuation": 0.5,
         "use_spring": True,
-        "spring_power": 0.075,
-        "limit_distance": 0.080,
-        "normal_limit_ratio": 0.65,
-        "spring_noise": 0.02,
-        "gravity_strength": 2.0,
+        "spring_power": 0.01,
+        "limit_distance": 0.05,
+        "normal_limit_ratio": 1.0,
+        "spring_noise": 0.0,
+        "collider_friction": 0.05,
+        "collider_limit_distance": 0.05,
+        "gravity_strength": 0.0,
+        "gravity_direction": (0.0, -1.0, 0.0),
     },
 }
 
@@ -274,16 +372,10 @@ class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
     bl_description = "Apply a preset spring profile to this spring-bone component"
 
     component_id: bpy.props.StringProperty(name="Component ID")
-    preset_id: bpy.props.StringProperty(name="Preset ID")
 
     def execute(self, context):
         if not self.component_id:
             self.report({"ERROR"}, "No component id was provided.")
-            return {"CANCELLED"}
-
-        preset = _BONE_CHAIN_PRESETS.get(self.preset_id)
-        if preset is None:
-            self.report({"ERROR"}, f"Unknown preset: {self.preset_id}")
             return {"CANCELLED"}
 
         chain = _find_spring_bone_component(context.scene, self.component_id)
@@ -291,17 +383,47 @@ class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
             self.report({"ERROR"}, "Spring-bone component was not found.")
             return {"CANCELLED"}
 
-        chain.stiffness = preset["stiffness"]
-        chain.damping = preset["damping"]
-        chain.drag = preset["drag"]
+        preset = _BONE_CHAIN_PRESETS.get(chain.preset_profile)
+        if preset is None:
+            self.report({"ERROR"}, f"Unknown preset: {chain.preset_profile}")
+            return {"CANCELLED"}
+
+        chain.joint_radius = preset["joint_radius"]
+        chain.damping_curve.use_curve = False
+        chain.damping_curve.value = preset["damping"]
+        chain.inertia_constraint.world_inertia = preset["world_inertia"]
+        chain.inertia_constraint.movement_inertia_smoothing = preset["movement_inertia_smoothing"]
+        chain.inertia_constraint.movement_speed_limit.use = preset["movement_speed_limit_use"]
+        chain.inertia_constraint.movement_speed_limit.value = preset["movement_speed_limit"]
+        chain.inertia_constraint.rotation_speed_limit.use = preset["rotation_speed_limit_use"]
+        chain.inertia_constraint.rotation_speed_limit.value = preset["rotation_speed_limit"]
+        chain.inertia_constraint.local_inertia = preset["local_inertia"]
+        chain.inertia_constraint.local_movement_speed_limit.use = preset["local_movement_speed_limit_use"]
+        chain.inertia_constraint.local_movement_speed_limit.value = preset["local_movement_speed_limit"]
+        chain.inertia_constraint.local_rotation_speed_limit.use = preset["local_rotation_speed_limit_use"]
+        chain.inertia_constraint.local_rotation_speed_limit.value = preset["local_rotation_speed_limit"]
+        chain.inertia_constraint.depth_inertia = preset["depth_inertia"]
+        chain.inertia_constraint.centrifugal_acceleration = preset["centrifugal_acceleration"]
+        chain.inertia_constraint.particle_speed_limit.use = preset["particle_speed_limit_use"]
+        chain.inertia_constraint.particle_speed_limit.value = preset["particle_speed_limit"]
+        chain.tether_constraint.distance_compression = preset["tether_distance_compression"]
+        chain.distance_constraint.stiffness.use_curve = False
+        chain.distance_constraint.stiffness.value = preset["distance_stiffness"]
+        chain.angle_restoration_constraint.use_angle_restoration = preset["angle_restoration_enabled"]
+        chain.angle_restoration_constraint.stiffness.use_curve = False
+        chain.angle_restoration_constraint.stiffness.value = preset["angle_restoration_stiffness"]
+        chain.angle_restoration_constraint.velocity_attenuation = preset["angle_restoration_velocity_attenuation"]
         chain.spring_constraint.use_spring = preset["use_spring"]
         chain.spring_constraint.spring_power = preset["spring_power"]
         chain.spring_constraint.limit_distance = preset["limit_distance"]
         chain.spring_constraint.normal_limit_ratio = preset["normal_limit_ratio"]
         chain.spring_constraint.spring_noise = preset["spring_noise"]
-        chain.collider_collision_constraint.limit_distance.value = min(preset["limit_distance"], 0.05)
+        chain.collider_collision_constraint.friction = preset["collider_friction"]
+        chain.collider_collision_constraint.limit_distance.value = preset["collider_limit_distance"]
         chain.collider_collision_constraint.limit_distance.use_curve = False
         chain.gravity_strength = preset["gravity_strength"]
+        chain.gravity_direction = preset["gravity_direction"]
+        sync_runtime_compat_fields(chain)
         context.scene.hocloth_runtime_status = (
             f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
         )
@@ -367,6 +489,7 @@ class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
 
         entry.enabled = False
         entry.radius = chain.joint_radius
+        sync_runtime_compat_fields(chain)
         entry.stiffness = chain.stiffness
         entry.damping = chain.damping
         entry.drag = chain.drag

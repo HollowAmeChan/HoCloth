@@ -172,6 +172,57 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         chain.stiffness = ReadFloat(chain_dict, "stiffness");
         chain.damping = ReadFloat(chain_dict, "damping");
         chain.drag = ReadFloat(chain_dict, "drag");
+        chain.damping_curve_value = ReadFloat(chain_dict, "damping_curve_value", chain.damping);
+        chain.inertia_world_inertia = ReadFloat(chain_dict, "inertia_world_inertia", 1.0f);
+        chain.inertia_movement_inertia_smoothing = ReadFloat(chain_dict, "inertia_movement_inertia_smoothing", 0.4f);
+        chain.inertia_movement_speed_limit_enabled = ReadInt(chain_dict, "inertia_movement_speed_limit_enabled", 0) != 0;
+        if (chain_dict.contains("inertia_movement_speed_limit_enabled")) {
+            chain.inertia_movement_speed_limit_enabled = nb::cast<bool>(chain_dict["inertia_movement_speed_limit_enabled"]);
+        }
+        chain.inertia_movement_speed_limit = ReadFloat(chain_dict, "inertia_movement_speed_limit", 0.0f);
+        chain.inertia_rotation_speed_limit_enabled = ReadInt(chain_dict, "inertia_rotation_speed_limit_enabled", 0) != 0;
+        if (chain_dict.contains("inertia_rotation_speed_limit_enabled")) {
+            chain.inertia_rotation_speed_limit_enabled = nb::cast<bool>(chain_dict["inertia_rotation_speed_limit_enabled"]);
+        }
+        chain.inertia_rotation_speed_limit = ReadFloat(chain_dict, "inertia_rotation_speed_limit", 0.0f);
+        chain.inertia_local_inertia = ReadFloat(chain_dict, "inertia_local_inertia", 1.0f);
+        chain.inertia_local_movement_speed_limit_enabled = ReadInt(chain_dict, "inertia_local_movement_speed_limit_enabled", 0) != 0;
+        if (chain_dict.contains("inertia_local_movement_speed_limit_enabled")) {
+            chain.inertia_local_movement_speed_limit_enabled = nb::cast<bool>(chain_dict["inertia_local_movement_speed_limit_enabled"]);
+        }
+        chain.inertia_local_movement_speed_limit = ReadFloat(chain_dict, "inertia_local_movement_speed_limit", 0.0f);
+        chain.inertia_local_rotation_speed_limit_enabled = ReadInt(chain_dict, "inertia_local_rotation_speed_limit_enabled", 0) != 0;
+        if (chain_dict.contains("inertia_local_rotation_speed_limit_enabled")) {
+            chain.inertia_local_rotation_speed_limit_enabled = nb::cast<bool>(chain_dict["inertia_local_rotation_speed_limit_enabled"]);
+        }
+        chain.inertia_local_rotation_speed_limit = ReadFloat(chain_dict, "inertia_local_rotation_speed_limit", 0.0f);
+        chain.inertia_depth_inertia = ReadFloat(chain_dict, "inertia_depth_inertia", 0.0f);
+        chain.inertia_centrifugal_acceleration = ReadFloat(chain_dict, "inertia_centrifugal_acceleration", 0.0f);
+        chain.inertia_particle_speed_limit_enabled = ReadInt(chain_dict, "inertia_particle_speed_limit_enabled", 0) != 0;
+        if (chain_dict.contains("inertia_particle_speed_limit_enabled")) {
+            chain.inertia_particle_speed_limit_enabled = nb::cast<bool>(chain_dict["inertia_particle_speed_limit_enabled"]);
+        }
+        chain.inertia_particle_speed_limit = ReadFloat(chain_dict, "inertia_particle_speed_limit", 0.0f);
+        chain.tether_distance_compression = ReadFloat(
+            chain_dict,
+            "tether_distance_compression",
+            chain.tether_distance_compression
+        );
+        chain.distance_stiffness = ReadFloat(chain_dict, "distance_stiffness", chain.stiffness);
+        chain.angle_restoration_enabled = ReadInt(chain_dict, "angle_restoration_enabled", 1) != 0;
+        if (chain_dict.contains("angle_restoration_enabled")) {
+            chain.angle_restoration_enabled = nb::cast<bool>(chain_dict["angle_restoration_enabled"]);
+        }
+        chain.angle_restoration_stiffness = ReadFloat(
+            chain_dict,
+            "angle_restoration_stiffness",
+            chain.angle_restoration_stiffness
+        );
+        chain.angle_restoration_velocity_attenuation = ReadFloat(
+            chain_dict,
+            "angle_restoration_velocity_attenuation",
+            0.6f
+        );
         chain.use_spring = ReadInt(chain_dict, "use_spring", 1) != 0;
         if (chain_dict.contains("use_spring")) {
             chain.use_spring = nb::cast<bool>(chain_dict["use_spring"]);

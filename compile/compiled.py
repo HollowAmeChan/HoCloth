@@ -40,6 +40,27 @@ class CompiledSpringBone:
     stiffness: float
     damping: float
     drag: float
+    damping_curve_value: float
+    inertia_world_inertia: float
+    inertia_movement_inertia_smoothing: float
+    inertia_movement_speed_limit_enabled: bool
+    inertia_movement_speed_limit: float
+    inertia_rotation_speed_limit_enabled: bool
+    inertia_rotation_speed_limit: float
+    inertia_local_inertia: float
+    inertia_local_movement_speed_limit_enabled: bool
+    inertia_local_movement_speed_limit: float
+    inertia_local_rotation_speed_limit_enabled: bool
+    inertia_local_rotation_speed_limit: float
+    inertia_depth_inertia: float
+    inertia_centrifugal_acceleration: float
+    inertia_particle_speed_limit_enabled: bool
+    inertia_particle_speed_limit: float
+    tether_distance_compression: float
+    distance_stiffness: float
+    angle_restoration_enabled: bool
+    angle_restoration_stiffness: float
+    angle_restoration_velocity_attenuation: float
     use_spring: bool
     spring_power: float
     limit_distance: float
@@ -172,6 +193,27 @@ class CompiledScene:
                     "stiffness": chain.stiffness,
                     "damping": chain.damping,
                     "drag": chain.drag,
+                    "damping_curve_value": chain.damping_curve_value,
+                    "inertia_world_inertia": chain.inertia_world_inertia,
+                    "inertia_movement_inertia_smoothing": chain.inertia_movement_inertia_smoothing,
+                    "inertia_movement_speed_limit_enabled": chain.inertia_movement_speed_limit_enabled,
+                    "inertia_movement_speed_limit": chain.inertia_movement_speed_limit,
+                    "inertia_rotation_speed_limit_enabled": chain.inertia_rotation_speed_limit_enabled,
+                    "inertia_rotation_speed_limit": chain.inertia_rotation_speed_limit,
+                    "inertia_local_inertia": chain.inertia_local_inertia,
+                    "inertia_local_movement_speed_limit_enabled": chain.inertia_local_movement_speed_limit_enabled,
+                    "inertia_local_movement_speed_limit": chain.inertia_local_movement_speed_limit,
+                    "inertia_local_rotation_speed_limit_enabled": chain.inertia_local_rotation_speed_limit_enabled,
+                    "inertia_local_rotation_speed_limit": chain.inertia_local_rotation_speed_limit,
+                    "inertia_depth_inertia": chain.inertia_depth_inertia,
+                    "inertia_centrifugal_acceleration": chain.inertia_centrifugal_acceleration,
+                    "inertia_particle_speed_limit_enabled": chain.inertia_particle_speed_limit_enabled,
+                    "inertia_particle_speed_limit": chain.inertia_particle_speed_limit,
+                    "tether_distance_compression": chain.tether_distance_compression,
+                    "distance_stiffness": chain.distance_stiffness,
+                    "angle_restoration_enabled": chain.angle_restoration_enabled,
+                    "angle_restoration_stiffness": chain.angle_restoration_stiffness,
+                    "angle_restoration_velocity_attenuation": chain.angle_restoration_velocity_attenuation,
                     "use_spring": chain.use_spring,
                     "spring_power": chain.spring_power,
                     "limit_distance": chain.limit_distance,

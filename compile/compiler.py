@@ -15,7 +15,13 @@ from .spring_prebuild import (
     resolve_bone_chain_branching_names,
     resolve_bone_chain_names,
 )
-from ..components.properties import _parse_component_id_list, find_component_by_id
+from ..components.properties import (
+    _parse_component_id_list,
+    find_component_by_id,
+    get_runtime_damping,
+    get_runtime_drag,
+    get_runtime_stiffness,
+)
 
 
 def _spring_joint_override_map(typed_item) -> dict[str, object]:
@@ -29,6 +35,9 @@ def _spring_joint_override_map(typed_item) -> dict[str, object]:
 def _apply_joint_parameters(compiled_bones: list[CompiledSpringJoint], typed_item) -> list[CompiledSpringJoint]:
     overrides = _spring_joint_override_map(typed_item)
     configured_bones: list[CompiledSpringJoint] = []
+    runtime_stiffness = get_runtime_stiffness(typed_item)
+    runtime_damping = get_runtime_damping(typed_item)
+    runtime_drag = get_runtime_drag(typed_item)
 
     for joint in compiled_bones:
         override = overrides.get(joint.name)
@@ -40,9 +49,9 @@ def _apply_joint_parameters(compiled_bones: list[CompiledSpringJoint], typed_ite
                 depth=joint.depth,
                 length=joint.length,
                 radius=float(override.radius) if use_override else float(typed_item.joint_radius),
-                stiffness=float(override.stiffness) if use_override else float(typed_item.stiffness),
-                damping=float(override.damping) if use_override else float(typed_item.damping),
-                drag=float(override.drag) if use_override else float(typed_item.drag),
+                stiffness=float(override.stiffness) if use_override else runtime_stiffness,
+                damping=float(override.damping) if use_override else runtime_damping,
+                drag=float(override.drag) if use_override else runtime_drag,
                 gravity_scale=float(override.gravity_scale) if use_override else 1.0,
                 rest_head_local=joint.rest_head_local,
                 rest_tail_local=joint.rest_tail_local,
@@ -151,9 +160,32 @@ def compile_scene_from_components(scene) -> CompiledScene:
                     joint_radius=float(typed_item.joint_radius),
                     collider_group_ids=_parse_component_id_list(typed_item.collider_group_ids),
                     collision_binding_ids=_parse_component_id_list(typed_item.collider_group_ids),
-                    stiffness=typed_item.stiffness,
-                    damping=typed_item.damping,
-                    drag=typed_item.drag,
+                    stiffness=get_runtime_stiffness(typed_item),
+                    damping=get_runtime_damping(typed_item),
+                    drag=get_runtime_drag(typed_item),
+                    damping_curve_value=float(typed_item.damping_curve.value),
+                    inertia_world_inertia=float(typed_item.inertia_constraint.world_inertia),
+                    inertia_movement_inertia_smoothing=float(typed_item.inertia_constraint.movement_inertia_smoothing),
+                    inertia_movement_speed_limit_enabled=bool(typed_item.inertia_constraint.movement_speed_limit.use),
+                    inertia_movement_speed_limit=float(typed_item.inertia_constraint.movement_speed_limit.value),
+                    inertia_rotation_speed_limit_enabled=bool(typed_item.inertia_constraint.rotation_speed_limit.use),
+                    inertia_rotation_speed_limit=float(typed_item.inertia_constraint.rotation_speed_limit.value),
+                    inertia_local_inertia=float(typed_item.inertia_constraint.local_inertia),
+                    inertia_local_movement_speed_limit_enabled=bool(typed_item.inertia_constraint.local_movement_speed_limit.use),
+                    inertia_local_movement_speed_limit=float(typed_item.inertia_constraint.local_movement_speed_limit.value),
+                    inertia_local_rotation_speed_limit_enabled=bool(typed_item.inertia_constraint.local_rotation_speed_limit.use),
+                    inertia_local_rotation_speed_limit=float(typed_item.inertia_constraint.local_rotation_speed_limit.value),
+                    inertia_depth_inertia=float(typed_item.inertia_constraint.depth_inertia),
+                    inertia_centrifugal_acceleration=float(typed_item.inertia_constraint.centrifugal_acceleration),
+                    inertia_particle_speed_limit_enabled=bool(typed_item.inertia_constraint.particle_speed_limit.use),
+                    inertia_particle_speed_limit=float(typed_item.inertia_constraint.particle_speed_limit.value),
+                    tether_distance_compression=float(typed_item.tether_constraint.distance_compression),
+                    distance_stiffness=float(typed_item.distance_constraint.stiffness.value),
+                    angle_restoration_enabled=bool(typed_item.angle_restoration_constraint.use_angle_restoration),
+                    angle_restoration_stiffness=float(typed_item.angle_restoration_constraint.stiffness.value),
+                    angle_restoration_velocity_attenuation=float(
+                        typed_item.angle_restoration_constraint.velocity_attenuation
+                    ),
                     use_spring=bool(typed_item.spring_constraint.use_spring),
                     spring_power=float(typed_item.spring_constraint.spring_power),
                     limit_distance=float(typed_item.spring_constraint.limit_distance),

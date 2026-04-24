@@ -12,6 +12,7 @@ namespace hocloth {
 namespace {
 
 constexpr const char* kTailTipSuffix = "__hocloth_tail_tip__";
+constexpr float kPi = 3.14159265358979323846f;
 
 // From MC2: MagicaCloth2/Scripts/Core/Define/SystemDefine.cs
 constexpr int kMc2DefaultSimulationFrequency = 90;
@@ -68,6 +69,24 @@ float Dot(const Vec3& a, const Vec3& b)
 float Length(const Vec3& value)
 {
     return std::sqrt(Dot(value, value));
+}
+
+Vec3 ProjectOnPlane(const Vec3& value, const Vec3& normal)
+{
+    const float normal_length_sq = Dot(normal, normal);
+    if (normal_length_sq <= 1.0e-8f) {
+        return value;
+    }
+    return Sub(value, Scale(normal, Dot(value, normal) / normal_length_sq));
+}
+
+Vec3 ClampVectorLength(const Vec3& value, float max_length)
+{
+    const float length = Length(value);
+    if (length <= max_length || length <= 1.0e-8f) {
+        return value;
+    }
+    return Scale(value, max_length / length);
 }
 
 float AverageAbsScale(const Vec3& value)
@@ -144,6 +163,77 @@ Quat QuaternionFromPitchRoll(float pitch, float roll)
         std::sin(half_roll),
     };
     return Mul(quat_z, quat_x);
+}
+
+Vec3 AxisToEuler(const Vec3& axis)
+{
+    const float angy = std::atan2(axis.x, axis.z);
+    const Vec3 axis_y{0.0f, axis.y, 0.0f};
+    const float angx = std::atan2(-axis.y, Length(Sub(axis, axis_y)));
+    return Vec3{angx, angy, 0.0f};
+}
+
+float QuaternionDot(const Quat& a, const Quat& b)
+{
+    return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Quat Slerp(const Quat& a, const Quat& b, float t)
+{
+    Quat qa = NormalizeQuat(a);
+    Quat qb = NormalizeQuat(b);
+    float dot = QuaternionDot(qa, qb);
+
+    if (dot < 0.0f) {
+        qb = Quat{-qb.w, -qb.x, -qb.y, -qb.z};
+        dot = -dot;
+    }
+
+    if (dot > 0.9995f) {
+        return NormalizeQuat(Quat{
+            qa.w + (qb.w - qa.w) * t,
+            qa.x + (qb.x - qa.x) * t,
+            qa.y + (qb.y - qa.y) * t,
+            qa.z + (qb.z - qa.z) * t,
+        });
+    }
+
+    const float theta_0 = std::acos(Clamp(dot, -1.0f, 1.0f));
+    const float theta = theta_0 * t;
+    const float sin_theta = std::sin(theta);
+    const float sin_theta_0 = std::sin(theta_0);
+
+    const float s0 = std::cos(theta) - dot * sin_theta / sin_theta_0;
+    const float s1 = sin_theta / sin_theta_0;
+    return NormalizeQuat(Quat{
+        qa.w * s0 + qb.w * s1,
+        qa.x * s0 + qb.x * s1,
+        qa.y * s0 + qb.y * s1,
+        qa.z * s0 + qb.z * s1,
+    });
+}
+
+float QuaternionAngle(const Quat& a, const Quat& b)
+{
+    const float dot = QuaternionDot(NormalizeQuat(a), NormalizeQuat(b));
+    if (std::abs(dot) < 0.9999f) {
+        const float angle = std::acos(Clamp(dot, -1.0f, 1.0f)) * 2.0f;
+        return angle > kPi ? (kPi * 2.0f) - angle : angle;
+    }
+    return 0.0f;
+}
+
+void QuaternionToAngleAxis(const Quat& q, float& angle, Vec3& axis)
+{
+    const Quat normalized = NormalizeQuat(q);
+    const float a = std::abs(normalized.w) < 0.9999f ? std::acos(normalized.w) : 0.0f;
+    angle = 2.0f * a;
+    const float s = std::sin(a);
+    if (std::abs(s) < 1.0e-6f) {
+        axis = Vec3{};
+    } else {
+        axis = Vec3{normalized.x / s, normalized.y / s, normalized.z / s};
+    }
 }
 
 bool EndsWith(const std::string& value, const std::string& suffix)
@@ -223,8 +313,18 @@ struct ChainCache {
     std::vector<CompiledSpringLine> line_indices;
     std::vector<std::vector<int>> baseline_paths;
     std::vector<JointState> joint_states;
+    std::vector<Quat> last_basic_rotations;
     Quat last_root_rotation;
     Quat last_center_rotation;
+    Vec3 last_center_translation;
+    Vec3 step_vector;
+    Quat step_rotation;
+    Vec3 inertia_vector;
+    Quat inertia_rotation;
+    float velocity_weight = 1.0f;
+    float angular_velocity = 0.0f;
+    Vec3 rotation_axis;
+    Vec3 rotation_axis_euler;
     bool has_runtime_rotation = false;
 };
 
@@ -325,6 +425,7 @@ void BuildSceneCaches(RuntimeModule::SceneState& scene)
         cache.line_indices = BuildLineIndices(chain);
         cache.baseline_paths = BuildBaselinePaths(chain);
         cache.joint_states.resize(chain.joints.size());
+        cache.last_basic_rotations.resize(chain.joints.size());
         scene.chain_caches.push_back(std::move(cache));
     }
 
@@ -510,28 +611,57 @@ void StepChain(
     const Vec3 gravity_direction = Normalize(chain.gravity_direction);
     (void)gravity_direction;
 
-    Vec3 root_rotation_offset{};
-    Vec3 center_rotation_offset{};
-    if (runtime_input != nullptr && cache.has_runtime_rotation) {
-        // From MC2: baseRot / center inertia changes affect spring direction and follow.
-        const Quat root_delta = NormalizeQuat(
-            Mul(runtime_input->root_rotation_quaternion, Conjugate(cache.last_root_rotation))
-        );
-        const Quat center_delta = NormalizeQuat(
-            Mul(runtime_input->center_rotation_quaternion, Conjugate(cache.last_center_rotation))
-        );
-        const Vec3 root_up = RotateVector(root_delta, Vec3{0.0f, 1.0f, 0.0f});
-        const Vec3 center_up = RotateVector(center_delta, Vec3{0.0f, 1.0f, 0.0f});
-        root_rotation_offset = Vec3{
-            Clamp(-root_up.x, -1.0f, 1.0f),
-            Clamp(root_up.z, -1.0f, 1.0f),
-            0.0f,
-        };
-        center_rotation_offset = Vec3{
-            Clamp(-center_up.x, -1.0f, 1.0f),
-            Clamp(center_up.z, -1.0f, 1.0f),
-            0.0f,
-        };
+    if (
+        runtime_input != nullptr
+        && cache.has_runtime_rotation
+        && runtime_input->basic_rotations.size() == cache.last_basic_rotations.size()
+    ) {
+        // From MC2: SimulationManager keeps per-particle baseRot and applies inertia rotation
+        // before the spring solve. Here we mirror that with per-joint basic rotation deltas.
+        for (std::size_t joint_index = 0; joint_index < cache.joint_states.size(); ++joint_index) {
+            const Quat joint_delta = NormalizeQuat(
+                Mul(runtime_input->basic_rotations[joint_index], Conjugate(cache.last_basic_rotations[joint_index]))
+            );
+
+            JointState& state = cache.joint_states[joint_index];
+            const Vec3 rotated_point = RotateVector(joint_delta, ToAnglePoint(state));
+            const Vec3 rotated_velocity = RotateVector(
+                joint_delta,
+                Vec3{state.roll_velocity, state.pitch_velocity, 0.0f}
+            );
+            FromAnglePoint(rotated_point, state);
+            state.roll_velocity = Clamp(rotated_velocity.x, -8.0f, 8.0f);
+            state.pitch_velocity = Clamp(rotated_velocity.y, -8.0f, 8.0f);
+        }
+    }
+
+    if (runtime_input != nullptr) {
+        // From MC2: TeamManager computes centerData.stepVector / stepRotation / inertiaVector / inertiaRotation.
+        const Vec3 raw_step_vector = cache.has_runtime_rotation
+            ? Sub(runtime_input->center_translation, cache.last_center_translation)
+            : Vec3{};
+        const Quat raw_step_rotation = cache.has_runtime_rotation
+            ? NormalizeQuat(Mul(runtime_input->center_rotation_quaternion, Conjugate(cache.last_center_rotation)))
+            : Quat{};
+
+        cache.step_vector = raw_step_vector;
+        cache.step_rotation = raw_step_rotation;
+
+        // From MC2: MagicaCloth2/Res/Preset/*.json + InertiaConstraint.cs
+        const float local_movement_inertia = Clamp01(chain.inertia_local_inertia);
+        const float local_rotation_inertia = Clamp01(chain.inertia_local_inertia);
+        cache.inertia_vector = Scale(raw_step_vector, local_movement_inertia);
+        cache.inertia_rotation = Slerp(Quat{}, raw_step_rotation, local_rotation_inertia);
+        cache.velocity_weight = cache.has_runtime_rotation ? 1.0f : 0.0f;
+        float step_angle = cache.has_runtime_rotation
+            ? QuaternionAngle(cache.last_center_rotation, runtime_input->center_rotation_quaternion)
+            : 0.0f;
+        cache.angular_velocity = scene.time_state.simulation_delta_time > 1.0e-8f
+            ? step_angle / scene.time_state.simulation_delta_time
+            : 0.0f;
+        QuaternionToAngleAxis(cache.step_rotation, step_angle, cache.rotation_axis);
+        cache.rotation_axis = Normalize(cache.rotation_axis);
+        cache.rotation_axis_euler = AxisToEuler(cache.rotation_axis);
     }
 
     for (const std::vector<int>& path : cache.baseline_paths) {
@@ -550,45 +680,117 @@ void StepChain(
             const float damping = Clamp01(joint.damping > 0.0f ? joint.damping : chain.damping);
             const float drag = Clamp01(joint.drag > 0.0f ? joint.drag : chain.drag);
             const float depth_ratio = static_cast<float>(path_index) / path_depth;
+            const float inertia_depth = Clamp01(chain.inertia_depth_inertia) * (1.0f - depth_ratio * depth_ratio);
 
-            const float inherit = kMc2BoneSpringTetherCompressionLimit * (0.55f + stiffness * 0.25f);
+            Vec3 inertia_vector = cache.inertia_vector;
+            Quat inertia_rotation = cache.inertia_rotation;
+            inertia_vector = Add(
+                Scale(inertia_vector, 1.0f - inertia_depth),
+                Scale(cache.step_vector, inertia_depth)
+            );
+            inertia_rotation = Slerp(inertia_rotation, cache.step_rotation, inertia_depth);
+
+            const Vec3 inertia_point = RotateVector(inertia_rotation, ToAnglePoint(state));
+            const Vec3 inertia_velocity = RotateVector(
+                inertia_rotation,
+                Vec3{state.roll_velocity, state.pitch_velocity, 0.0f}
+            );
+            const float world_inertia = Clamp01(chain.inertia_world_inertia);
+            const float movement_inertia_smoothing = Clamp01(chain.inertia_movement_inertia_smoothing);
+            Vec3 shifted_point = Add(
+                inertia_point,
+                Vec3{
+                    inertia_vector.x * world_inertia * (0.12f * (1.0f - movement_inertia_smoothing * 0.4f)),
+                    inertia_vector.y * world_inertia * (0.12f * (1.0f - movement_inertia_smoothing * 0.4f)),
+                    0.0f,
+                }
+            );
+            FromAnglePoint(shifted_point, state);
+            const float particle_speed_limit = chain.inertia_particle_speed_limit_enabled
+                ? std::max(0.0f, chain.inertia_particle_speed_limit)
+                : 8.0f;
+            state.roll_velocity = Clamp(
+                inertia_velocity.x * cache.velocity_weight,
+                -particle_speed_limit,
+                particle_speed_limit
+            );
+            state.pitch_velocity = Clamp(
+                inertia_velocity.y * cache.velocity_weight,
+                -particle_speed_limit,
+                particle_speed_limit
+            );
+
+            if (cache.angular_velocity > 1.0e-5f) {
+                // From MC2: centrifugal acceleration reacts to angular velocity and rotation axis.
+                const Vec3 lpos = ToAnglePoint(state);
+                const Vec3 plane_pos = ProjectOnPlane(lpos, cache.rotation_axis_euler);
+                const float radius = Length(plane_pos);
+                if (radius > 1.0e-6f) {
+                    const Vec3 radial = Scale(plane_pos, 1.0f / radius);
+                    const Vec3 tangent = Normalize(Vec3{
+                        cache.rotation_axis_euler.y * radial.z - cache.rotation_axis_euler.z * radial.y,
+                        cache.rotation_axis_euler.z * radial.x - cache.rotation_axis_euler.x * radial.z,
+                        cache.rotation_axis_euler.x * radial.y - cache.rotation_axis_euler.y * radial.x,
+                    });
+                    const Vec3 velocity_dir = Normalize(Vec3{state.roll_velocity, state.pitch_velocity, 0.0f});
+                    const float tangent_follow = Clamp01(Dot(velocity_dir, tangent));
+                    const float accel = (1.0f + (1.0f - depth_ratio))
+                        * cache.angular_velocity
+                        * cache.angular_velocity
+                        * radius
+                        * (0.02f + Clamp01(chain.inertia_centrifugal_acceleration) * 0.02f)
+                        * tangent_follow;
+                    state.roll_velocity = Clamp(
+                        state.roll_velocity + radial.x * accel,
+                        -particle_speed_limit,
+                        particle_speed_limit
+                    );
+                    state.pitch_velocity = Clamp(
+                        state.pitch_velocity + radial.y * accel,
+                        -particle_speed_limit,
+                        particle_speed_limit
+                    );
+                }
+            }
+
+            const float inherit = Clamp01(chain.tether_distance_compression) * (0.55f + stiffness * 0.25f);
             const float center_offset_scale = 0.16f * (1.0f - depth_ratio * 0.35f);
             const float inertia_scale = 0.014f * (1.0f - depth_ratio * 0.45f);
-            const float root_rotation_scale = 0.26f * (1.0f - depth_ratio * 0.25f);
-            const float center_rotation_scale = 0.34f * (1.0f - depth_ratio * 0.15f);
 
             const float target_pitch =
                 parent_state.pitch * inherit
                 + center_offset.y * center_offset_scale
-                + center_velocity.y * inertia_scale
-                + root_rotation_offset.y * root_rotation_scale
-                + center_rotation_offset.y * center_rotation_scale;
+                + center_velocity.y * inertia_scale;
             const float target_roll =
                 parent_state.roll * inherit
                 + center_offset.x * center_offset_scale
-                + center_velocity.x * inertia_scale
-                + root_rotation_offset.x * root_rotation_scale
-                + center_rotation_offset.x * center_rotation_scale;
+                + center_velocity.x * inertia_scale;
 
             const float spring_gain =
                 (0.45f + stiffness * 0.55f)
-                * kMc2BoneSpringDistanceStiffness
+                * std::max(0.0f, chain.distance_stiffness)
                 * (0.85f + scene.time_state.simulation_power[1] * 0.35f);
-            const float damping_gain = 0.25f + damping * 0.65f;
+            const float damping_gain = chain.angle_restoration_enabled
+                ? (0.25f + Clamp01(chain.angle_restoration_stiffness) * 0.65f)
+                : 0.0f;
             const float drag_factor = std::max(
                 0.0f,
-                1.0f - ((drag * 0.5f) + (damping * 0.25f)) * scene.time_state.simulation_delta_time * 18.0f
+                1.0f
+                - (
+                    (drag * 0.5f)
+                    + (Clamp01(chain.angle_restoration_velocity_attenuation) * 0.25f)
+                ) * scene.time_state.simulation_delta_time * 18.0f
             );
 
             state.pitch_velocity = Clamp(
                 (state.pitch_velocity + (target_pitch - state.pitch) * spring_gain) * drag_factor,
-                -8.0f,
-                8.0f
+                -particle_speed_limit,
+                particle_speed_limit
             );
             state.roll_velocity = Clamp(
                 (state.roll_velocity + (target_roll - state.roll) * spring_gain) * drag_factor,
-                -8.0f,
-                8.0f
+                -particle_speed_limit,
+                particle_speed_limit
             );
 
             state.pitch = Clamp(
@@ -627,8 +829,12 @@ void StepChain(
     }
 
     if (runtime_input != nullptr) {
+        if (runtime_input->basic_rotations.size() == cache.last_basic_rotations.size()) {
+            cache.last_basic_rotations = runtime_input->basic_rotations;
+        }
         cache.last_root_rotation = runtime_input->root_rotation_quaternion;
         cache.last_center_rotation = runtime_input->center_rotation_quaternion;
+        cache.last_center_translation = runtime_input->center_translation;
         cache.has_runtime_rotation = true;
     }
 }

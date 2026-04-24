@@ -4,14 +4,6 @@ from ..compile.compiler import resolve_bone_chain_branching_names, resolve_bone_
 from ..components.properties import _parse_component_id_list, find_component_by_id, list_component_display_names
 
 
-_BONE_CHAIN_PRESET_BUTTONS = (
-    ("SOFT_HAIR", "Soft Hair"),
-    ("BALANCED", "Balanced"),
-    ("ROPE", "Rope"),
-    ("HEAVY", "Heavy"),
-)
-
-
 def _resolve_component(scene, item, container_name):
     container = getattr(scene, container_name)
     component = find_component_by_id(container, item.component_id)
@@ -80,18 +72,12 @@ def _draw_spring_bone_details(layout, scene, item):
 
     params = body.column(align=True)
     preset_box = body.box()
-    preset_box.label(text="Presets")
-    preset_row = preset_box.row(align=True)
-    for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[:2]:
-        preset_op = preset_row.operator("hocloth.apply_spring_bone_preset", text=label)
-        preset_op.component_id = item.component_id
-        preset_op.preset_id = preset_id
-    preset_row = preset_box.row(align=True)
-    for preset_id, label in _BONE_CHAIN_PRESET_BUTTONS[2:]:
-        preset_op = preset_row.operator("hocloth.apply_spring_bone_preset", text=label)
-        preset_op.component_id = item.component_id
-        preset_op.preset_id = preset_id
-    preset_box.label(text="Apply preset, then rebuild runtime", icon="INFO")
+    preset_box.label(text="MC2 Preset Target")
+    preset_box.prop(chain, "preset_profile", text="")
+    preset_op = preset_box.operator("hocloth.apply_spring_bone_preset", text="Apply Selected Preset")
+    preset_op.component_id = item.component_id
+    preset_box.label(text="Use MC2 preset names as the effect baseline.", icon="INFO")
+    preset_box.label(text="Apply preset, then rebuild runtime.", icon="INFO")
 
     params.label(text="Spring")
     params.prop(chain, "center_source", text="Center Anchor")
@@ -105,9 +91,44 @@ def _draw_spring_bone_details(layout, scene, item):
             params.prop(chain, "center_bone_name", text="Center Bone")
     params.prop(chain, "joint_radius", text="Particle Radius")
     params.prop(chain, "append_tail_tip", text="Append Tail Tip Joint")
-    params.prop(chain, "stiffness")
-    params.prop(chain, "damping")
-    params.prop(chain, "drag")
+    damping_box = body.box()
+    damping_box.label(text="MC2 Damping")
+    damping_box.prop(chain.damping_curve, "value", text="Value")
+    damping_box.label(text="Curve interface reserved only for now.", icon="INFO")
+    inertia_box = body.box()
+    inertia_box.label(text="MC2 Inertia Constraint")
+    inertia_box.prop(chain.inertia_constraint, "world_inertia")
+    inertia_box.prop(chain.inertia_constraint, "movement_inertia_smoothing")
+    inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "use", text="Use Movement Speed Limit")
+    if chain.inertia_constraint.movement_speed_limit.use:
+        inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "value", text="Movement Speed Limit")
+    inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "use", text="Use Rotation Speed Limit")
+    if chain.inertia_constraint.rotation_speed_limit.use:
+        inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "value", text="Rotation Speed Limit")
+    inertia_box.prop(chain.inertia_constraint, "local_inertia")
+    inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "use", text="Use Local Movement Speed Limit")
+    if chain.inertia_constraint.local_movement_speed_limit.use:
+        inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "value", text="Local Movement Speed Limit")
+    inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "use", text="Use Local Rotation Speed Limit")
+    if chain.inertia_constraint.local_rotation_speed_limit.use:
+        inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "value", text="Local Rotation Speed Limit")
+    inertia_box.prop(chain.inertia_constraint, "depth_inertia")
+    inertia_box.prop(chain.inertia_constraint, "centrifugal_acceleration")
+    inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "use", text="Use Particle Speed Limit")
+    if chain.inertia_constraint.particle_speed_limit.use:
+        inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "value", text="Particle Speed Limit")
+    distance_box = body.box()
+    distance_box.label(text="MC2 Distance / Tether")
+    distance_box.prop(chain.distance_constraint.stiffness, "value", text="Distance Stiffness")
+    distance_box.prop(chain.tether_constraint, "distance_compression")
+    distance_box.label(text="Curve interface reserved only for now.", icon="INFO")
+    angle_box = body.box()
+    angle_box.label(text="MC2 Angle Restoration Constraint")
+    angle_box.prop(chain.angle_restoration_constraint, "use_angle_restoration")
+    angle_col = angle_box.column(align=True)
+    angle_col.enabled = chain.angle_restoration_constraint.use_angle_restoration
+    angle_col.prop(chain.angle_restoration_constraint.stiffness, "value", text="Stiffness")
+    angle_col.prop(chain.angle_restoration_constraint, "velocity_attenuation")
     spring_box = body.box()
     spring_box.label(text="MC2 Spring Constraint")
     spring_box.prop(chain.spring_constraint, "use_spring")
@@ -143,6 +164,7 @@ def _draw_spring_bone_details(layout, scene, item):
     summary_box.label(text=f"Joints: {bone_count}", icon="ARMATURE_DATA")
     summary_box.label(text=f"Particle Radius: {chain.joint_radius:.3f}", icon="MESH_UVSPHERE")
     summary_box.label(text=f"Tail Tip: {'On' if chain.append_tail_tip else 'Off'}", icon="BONE_DATA")
+    summary_box.label(text=f"Preset Target: {chain.preset_profile}", icon="SETTINGS")
     summary_box.label(
         text=(
             f"Spring: {'On' if chain.spring_constraint.use_spring else 'Off'}"
@@ -150,6 +172,14 @@ def _draw_spring_bone_details(layout, scene, item):
             f" / limit {chain.spring_constraint.limit_distance:.3f}"
         ),
         icon="FORCE_HARMONIC",
+    )
+    summary_box.label(
+        text=(
+            f"Damping {chain.damping_curve.value:.3f}"
+            f" / Distance {chain.distance_constraint.stiffness.value:.3f}"
+            f" / Tether {chain.tether_constraint.distance_compression:.3f}"
+        ),
+        icon="MODIFIER",
     )
     summary_box.label(text=f"Collision Push Limit: {chain.collider_collision_constraint.limit_distance.value:.3f}", icon="MOD_PHYSICS")
     if chain.center_source == "OBJECT" and chain.center_object is not None:

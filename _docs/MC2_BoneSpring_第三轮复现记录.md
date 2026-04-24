@@ -169,7 +169,61 @@
 
 这还不是 `MC2 InertiaConstraint` 的全量移植，但已经补上了一条之前明显缺失的主干。
 
-### 7.3 CurveSerializeData 暂时只保留接口
+### 7.3 native 开始使用每 joint 的 `basic_rotation` 增量
+
+在继续对照 `SimulationManager` 后，又确认了一点：
+
+- `MC2` 使用的是逐粒子的 `baseRotArray[pindex]`
+- 只看 root / center 整体旋转，仍然不够接近 `MC2`
+
+所以当前 native 已进一步补成：
+
+- 记录上一帧每个 joint 的 `basic_rotation`
+- 本帧先计算每 joint 的 `basic_rotation delta`
+- 再用这个 delta 预旋转当前 joint state 和速度
+
+这让当前实现开始更接近 `MC2` 的“基准姿态变化先进入惯性/弹簧状态，再继续求解”的路径。
+
+### 7.4 native 开始引入 `centerData` 风格状态
+
+继续往下对照后，已经确认 `MC2 BoneSpring` 里真正关键的不只是 `Spring(...)` 本身，而是：
+
+- `TeamManager` 先生成 `centerData`
+- 其中包含：
+  - `stepVector`
+  - `stepRotation`
+  - `inertiaVector`
+  - `inertiaRotation`
+  - `velocityWeight`
+- `SimulationManager` 再在 step 前后使用这些量
+
+当前 native 已经开始补入这条主线的对应状态：
+
+- `step_vector`
+- `step_rotation`
+- `inertia_vector`
+- `inertia_rotation`
+- `velocity_weight`
+
+虽然还不是 `MC2 TeamManager` 的完整逐字段同构，但已经从“零散旋转补偿”切换成“按 centerData 主思路驱动”的实现方向。
+
+### 7.5 native 开始引入角速度 / 旋转轴
+
+在继续对照 `TeamManager.cs` 与 `SimulationManager.cs` 后，又补上了另一条关键链路：
+
+- `angularVelocity`
+- `rotationAxis`
+- 基于角速度和半径的远心力加速
+
+之前“旋转时只有一个方向摆动”的一个明显原因，就是当前实现虽然有旋转 delta，但还缺少：
+
+- 旋转角速度
+- 旋转轴
+- 基于这两个量的速度侧补偿
+
+现在 native 已开始按 `MC2` 这条路径补入这些量，并将其作用到速度更新上。
+
+### 7.6 CurveSerializeData 暂时只保留接口
 
 根据当前阶段目标，`CurveSerializeData` 暂时只保留数据接口：
 
