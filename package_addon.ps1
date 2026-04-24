@@ -81,6 +81,7 @@ $ExcludeNames = @(
     "_dist",
     "_docs",
     "_native",
+    "_ReferenceProject",
     "package_addon.ps1",
     "pyproject.toml",
     "scripts",
