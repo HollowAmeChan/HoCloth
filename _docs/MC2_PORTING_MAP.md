@@ -21,14 +21,15 @@ Status labels:
 | Define | partial | `_native/include/hocloth/core/define/` |
 | Interface | skeleton | `_native/include/hocloth/manager/`, `_native/include/hocloth/core/` |
 | Utility/ResultCode | skeleton | `_native/include/hocloth/utility/result_code/` |
-| Utility/Math | skeleton | `_native/include/hocloth/utility/math/` |
+| Utility/Math | partial | `_native/include/hocloth/utility/math/` |
+| Utility/Data | partial | `_native/include/hocloth/utility/data/` |
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
 | Utility/Time | skeleton | `_native/include/hocloth/manager/simulation/time_manager.hpp` |
 | Manager | partial | `_native/include/hocloth/manager/` |
-| Cloth/Constraints | legacy-partial | `_native/include/hocloth/cloth/constraints/` |
+| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/` |
 | Cloth/Collider | planned | `_native/include/hocloth/cloth/collider/` |
 | Cloth/Wind | skeleton | `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
-| VirtualMesh | planned | `_native/include/hocloth/virtual_mesh/` |
+| VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/` |
 | Reduction | planned | `_native/include/hocloth/reduction/` |
 | PreBuild | planned | `_native/include/hocloth/prebuild/` |
 
@@ -40,7 +41,7 @@ Status labels:
 | `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
 | `Cloth/ClothForceMode.cs` | planned | `cloth/cloth_force_mode.hpp` |
 | `Cloth/ClothNormalAxis.cs` | planned | `cloth/cloth_normal_axis.hpp` |
-| `Cloth/ClothParameters.cs` | planned | `cloth/cloth_parameters.*` |
+| `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp` |
 | `Cloth/ClothProcess.cs` | planned | `cloth/cloth_process.*` |
 | `Cloth/ClothProcessData.cs` | planned | `cloth/cloth_process_data.*` |
 | `Cloth/ClothProcessGeneration.cs` | planned | `cloth/cloth_process_generation.*` |
@@ -73,8 +74,8 @@ Status labels:
 | --- | --- | --- |
 | `Cloth/Constraints/AngleConstraint.cs` | legacy-partial | `cloth/constraints/angle_constraint.*` |
 | `Cloth/Constraints/ColliderCollisionConstraint.cs` | legacy-partial | `cloth/constraints/collider_collision_constraint.*` |
-| `Cloth/Constraints/DistanceConstraint.cs` | legacy-partial | `cloth/constraints/distance_constraint.*` |
-| `Cloth/Constraints/InertiaConstraint.cs` | legacy-partial | `cloth/constraints/inertia_constraint.*` |
+| `Cloth/Constraints/DistanceConstraint.cs` | partial | `cloth/constraints/distance_constraint.*` |
+| `Cloth/Constraints/InertiaConstraint.cs` | partial | `cloth/constraints/inertia_constraint.*` |
 | `Cloth/Constraints/MotionConstraint.cs` | planned | `cloth/constraints/motion_constraint.*` |
 | `Cloth/Constraints/SelfCollisionConstraint.cs` | planned | `cloth/constraints/self_collision_constraint.*` |
 | `Cloth/Constraints/SpringConstraint.cs` | legacy-partial | `cloth/constraints/spring_constraint.*` |
@@ -118,13 +119,13 @@ Status labels:
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*` |
 | `Manager/Simulation/TimeManager.cs` | skeleton | `manager/simulation/time_manager.*` |
 | `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
-| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*` |
+| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter ownership |
 | `Manager/Team/TeamWindData.cs` | planned | `manager/team/team_wind_data.*` |
-| `Manager/TransformManager/TransformData.cs` | planned | `manager/transform/transform_data.*` |
+| `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*` |
 | `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
-| `Manager/TransformManager/TransformManager.cs` | skeleton | `manager/transform/transform_manager.*` |
-| `Manager/TransformManager/TransformRecord.cs` | planned | `manager/transform/transform_record.*` |
-| `Manager/VirtualMesh/VirtualMeshManager.cs` | skeleton | `manager/virtual_mesh/virtual_mesh_manager.*` |
+| `Manager/TransformManager/TransformManager.cs` | partial | `manager/transform/transform_manager.*` |
+| `Manager/TransformManager/TransformRecord.cs` | partial | `manager/transform/transform_record.*` |
+| `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*` |
 
 ## PreBuild / Reduction / Settings
 
@@ -147,22 +148,22 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Utility/Data/DataUtility.cs` | planned | `utility/data/data_utility.*` |
+| `Utility/Data/DataUtility.cs` | partial | `utility/data/data_utility.*` |
 | `Utility/Data/MultiDataBuilder.cs` | planned | `utility/data/multi_data_builder.*` |
 | `Utility/Grid/GridMap.cs` | planned | `utility/grid/grid_map.*` |
 | `Utility/Jobs/InterlockUtility.cs` | defer | C++ threading abstraction |
 | `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
-| `Utility/Math/AABB.cs` | skeleton | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
+| `Utility/Math/AABB.cs` | partial | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
 | `Utility/Math/IntAABB.cs` | planned | `utility/math/int_aabb.*` |
-| `Utility/Math/MathExtensions.cs` | planned | `utility/math/math_extensions.*` |
-| `Utility/Math/MathUtility.cs` | skeleton | `utility/math/math_utility.*` |
+| `Utility/Math/MathExtensions.cs` | partial | `utility/math/math_extensions.*` |
+| `Utility/Math/MathUtility.cs` | partial | `utility/math/math_utility.*` |
 | `Utility/Math/MinimumData.cs` | planned | `utility/math/minimum_data.*` |
 | `Utility/Mesh/MeshUtility.cs` | planned | `utility/mesh/mesh_utility.*` |
 | `Utility/Misc/Develop.cs` | planned | `utility/misc/develop.*` |
 | `Utility/Misc/StaticStringBuilder.cs` | defer | C++ logging/dump utilities |
 | `Utility/NativeCollection/DataChunk.cs` | partial | `utility/native_collection/data_chunk.*` |
 | `Utility/NativeCollection/ExBitFlag16.cs` | planned | `utility/native_collection/ex_bit_flag16.*` |
-| `Utility/NativeCollection/ExBitFlag8.cs` | planned | `utility/native_collection/ex_bit_flag8.*` |
+| `Utility/NativeCollection/ExBitFlag8.cs` | partial | `utility/native_collection/bit_flag.hpp` |
 | `Utility/NativeCollection/ExCostSortedList1.cs` | planned | `utility/native_collection/ex_cost_sorted_list1.*` |
 | `Utility/NativeCollection/ExCostSortedList4.cs` | planned | `utility/native_collection/ex_cost_sorted_list4.*` |
 | `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp` |
@@ -186,13 +187,13 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `VirtualMesh/VertexAttribute.cs` | planned | `virtual_mesh/vertex_attribute.*` |
-| `VirtualMesh/VirtualMesh.cs` | planned | `virtual_mesh/virtual_mesh.*` |
-| `VirtualMesh/VirtualMeshBoneWeight.cs` | planned | `virtual_mesh/virtual_mesh_bone_weight.*` |
-| `VirtualMesh/VirtualMeshContainer.cs` | planned | `virtual_mesh/virtual_mesh_container.*` |
+| `VirtualMesh/VertexAttribute.cs` | partial | `virtual_mesh/vertex_attribute.hpp` |
+| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*` |
+| `VirtualMesh/VirtualMeshBoneWeight.cs` | partial | `virtual_mesh/virtual_mesh_bone_weight.hpp` |
+| `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*` |
 | `VirtualMesh/VirtualMeshPrimitive.cs` | planned | `virtual_mesh/virtual_mesh_primitive.*` |
 | `VirtualMesh/VirtualMeshRaycastHit.cs` | planned | `virtual_mesh/virtual_mesh_raycast_hit.*` |
-| `VirtualMesh/VirtualMeshTransform.cs` | planned | `virtual_mesh/virtual_mesh_transform.*` |
+| `VirtualMesh/VirtualMeshTransform.cs` | partial | `virtual_mesh/virtual_mesh_transform.*` |
 | `VirtualMesh/Function/VirtualMeshInputOutput.cs` | planned | `virtual_mesh/function/virtual_mesh_input_output.*` |
 | `VirtualMesh/Function/VirtualMeshMapping.cs` | planned | `virtual_mesh/function/virtual_mesh_mapping.*` |
 | `VirtualMesh/Function/VirtualMeshOptimization.cs` | planned | `virtual_mesh/function/virtual_mesh_optimization.*` |
@@ -203,4 +204,8 @@ Status labels:
 
 ## Next
 
-Next priority: move `Manager/TransformManager/TransformData.cs`, `Manager/TransformManager/TransformRecord.cs`, `Cloth/Constraints/DistanceConstraint.cs`, and `Cloth/Constraints/InertiaConstraint.cs` from `planned/legacy-partial` into the new manager pipeline as `partial`.
+Last completed step:
+
+- Added MC2-style `DataUtility` packing helpers, `MathExtensions` curve sampling helpers, corrected `VertexAttribute` flag semantics, exposed solver arrays from `SimulationManager` / `VirtualMeshManager`, and added the first single-threaded `DistanceConstraint::Solve(...)` port against the new manager pipeline.
+
+Next priority: move Inertia center data ownership into `TeamManager` and port the first Inertia solver stage using the same MC2 manager/job data flow.

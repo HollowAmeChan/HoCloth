@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hocloth/cloth/cloth_parameters.hpp"
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/manager/i_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
@@ -133,14 +134,19 @@ public:
     [[nodiscard]] bool IsValidTeam(int team_id) const;
     [[nodiscard]] const TeamData& GetTeamData(int team_id) const;
     [[nodiscard]] TeamData& GetTeamData(int team_id);
+    [[nodiscard]] const ClothParameters& GetParameters(int team_id) const;
+    [[nodiscard]] ClothParameters& GetParameters(int team_id);
+    void SetParameters(int team_id, const ClothParameters& parameters);
 
     [[nodiscard]] int CreateTeam(bool enabled = true, bool spring = false);
+    [[nodiscard]] int CreateTeam(const ClothParameters& parameters, bool enabled = true, bool spring = false);
     void ReleaseTeam(int team_id);
     void ClearTeams();
 
 private:
     bool initialized_ = false;
     ExSimpleNativeArray<TeamData> team_data_array_;
+    ExSimpleNativeArray<ClothParameters> parameter_array_;
     std::vector<int> free_team_ids_;
 };
 

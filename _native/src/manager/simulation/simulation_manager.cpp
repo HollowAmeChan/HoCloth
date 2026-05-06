@@ -1,5 +1,6 @@
 #include "hocloth/manager/simulation/simulation_manager.hpp"
 
+#include <sstream>
 #include <stdexcept>
 
 namespace hocloth::mc2 {
@@ -70,10 +71,14 @@ void SimulationManager::Dispose()
 
 ManagerStatus SimulationManager::Status() const
 {
+    std::ostringstream detail;
+    detail << "steps=" << simulation_step_count_
+           << " next_pos_length=" << next_pos_array_.Length();
     return ManagerStatus{
         "SimulationManager",
         initialized_,
-        static_cast<std::uint32_t>(ParticleCount())
+        static_cast<std::uint32_t>(ParticleCount()),
+        detail.str(),
     };
 }
 
@@ -87,9 +92,54 @@ int SimulationManager::SimulationStepCount() const
     return simulation_step_count_;
 }
 
+const ExNativeArray<short>& SimulationManager::TeamIds() const
+{
+    return team_id_array_;
+}
+
 const ExNativeArray<float3>& SimulationManager::NextPositions() const
 {
     return next_pos_array_;
+}
+
+ExNativeArray<float3>& SimulationManager::NextPositions()
+{
+    return next_pos_array_;
+}
+
+const ExNativeArray<float3>& SimulationManager::BasePositions() const
+{
+    return base_pos_array_;
+}
+
+ExNativeArray<float3>& SimulationManager::BasePositions()
+{
+    return base_pos_array_;
+}
+
+const ExNativeArray<float3>& SimulationManager::VelocityPositions() const
+{
+    return velocity_pos_array_;
+}
+
+ExNativeArray<float3>& SimulationManager::VelocityPositions()
+{
+    return velocity_pos_array_;
+}
+
+const ExNativeArray<float>& SimulationManager::Frictions() const
+{
+    return friction_array_;
+}
+
+ExNativeArray<float>& SimulationManager::Frictions()
+{
+    return friction_array_;
+}
+
+const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
+{
+    return processing_step_particle_;
 }
 
 SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int team_id, int particle_count)

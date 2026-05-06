@@ -12,8 +12,11 @@ std::string BackendStatus::Summary() const
     for (const ManagerStatus& manager : managers) {
         stream << " [" << manager.name
                << " initialized=" << (manager.initialized ? "true" : "false")
-               << " count=" << manager.item_count
-               << "]";
+               << " count=" << manager.item_count;
+        if (!manager.detail.empty()) {
+            stream << " " << manager.detail;
+        }
+        stream << "]";
     }
     return stream.str();
 }

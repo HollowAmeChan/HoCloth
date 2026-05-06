@@ -70,8 +70,11 @@ Result TeamManager::Initialize()
 {
     initialized_ = true;
     team_data_array_.Dispose();
+    parameter_array_.Dispose();
     team_data_array_ = ExSimpleNativeArray<TeamData>(1, false);
+    parameter_array_ = ExSimpleNativeArray<ClothParameters>(1, false);
     team_data_array_[0] = MakeEmptyTeamData();
+    parameter_array_[0] = ClothParameters{};
     free_team_ids_.clear();
     return Result::Ok();
 }
@@ -79,6 +82,7 @@ Result TeamManager::Initialize()
 void TeamManager::Dispose()
 {
     team_data_array_.Dispose();
+    parameter_array_.Dispose();
     free_team_ids_.clear();
     initialized_ = false;
 }
@@ -122,7 +126,36 @@ TeamManager::TeamData& TeamManager::GetTeamData(int team_id)
     return team_data_array_[team_id];
 }
 
+const ClothParameters& TeamManager::GetParameters(int team_id) const
+{
+    if (!IsValidTeam(team_id)) {
+        throw std::runtime_error("Invalid MC2 team id.");
+    }
+    return parameter_array_[team_id];
+}
+
+ClothParameters& TeamManager::GetParameters(int team_id)
+{
+    if (!IsValidTeam(team_id)) {
+        throw std::runtime_error("Invalid MC2 team id.");
+    }
+    return parameter_array_[team_id];
+}
+
+void TeamManager::SetParameters(int team_id, const ClothParameters& parameters)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+    parameter_array_[team_id] = parameters;
+}
+
 int TeamManager::CreateTeam(bool enabled, bool spring)
+{
+    return CreateTeam(ClothParameters{}, enabled, spring);
+}
+
+int TeamManager::CreateTeam(const ClothParameters& parameters, bool enabled, bool spring)
 {
     if (!initialized_) {
         Initialize();
@@ -137,6 +170,7 @@ int TeamManager::CreateTeam(bool enabled, bool spring)
             throw std::runtime_error("MC2 maximum team count exceeded.");
         }
         team_id = team_data_array_.Add(MakeEmptyTeamData());
+        parameter_array_.Add(ClothParameters{});
     }
 
     TeamData data = MakeEmptyTeamData();
@@ -151,6 +185,7 @@ int TeamManager::CreateTeam(bool enabled, bool spring)
     data.scale_ratio = 1.0f;
     data.negative_scale_sign = 1.0f;
     team_data_array_[team_id] = data;
+    parameter_array_[team_id] = parameters;
     return team_id;
 }
 
@@ -160,6 +195,7 @@ void TeamManager::ReleaseTeam(int team_id)
         return;
     }
     team_data_array_[team_id] = MakeEmptyTeamData();
+    parameter_array_[team_id] = ClothParameters{};
     free_team_ids_.push_back(team_id);
 }
 
@@ -167,7 +203,9 @@ void TeamManager::ClearTeams()
 {
     if (team_data_array_.Count() > 0) {
         team_data_array_.SetCount(1);
+        parameter_array_.SetCount(1);
         team_data_array_[0] = MakeEmptyTeamData();
+        parameter_array_[0] = ClothParameters{};
     }
     free_team_ids_.clear();
 }

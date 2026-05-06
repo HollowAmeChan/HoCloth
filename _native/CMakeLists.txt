@@ -36,6 +36,44 @@ message(STATUS "HoCloth solver backend: MC2 BoneSpring bootstrap")
 
 set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
 
+add_library(hocloth_mc2_core STATIC
+    "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/distance_constraint.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/inertia_constraint.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/cloth_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/magica_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/collider_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/simulation_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/time_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/wind_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/team/team_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_data.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/virtual_mesh/virtual_mesh_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/data/data_utility.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_extensions.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_utility.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/data_chunk.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/ex_processing_list.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/result_code/result_code.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_container.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_transform.cpp"
+)
+target_include_directories(hocloth_mc2_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+
+add_executable(hocloth_mc2_core_smoke
+    "${HOCLOTH_NATIVE_ROOT}/tests/native/mc2_core_smoke.cpp"
+)
+target_link_libraries(hocloth_mc2_core_smoke PRIVATE hocloth_mc2_core)
+
+add_library(hocloth_runtime_core STATIC
+    "${HOCLOTH_NATIVE_ROOT}/src/hocloth_collision_world.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
+)
+target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+target_link_libraries(hocloth_runtime_core PUBLIC hocloth_mc2_core)
+
 if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     if (HOCLOTH_PYTHON_EXECUTABLE)
         set(Python_EXECUTABLE "${HOCLOTH_PYTHON_EXECUTABLE}" CACHE FILEPATH "Python executable for hocloth_native" FORCE)
@@ -53,36 +91,6 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     message(STATUS "HoCloth Python SOABI: ${Python_SOABI}")
 
     add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
-
-    add_library(hocloth_mc2_core STATIC
-        "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/cloth_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/magica_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/collider_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/simulation_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/time_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/wind_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/team/team_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/manager/virtual_mesh/virtual_mesh_manager.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_utility.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/data_chunk.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/ex_processing_list.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/utility/result_code/result_code.cpp"
-    )
-    target_include_directories(hocloth_mc2_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
-
-    add_executable(hocloth_mc2_core_smoke
-        "${HOCLOTH_NATIVE_ROOT}/tests/native/mc2_core_smoke.cpp"
-    )
-    target_link_libraries(hocloth_mc2_core_smoke PRIVATE hocloth_mc2_core)
-
-    add_library(hocloth_runtime_core STATIC
-        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_collision_world.cpp"
-        "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
-    )
-    target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
-    target_link_libraries(hocloth_runtime_core PUBLIC hocloth_mc2_core)
 
     nanobind_add_module(hocloth_native
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_python_module.cpp"

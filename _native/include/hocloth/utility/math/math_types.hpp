@@ -11,11 +11,41 @@ struct float3 {
     float z = 0.0f;
 };
 
+struct float2 {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+struct float4 {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 0.0f;
+};
+
 struct quaternion {
     float w = 1.0f;
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
+};
+
+struct float4x4 {
+    float4 c0{1.0f, 0.0f, 0.0f, 0.0f};
+    float4 c1{0.0f, 1.0f, 0.0f, 0.0f};
+    float4 c2{0.0f, 0.0f, 1.0f, 0.0f};
+    float4 c3{0.0f, 0.0f, 0.0f, 1.0f};
+};
+
+struct int2 {
+    int x = 0;
+    int y = 0;
+};
+
+struct int3 {
+    int x = 0;
+    int y = 0;
+    int z = 0;
 };
 
 struct AABB {

@@ -37,7 +37,16 @@ public:
 
     [[nodiscard]] int ParticleCount() const;
     [[nodiscard]] int SimulationStepCount() const;
+    [[nodiscard]] const ExNativeArray<short>& TeamIds() const;
     [[nodiscard]] const ExNativeArray<float3>& NextPositions() const;
+    [[nodiscard]] ExNativeArray<float3>& NextPositions();
+    [[nodiscard]] const ExNativeArray<float3>& BasePositions() const;
+    [[nodiscard]] ExNativeArray<float3>& BasePositions();
+    [[nodiscard]] const ExNativeArray<float3>& VelocityPositions() const;
+    [[nodiscard]] ExNativeArray<float3>& VelocityPositions();
+    [[nodiscard]] const ExNativeArray<float>& Frictions() const;
+    [[nodiscard]] ExNativeArray<float>& Frictions();
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
     void RemoveParticleRange(const ParticleChunkSet& chunks);

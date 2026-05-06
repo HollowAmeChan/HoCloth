@@ -13,6 +13,14 @@ namespace hocloth::mc2 {
 [[nodiscard]] float3 Subtract(const float3& a, const float3& b);
 [[nodiscard]] float3 Scale(const float3& value, float scalar);
 [[nodiscard]] float3 Normalize(const float3& value, const float3& fallback = float3{});
+[[nodiscard]] float Distance(const float3& a, const float3& b);
+[[nodiscard]] float Abs(float value);
+[[nodiscard]] float CalcMass(float depth);
+[[nodiscard]] float CalcInverseMass(float friction);
+[[nodiscard]] float CalcInverseMass(float friction, float depth);
+[[nodiscard]] float CalcInverseMass(float friction, float depth, bool fixed, float fixed_mass);
+[[nodiscard]] quaternion Inverse(const quaternion& value);
+[[nodiscard]] float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale);
 void Encapsulate(AABB& bounds, const float3& point);
 
 }  // namespace hocloth::mc2

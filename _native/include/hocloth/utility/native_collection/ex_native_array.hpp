@@ -100,6 +100,21 @@ public:
         return chunk;
     }
 
+    DataChunk AddRange(const ExSimpleNativeArray<T>& values)
+    {
+        const int count = values.Count();
+        if (count <= 0) {
+            return DataChunk::Empty();
+        }
+        const DataChunk chunk = AddRange(count);
+        std::copy(
+            values.Data().begin(),
+            values.Data().begin() + count,
+            storage_.begin() + chunk.start_index
+        );
+        return chunk;
+    }
+
     DataChunk Add(const T& value)
     {
         const DataChunk chunk = AddRange(1);

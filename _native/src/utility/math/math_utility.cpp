@@ -1,5 +1,7 @@
 #include "hocloth/utility/math/math_utility.hpp"
 
+#include "hocloth/core/define/system_define.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -47,6 +49,107 @@ float3 Normalize(const float3& value, const float3& fallback)
         return fallback;
     }
     return Scale(value, 1.0f / length);
+}
+
+float Distance(const float3& a, const float3& b)
+{
+    return Length(Subtract(a, b));
+}
+
+float Abs(float value)
+{
+    return std::abs(value);
+}
+
+float CalcMass(float depth)
+{
+    const float a = 1.0f - depth;
+    return 1.0f + a * a * define::system::DepthMass;
+}
+
+float CalcInverseMass(float friction)
+{
+    const float mass = 1.0f + friction * define::system::FrictionMass;
+    if (mass <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return 1.0f / mass;
+}
+
+float CalcInverseMass(float friction, float depth)
+{
+    float mass = 1.0f;
+    mass += friction * define::system::FrictionMass;
+    const float a = 1.0f - depth;
+    mass += a * a * define::system::DepthMass;
+    if (mass <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return 1.0f / mass;
+}
+
+float CalcInverseMass(float friction, float depth, bool fixed, float fixed_mass)
+{
+    if (fixed) {
+        return fixed_mass > define::system::Epsilon ? 1.0f / fixed_mass : 0.0f;
+    }
+    return CalcInverseMass(friction, depth);
+}
+
+quaternion Inverse(const quaternion& value)
+{
+    const float length_squared =
+        value.w * value.w + value.x * value.x + value.y * value.y + value.z * value.z;
+    if (length_squared <= 1.0e-8f) {
+        return quaternion{};
+    }
+    const float inv_length_squared = 1.0f / length_squared;
+    return quaternion{
+        value.w * inv_length_squared,
+        -value.x * inv_length_squared,
+        -value.y * inv_length_squared,
+        -value.z * inv_length_squared,
+    };
+}
+
+float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale)
+{
+    const float x = rotation.x;
+    const float y = rotation.y;
+    const float z = rotation.z;
+    const float w = rotation.w;
+
+    const float xx = x * x;
+    const float yy = y * y;
+    const float zz = z * z;
+    const float xy = x * y;
+    const float xz = x * z;
+    const float yz = y * z;
+    const float wx = w * x;
+    const float wy = w * y;
+    const float wz = w * z;
+
+    float4x4 matrix;
+    matrix.c0 = float4{
+        (1.0f - 2.0f * (yy + zz)) * scale.x,
+        (2.0f * (xy + wz)) * scale.x,
+        (2.0f * (xz - wy)) * scale.x,
+        0.0f,
+    };
+    matrix.c1 = float4{
+        (2.0f * (xy - wz)) * scale.y,
+        (1.0f - 2.0f * (xx + zz)) * scale.y,
+        (2.0f * (yz + wx)) * scale.y,
+        0.0f,
+    };
+    matrix.c2 = float4{
+        (2.0f * (xz + wy)) * scale.z,
+        (2.0f * (yz - wx)) * scale.z,
+        (1.0f - 2.0f * (xx + yy)) * scale.z,
+        0.0f,
+    };
+    matrix.c3 = float4{position.x, position.y, position.z, 1.0f};
+    return matrix;
 }
 
 void Encapsulate(AABB& bounds, const float3& point)
