@@ -70,6 +70,35 @@ struct RenderSetupData {
             }
         }
     };
+
+    ResultStatus result = ResultStatus::None();
+    std::string name;
+    bool is_managed = false;
+    SetupType setup_type = SetupType::MeshCloth;
+
+    int original_mesh_id = 0;
+    int vertex_count = 0;
+    bool has_skinned_mesh = false;
+    bool has_bone_weight = false;
+    int skin_root_bone_index = -1;
+    int skin_bone_count = 0;
+    std::vector<float4x4> bind_pose_list;
+    std::vector<std::uint8_t> bones_per_vertex_array;
+    std::vector<std::uint8_t> bone_weight_array;
+    std::vector<float3> local_positions;
+    std::vector<float3> local_normals;
+
+    BoneConnectionMode bone_connection_mode = BoneConnectionMode::Line;
+    int render_transform_index = -1;
+
+    [[nodiscard]] bool IsSuccess() const;
+    [[nodiscard]] bool IsFailed() const;
+    [[nodiscard]] bool HasLocalPositions() const;
+    void Dispose();
+
+    [[nodiscard]] static RenderSetupData ShareDeserialize(
+        const ShareSerializationData& data
+    );
 };
 
 }  // namespace hocloth::mc2

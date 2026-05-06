@@ -13,7 +13,9 @@ VirtualMeshContainer::VirtualMeshContainer(std::shared_ptr<VirtualMesh> mesh)
 void VirtualMeshContainer::Dispose()
 {
     if (share_virtual_mesh_) {
-        share_virtual_mesh_->Dispose();
+        if (!share_virtual_mesh_->is_managed) {
+            share_virtual_mesh_->Dispose();
+        }
     }
     unique_transform_records_.clear();
     share_virtual_mesh_.reset();

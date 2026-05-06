@@ -36,6 +36,11 @@ public:
         TeamManager& team_manager,
         TransformManager& transform_manager
     );
+    void ExitProxyMesh(
+        int team_id,
+        TeamManager& team_manager,
+        TransformManager& transform_manager
+    );
     [[nodiscard]] DataChunk RegisterMappingMesh(
         int team_id,
         VirtualMeshContainer& mapping_mesh_container,

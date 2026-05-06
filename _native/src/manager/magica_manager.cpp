@@ -1,5 +1,7 @@
 #include "hocloth/manager/magica_manager.hpp"
 
+#include "hocloth/cloth/cloth_process.hpp"
+
 namespace hocloth::mc2 {
 
 Result MagicaManager::Initialize()
@@ -11,6 +13,7 @@ Result MagicaManager::Initialize()
     collider_manager_.Initialize();
     wind_manager_.Initialize();
     cloth_manager_.Initialize();
+    prebuild_manager_.Initialize();
     virtual_mesh_manager_.Initialize();
     initialized_ = true;
     return Result::Ok();
@@ -19,6 +22,7 @@ Result MagicaManager::Initialize()
 void MagicaManager::Dispose()
 {
     virtual_mesh_manager_.Dispose();
+    prebuild_manager_.Dispose();
     cloth_manager_.Dispose();
     wind_manager_.Dispose();
     collider_manager_.Dispose();
@@ -44,6 +48,7 @@ std::vector<ManagerStatus> MagicaManager::Statuses() const
         collider_manager_.Status(),
         wind_manager_.Status(),
         cloth_manager_.Status(),
+        prebuild_manager_.Status(),
         virtual_mesh_manager_.Status(),
     };
 }
@@ -239,9 +244,37 @@ ClothManager& MagicaManager::Cloth()
     return cloth_manager_;
 }
 
+PreBuildManager& MagicaManager::PreBuild()
+{
+    return prebuild_manager_;
+}
+
 VirtualMeshManager& MagicaManager::VirtualMesh()
 {
     return virtual_mesh_manager_;
+}
+
+bool MagicaManager::RegisterClothProcess(ClothProcess& process)
+{
+    if (!initialized_) {
+        Initialize();
+    }
+    return process.RegisterToManagers(*this);
+}
+
+void MagicaManager::UnregisterClothProcess(ClothProcess& process)
+{
+    process.UnregisterFromManagers(*this);
+}
+
+void MagicaManager::StartUse(ClothProcess& process)
+{
+    process.StartUse(*this);
+}
+
+void MagicaManager::EndUse(ClothProcess& process)
+{
+    process.EndUse(*this);
 }
 
 }  // namespace hocloth::mc2

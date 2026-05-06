@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/manager/cloth/cloth_manager.hpp"
+#include "hocloth/manager/cloth/prebuild_manager.hpp"
 #include "hocloth/manager/magica_settings.hpp"
 #include "hocloth/manager/manager_status.hpp"
 #include "hocloth/manager/simulation/collider_manager.hpp"
@@ -15,6 +16,8 @@
 #include <vector>
 
 namespace hocloth::mc2 {
+
+class ClothProcess;
 
 // Port target for Magica Cloth 2: Scripts/Core/Manager/MagicaManager.cs
 class MagicaManager final {
@@ -55,7 +58,12 @@ public:
     [[nodiscard]] ColliderManager& Collider();
     [[nodiscard]] WindManager& Wind();
     [[nodiscard]] ClothManager& Cloth();
+    [[nodiscard]] PreBuildManager& PreBuild();
     [[nodiscard]] VirtualMeshManager& VirtualMesh();
+    [[nodiscard]] bool RegisterClothProcess(ClothProcess& process);
+    void UnregisterClothProcess(ClothProcess& process);
+    void StartUse(ClothProcess& process);
+    void EndUse(ClothProcess& process);
 
 private:
     bool initialized_ = false;
@@ -67,6 +75,7 @@ private:
     ColliderManager collider_manager_;
     WindManager wind_manager_;
     ClothManager cloth_manager_;
+    PreBuildManager prebuild_manager_;
     VirtualMeshManager virtual_mesh_manager_;
 };
 

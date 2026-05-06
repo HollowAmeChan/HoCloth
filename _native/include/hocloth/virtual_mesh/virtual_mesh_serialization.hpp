@@ -121,6 +121,11 @@ struct VirtualMeshSerializationData {
             }
         }
     };
+
+    [[nodiscard]] static VirtualMesh ShareDeserialize(const ShareSerializationData& data);
+    [[nodiscard]] static std::vector<TransformRecord> UniqueTransformRecords(
+        const UniqueSerializationData& data
+    );
 };
 
 }  // namespace hocloth::mc2

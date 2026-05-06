@@ -255,6 +255,67 @@ void VirtualMeshManager::RegisterProxyMesh(
     }
 }
 
+void VirtualMeshManager::ExitProxyMesh(
+    int team_id,
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    if (!initialized_ || !team_manager.IsValidTeam(team_id)) {
+        return;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    transform_manager.RemoveTransform(team_data.proxy_transform_chunk);
+    team_ids_.Remove(team_data.proxy_common_chunk);
+    attributes_.Remove(team_data.proxy_common_chunk);
+    uv_.Remove(team_data.proxy_common_chunk);
+    vertex_bind_pose_positions_.Remove(team_data.proxy_common_chunk);
+    vertex_bind_pose_rotations_.Remove(team_data.proxy_common_chunk);
+    vertex_depths_.Remove(team_data.proxy_common_chunk);
+    vertex_root_indices_.Remove(team_data.proxy_common_chunk);
+    vertex_local_positions_.Remove(team_data.proxy_common_chunk);
+    vertex_local_rotations_.Remove(team_data.proxy_common_chunk);
+    vertex_parent_indices_.Remove(team_data.proxy_common_chunk);
+    vertex_child_index_array_.Remove(team_data.proxy_common_chunk);
+    normal_adjustment_rotations_.Remove(team_data.proxy_common_chunk);
+    positions_.Remove(team_data.proxy_common_chunk);
+    rotations_.Remove(team_data.proxy_common_chunk);
+
+    vertex_child_data_array_.Remove(team_data.proxy_vertex_child_data_chunk);
+    triangle_team_ids_.Remove(team_data.proxy_triangle_chunk);
+    triangles_.Remove(team_data.proxy_triangle_chunk);
+    triangle_normals_.Remove(team_data.proxy_triangle_chunk);
+    triangle_tangents_.Remove(team_data.proxy_triangle_chunk);
+    edge_team_ids_.Remove(team_data.proxy_edge_chunk);
+    edges_.Remove(team_data.proxy_edge_chunk);
+    edge_flags_.Remove(team_data.proxy_edge_chunk);
+    base_line_flags_.Remove(team_data.baseline_chunk);
+    base_line_team_ids_.Remove(team_data.baseline_chunk);
+    base_line_start_data_indices_.Remove(team_data.baseline_chunk);
+    base_line_data_counts_.Remove(team_data.baseline_chunk);
+    base_line_data_.Remove(team_data.baseline_data_chunk);
+    local_positions_.Remove(team_data.proxy_mesh_chunk);
+    local_normals_.Remove(team_data.proxy_mesh_chunk);
+    local_tangents_.Remove(team_data.proxy_mesh_chunk);
+    bone_weights_.Remove(team_data.proxy_mesh_chunk);
+    skin_bone_transform_indices_.Remove(team_data.proxy_skin_bone_chunk);
+    skin_bone_bind_poses_.Remove(team_data.proxy_skin_bone_chunk);
+    vertex_to_transform_rotations_.Remove(team_data.proxy_bone_chunk);
+
+    team_data.proxy_transform_chunk.Clear();
+    team_data.proxy_common_chunk.Clear();
+    team_data.proxy_vertex_child_data_chunk.Clear();
+    team_data.proxy_triangle_chunk.Clear();
+    team_data.proxy_edge_chunk.Clear();
+    team_data.proxy_mesh_chunk.Clear();
+    team_data.proxy_bone_chunk.Clear();
+    team_data.proxy_skin_bone_chunk.Clear();
+    team_data.baseline_chunk.Clear();
+    team_data.baseline_data_chunk.Clear();
+    team_data.center_transform_index = -1;
+}
+
 DataChunk VirtualMeshManager::RegisterMappingMesh(
     int team_id,
     VirtualMeshContainer& mapping_mesh_container,

@@ -38,6 +38,7 @@ set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
 
 add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/cloth_process.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/angle_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/collider_collision_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/distance_constraint.cpp"
@@ -47,13 +48,16 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/tether_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/triangle_bending_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/cloth_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/prebuild_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/magica_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/render/render_setup_data_serialization.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/collider_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/simulation_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/time_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/wind_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/team/team_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_data.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_data_serialization.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_record.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/virtual_mesh/virtual_mesh_manager.cpp"
@@ -70,6 +74,7 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_bone_weight.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_container.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_serialization.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_transform.cpp"
 )
 target_include_directories(hocloth_mc2_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")

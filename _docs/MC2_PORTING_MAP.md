@@ -30,9 +30,9 @@ Status labels:
 | Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are Angle full PreBuild/proxy feed, SelfCollision full builder parity, and Blender-side collider lifecycle wiring |
 | Cloth/Collider | partial | `_native/include/hocloth/cloth/collider/`; native authoring data layer, collider-data conversion, and manager range registration bridge are present, Blender lifecycle bridge remains |
 | Cloth/Wind | partial | `_native/include/hocloth/cloth/wind/`, `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
-| VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/` |
+| VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/`; structured share/unique PreBuild deserialization, raw-byte proxy array restoration, and container ownership are now present, packed hash dictionaries remain |
 | Reduction | partial | `_native/include/hocloth/reduction/`; settings/work data/base step shell are present, reduction algorithms remain |
-| PreBuild | partial | `_native/include/hocloth/prebuild/`; share/unique/serialize data containers, build-id lookup, validation, and transform-id replacement are present |
+| PreBuild | partial | `_native/include/hocloth/prebuild/`, `_native/include/hocloth/manager/cloth/prebuild_manager.hpp`; share/unique/serialize data containers, build-id lookup, validation, transform-id replacement, manager reference-cache ownership, structured VirtualMesh restoration, and RenderSetup share restoration are present |
 
 ## Cloth
 
@@ -43,12 +43,12 @@ Status labels:
 | `Cloth/ClothForceMode.cs` | complete | `cloth/cloth_force_mode.hpp` |
 | `Cloth/ClothNormalAxis.cs` | complete | `cloth/cloth_normal_axis.hpp` |
 | `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp`; native wind parameter ownership is present |
-| `Cloth/ClothProcess.cs` | planned | `cloth/cloth_process.*` |
-| `Cloth/ClothProcessData.cs` | planned | `cloth/cloth_process_data.*` |
-| `Cloth/ClothProcessGeneration.cs` | planned | `cloth/cloth_process_generation.*` |
-| `Cloth/ClothSerializeData.cs` | planned | `cloth/cloth_serialize_data.*` |
-| `Cloth/ClothSerializeData2.cs` | planned | `cloth/cloth_serialize_data2.*` |
-| `Cloth/ClothSerializeDataFunction.cs` | planned | `cloth/cloth_serialize_data_function.*` |
+| `Cloth/ClothProcess.cs` | partial | `cloth/cloth_process.*`; native state/init shell, PreBuild construction, manager registration/release, StartUse/EndUse/DataUpdate, runtime-build result handoff, parameter sync, proxy/render mesh container ownership, and constraint-data handoff are present |
+| `Cloth/ClothProcessData.cs` | partial | `cloth/cloth_process.*`; state flags, result/team id, render handles, render mesh info, proxy container, custom skinning records, skip-writing flags, manager registration state, and transform replacement are present |
+| `Cloth/ClothProcessGeneration.cs` | partial | `cloth/cloth_process.*`; scale status check, initialization preflight, PreBuild share/unique mesh restoration, and registration lifecycle are present; Unity renderer setup, async runtime mesh build, selection generation, proxy conversion, and mapping generation remain |
+| `Cloth/ClothSerializeData.cs` | partial | `cloth/cloth_serialize_data.hpp`; MC2 authoring fields, source/root id lists, paint mode, settings blocks, runtime constraint params, validation, and `GetClothParameters()` are present |
+| `Cloth/ClothSerializeData2.cs` | partial | `cloth/cloth_serialize_data.hpp`; selection data, bone/renderer attribute containers, PreBuild data ownership, and transform-id replacement are present |
+| `Cloth/ClothSerializeDataFunction.cs` | partial | `cloth/cloth_serialize_data.hpp`; `IsValid()`, `DataValidate()`, and parameter conversion are present; Unity Json import/export and object hash behavior remain boundary/deferred |
 | `Cloth/ClothUpdateMode.cs` | complete | `cloth/cloth_parameters.hpp` |
 | `Cloth/CullingSettings.cs` | partial | `cloth/parameters/culling_settings.hpp`; Renderer/GameObject references stay at the Blender viewport boundary |
 | `Cloth/CurveSerializeData.cs` | partial | `cloth/parameters/curve_serialize_data.hpp`; native float4x4 curve-data path is present, Unity AnimationCurve copy remains a boundary |
@@ -107,15 +107,15 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Manager/IManager.cs` | skeleton | `manager/i_manager.hpp` |
-| `Manager/MagicaManager.cs` | partial | `manager/magica_manager.*`, native frame-step orchestration now exists |
+| `Manager/MagicaManager.cs` | partial | `manager/magica_manager.*`, native frame-step orchestration and ClothProcess register/unregister/start/end entry points now exist |
 | `Manager/MagicaManagerAPI.cs` | partial | `manager/magica_manager.*`, `manager/simulation/time_manager.*`; global time scale, simulation frequency, max frame step count, update location, and initialization location APIs are present; Unity events and PreBuild unload API remain boundary/deferred |
 | `Manager/MagicaSettings.cs` | complete | `manager/magica_settings.hpp`; refresh mode, simulation frequency, max frame step count, initialization location, update location, and validation are present |
 | `Manager/Cloth/ClothManager.cs` | partial | `manager/cloth/cloth_manager.*`, MC2 constraint solve order is centralized |
-| `Manager/Cloth/PreBuildManager.cs` | planned | `manager/cloth/prebuild_manager.*` |
+| `Manager/Cloth/PreBuildManager.cs` | partial | `manager/cloth/prebuild_manager.*`; shared data cache, reference counting, unload-unused, status dump, constraint-data ownership, structured VirtualMesh share deserialization, and RenderSetup share deserialization are present; Unity renderer object restoration remains boundary |
 | `Manager/Render/RenderData.cs` | defer | `manager/render/render_data.*` |
 | `Manager/Render/RenderManager.cs` | defer | `manager/render/render_manager.*` |
 | `Manager/Render/RenderSetupData.cs` | defer | `manager/render/render_setup_data.*` |
-| `Manager/Render/RenderSetupDataSerialization.cs` | partial | `manager/render/render_setup_data_serialization.hpp`; PreBuild share/unique serialization containers are present, Unity renderer/mesh object collection remains a Blender boundary |
+| `Manager/Render/RenderSetupDataSerialization.cs` | partial | `manager/render/render_setup_data_serialization.*`; PreBuild share/unique serialization containers and native share deserialize object are present, Unity renderer/mesh object collection remains a Blender boundary |
 | `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*`; collider arrays, work-data, pre/start/end/post simulation jobs, update-list population, native collider range registration/removal/update/enable bridge are present |
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
 | `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`; simulation frequency/max-step/global-time-scale/update-location setters plus simulation delta/max-step/power calculation are present; Unity FixedUpdate/render counters remain boundary |
@@ -123,10 +123,10 @@ Status labels:
 | `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center/wind ownership, timing/update-count lifecycle, sync lists, state/control APIs, post-step flag cleanup |
 | `Manager/Team/TeamWindData.cs` | complete | `manager/team/team_wind_data.hpp` |
 | `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*`; inverse rotation/root/dirty arrays are present, Unity transform-access restore remains a boundary |
-| `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
+| `Manager/TransformManager/TransformDataSerialization.cs` | partial | `manager/transform/transform_data_serialization.*`; share flag/init-pose arrays plus unique transform-record collection/replacement are present, Unity Transform object arrays are represented by backend records |
 | `Manager/TransformManager/TransformManager.cs` | partial | `manager/transform/transform_manager.*`; backend transform record/update/root/dirty ownership is present |
 | `Manager/TransformManager/TransformRecord.cs` | complete | `manager/transform/transform_record.*`; Unity `Transform` object access is represented by backend record input |
-| `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*`; proxy/mapping/common buffers plus baseline flags/team ids/start/count/data ownership are present |
+| `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*`; proxy/mapping/common buffers plus baseline flags/team ids/start/count/data ownership, proxy exit, and mapping exit are present |
 
 ## PreBuild / Reduction / Settings
 
@@ -176,7 +176,7 @@ Status labels:
 | `Utility/NativeCollection/FixedList4096BytesExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/FixedList512BytesExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/FixedList64BytesExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/NativeArrayExtensions.cs` | defer | C++ container compatibility |
+| `Utility/NativeCollection/NativeArrayExtensions.cs` | partial | `utility/native_collection/native_array_extensions.hpp`; raw byte conversion helpers are present for trivially copyable values and BitFlag8, Unity allocator/dispose helpers remain irrelevant |
 | `Utility/NativeCollection/NativeMultiHashMapExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/NativeReferenceExtensions.cs` | defer | C++ container compatibility |
 | `Utility/ResultCode/Exception.cs` | complete | `utility/result_code/exception.*` |
@@ -191,7 +191,7 @@ Status labels:
 | `VirtualMesh/VertexAttribute.cs` | complete | `virtual_mesh/vertex_attribute.hpp` |
 | `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, fixed list/AABB, bind pose, transform restore rotations, baseline arrays, and parent-driven baseline/root/depth/local-pose builder are present |
 | `VirtualMesh/VirtualMeshBoneWeight.cs` | complete | `virtual_mesh/virtual_mesh_bone_weight.*` |
-| `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*` |
+| `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*`; share mesh plus unique transform-record override are present, and managed PreBuild meshes are left owned by PreBuildManager |
 | `VirtualMesh/VirtualMeshPrimitive.cs` | complete | `virtual_mesh/virtual_mesh_primitive.hpp` |
 | `VirtualMesh/VirtualMeshRaycastHit.cs` | complete | `virtual_mesh/virtual_mesh_raycast_hit.hpp` |
 | `VirtualMesh/VirtualMeshTransform.cs` | partial | `virtual_mesh/virtual_mesh_transform.*` |
@@ -200,13 +200,19 @@ Status labels:
 | `VirtualMesh/Function/VirtualMeshOptimization.cs` | planned | `virtual_mesh/function/virtual_mesh_optimization.*` |
 | `VirtualMesh/Function/VirtualMeshProxy.cs` | partial | `virtual_mesh/virtual_mesh.*`; fixed-list/AABB, vertex bind pose, vertex-to-transform rotation, Mesh edge baseline parent generation, and Bone transform baseline generation are present; full proxy conversion/normal tangent/edge flag/reduction/custom skinning remain |
 | `VirtualMesh/Function/VirtualMeshReduction.cs` | planned | `virtual_mesh/function/virtual_mesh_reduction.*` |
-| `VirtualMesh/Function/VirtualMeshSerialization.cs` | partial | `virtual_mesh/virtual_mesh_serialization.hpp`; share/unique serialization data containers and transform-id replacement are present, raw byte deserialize/manager registration remains |
+| `VirtualMesh/Function/VirtualMeshSerialization.cs` | partial | `virtual_mesh/virtual_mesh_serialization.*`; share/unique serialization data containers, structured simple-array restore, raw-byte proxy array restore, unique transform-record restore, center fixed list, and baseline fallback are present; packed hash dictionaries remain deferred |
 | `VirtualMesh/Function/VirtualMeshWork.cs` | planned | `virtual_mesh/function/virtual_mesh_work.*` |
 
 ## Next
 
 Last completed step:
 
+- Extended the PreBuild data-chain pass: `VirtualMeshSerializationData::ShareDeserialize(...)` now restores MC2 raw-byte proxy arrays for edges, edge flags, bind pose, transform rotations, depth/root/parent/child data, vertex local pose, normal adjustment, and baseline arrays; `NativeArrayExtensions.cs` now has a native raw-byte helper surface; `TransformDataSerialization.cs` and `RenderSetupDataSerialization.cs` now have native partial ports.
+- Extended the native `ClothProcess` lifecycle toward MC2 parity: PreBuild construction now restores share/unique proxy and render mesh containers, `RegisterToManagers(...)` registers teams/proxy particles/mapping meshes/inertia-distance-bending constraints, `UnregisterFromManagers(...)` releases those resources, `StartUse`/`EndUse`/`DataUpdate` are present, and `RuntimeBuildResult` gives later async runtime mesh construction a single handoff point into the same manager pipeline.
+- Added structured `VirtualMeshSerializationData::ShareDeserialize(...)` and unique transform-record restoration. PreBuildManager now restores structured simple-array mesh fields instead of name/type-only shells; `VirtualMeshContainer` preserves manager-owned PreBuild meshes; `VirtualMeshManager` now has `ExitProxyMesh(...)` so ClothProcess can release proxy/global buffer ownership.
+- Added the first native `ClothProcess` data/init shell from `ClothProcess.cs`, `ClothProcessData.cs`, and `ClothProcessGeneration.cs`: MC2 state flags, result/team id, render handles, render mesh info, proxy container, custom skinning records, skip-writing, transform replacement, scale status check, serialize-data validation, PreBuild registration, parameter sync, and constraint-data handoff are now present. Unity renderer setup, async build, selection generation, proxy conversion, mapping, and full manager registration remain later phases.
+- Added the first native `PreBuildManager` pass from `Manager/Cloth/PreBuildManager.cs`: shared prebuild data is cached by build id, reference counted, unloaded when unused, surfaced in `MagicaManager`, and carries render setup serialization data plus proxy/render mesh shells and distance/bending/inertia constraint data. Full raw-byte `VirtualMesh` / `RenderSetupData` deserialization remains a later data-chain pass.
+- Added the first native `ClothSerializeData` / `ClothSerializeData2` data-layer pass: MC2 authoring fields, source renderer/root ids, paint mode, settings blocks, PreBuild ownership, transform-id replacement, build validation, `DataValidate()`, and `GetClothParameters()` now exist in `cloth/cloth_serialize_data.hpp`. Json import/export, Unity object hashing, and renderer/texture object collection stay at the Blender boundary.
 - Added MC2-style `DataUtility` packing helpers, `MathExtensions` curve sampling helpers, corrected `VertexAttribute` flag semantics, exposed solver arrays from `SimulationManager` / `VirtualMeshManager`, and added the first single-threaded `DistanceConstraint::Solve(...)` port against the new manager pipeline.
 - Moved `InertiaConstraint.CenterData` ownership into `TeamManager`, kept `InertiaConstraint` responsible for fixed-point data, added quaternion/math helpers, and ported the first single-threaded `SimulationStepTeamUpdate(...)` stage for center interpolation, local inertia ratios, gravity dot, scale ratio, and blend weight.
 - Ported the first single-threaded particle simulation stages from `SimulationManager.cs`: `StartSimulationStepJob` now computes interpolated base pose, local inertia shift, gravity integration, and predicted positions; `EndSimulationStepJob` now writes velocity, real velocity, and `oldPos` back after constraints. The native smoke path now runs `SimulationStepTeamUpdate -> StartSimulationStep -> DistanceConstraint::Solve -> EndSimulationStepSolve`.
