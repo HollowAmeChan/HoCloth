@@ -178,6 +178,111 @@ void ColliderManager::RemoveColliderRange(DataChunk chunk)
     work_data_array_.Remove(chunk);
 }
 
+DataChunk ColliderManager::RegisterColliderDataRange(
+    int team_id,
+    TeamManager& team_manager,
+    TransformManager& transform_manager,
+    const std::vector<ColliderData>& colliders
+)
+{
+    // Native equivalent of the data-allocation part of MC2 ColliderManager.Register(...).
+    if (!team_manager.IsValidTeam(team_id) || colliders.empty()) {
+        return DataChunk::Empty();
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    if (team_data.collider_chunk.IsValid()) {
+        RemoveTeamColliderDataRange(team_id, team_manager, transform_manager);
+    }
+
+    const int collider_count = static_cast<int>(colliders.size());
+    const DataChunk collider_chunk = RegisterColliderRange(team_id, collider_count);
+    const DataChunk transform_chunk = transform_manager.AddTransform(collider_count, team_id);
+    team_data.collider_chunk = collider_chunk;
+    team_data.collider_transform_chunk = transform_chunk;
+    team_data.collider_count = collider_count;
+
+    for (int offset = 0; offset < collider_count; ++offset) {
+        SetCollider(collider_chunk.start_index + offset, colliders[static_cast<std::size_t>(offset)]);
+    }
+    return collider_chunk;
+}
+
+void ColliderManager::RemoveTeamColliderDataRange(
+    int team_id,
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    if (!team_manager.IsValidTeam(team_id)) {
+        return;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    RemoveColliderRange(team_data.collider_chunk);
+    transform_manager.RemoveTransform(team_data.collider_transform_chunk);
+    team_data.collider_chunk.Clear();
+    team_data.collider_transform_chunk.Clear();
+    team_data.collider_count = 0;
+}
+
+bool ColliderManager::UpdateColliderData(
+    int team_id,
+    int local_collider_index,
+    TeamManager& team_manager,
+    const ColliderData& data
+)
+{
+    if (!team_manager.IsValidTeam(team_id) || local_collider_index < 0) {
+        return false;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    if (!team_data.collider_chunk.IsValid()
+        || local_collider_index >= team_data.collider_chunk.data_length) {
+        return false;
+    }
+
+    const int collider_index = team_data.collider_chunk.start_index + local_collider_index;
+    if (collider_index < 0 || collider_index >= flag_array_.Length()) {
+        return false;
+    }
+
+    SetCollider(collider_index, data);
+    return true;
+}
+
+bool ColliderManager::EnableCollider(
+    int team_id,
+    int local_collider_index,
+    TeamManager& team_manager,
+    TransformManager& transform_manager,
+    bool enabled
+)
+{
+    if (!team_manager.IsValidTeam(team_id) || local_collider_index < 0) {
+        return false;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    if (!team_data.collider_chunk.IsValid()
+        || local_collider_index >= team_data.collider_chunk.data_length) {
+        return false;
+    }
+
+    const int collider_index = team_data.collider_chunk.start_index + local_collider_index;
+    if (collider_index < 0 || collider_index >= flag_array_.Length()) {
+        return false;
+    }
+
+    BitFlag8 flag = flag_array_[collider_index];
+    flag.SetFlag(FlagEnable, enabled);
+    flag.SetFlag(FlagReset, true);
+    flag_array_[collider_index] = flag;
+    transform_manager.EnableTransform(team_data.collider_transform_chunk.start_index + local_collider_index, enabled);
+    return true;
+}
+
 void ColliderManager::SetCollider(int collider_index, const ColliderData& data)
 {
     if (collider_index < 0 || collider_index >= flag_array_.Length()) {

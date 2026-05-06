@@ -8,6 +8,7 @@
 #include "hocloth/utility/result_code/result_code.hpp"
 #include "hocloth/virtual_mesh/vertex_attribute.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_bone_weight.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
 
 #include <cstdint>
 #include <string>
@@ -17,6 +18,9 @@ namespace hocloth::mc2 {
 // Port target for Magica Cloth 2: Scripts/Core/VirtualMesh/VirtualMesh.cs
 class VirtualMesh {
 public:
+    using ShareSerializationData = VirtualMeshSerializationData::ShareSerializationData;
+    using UniqueSerializationData = VirtualMeshSerializationData::UniqueSerializationData;
+
     enum class MeshType {
         NormalMesh = 0,
         NormalBoneMesh = 1,

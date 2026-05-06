@@ -264,6 +264,7 @@ API 层不应暴露内部 manager 指针，不应让 Python 逐项操作 constra
 
 - Constraints 进入大模块 closure pass：`DistanceConstraint::CreateData(...)`、`TriangleBendingConstraint::CreateData(...)`、`InertiaConstraint::CreateData(...)` 已迁入 native；`AngleConstraint` 的底层 baseline feed 已开始闭合，后续优先补完整 `VirtualMeshProxy / PreBuild` 生成、Collider component 注册、SelfCollision builder parity。
 - `Wind` 与 `VirtualMesh` 已开始补底层行为，但 smoke 仍保持克制；避免在完整 proxy/mapping/reduction/skinning 没闭合前做深行为断言。
+- `PreBuild` 已开始从 planned 进入 partial：`SharePreBuildData`、`UniquePreBuildData`、`PreBuildSerializeData`、原 `PreBuildScriptableObject` 的 build-id 数据库行为、`RenderSetupDataSerialization` 和 `VirtualMeshSerialization` 的保存数据壳已迁入 native。当前只闭合数据容器/校验/索引/transform-id 替换，Unity asset、renderer/mesh 采集、raw-byte 反序列化和 manager warmup 仍留在后续编译数据链。
 
 ### 阶段 E：ClothBone
 
@@ -334,9 +335,10 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 推荐立即执行：
 
 1. 继续按 `MC2_PORTING_MAP.md` 从 `partial/planned` 文件往 `complete` 推，不再扩展旧 `_native/src/hocloth_*.cpp` MVP 逻辑。
-2. 优先闭合 `VirtualMeshProxy.cs` 的底层数据生成：proxy conversion、normal/tangent、edge flag、baseline、mapping/reduction/custom skinning 的输入输出边界。
-3. 用 `VirtualMesh / PreBuild` 生成的数据反喂 `AngleConstraint`、`SelfCollisionConstraint`、`ColliderCollisionConstraint`，不要在约束内临时推导拓扑。
-4. 继续补 `TeamManager / SimulationManager` 的 MC2 生命周期、culling、参数同步、update-list population。
-5. 当前阶段可以暂缓逐步编译；做大块原样移植后，再统一进入编译修复与 WinDbg/cdb 定位。
+2. 继续补 `PreBuildManager.cs`、`ClothSerializeData*.cs`、`ClothProcess*.cs` 的数据链，让 compiled cloth 能自然产生 proxy mesh、constraint data 和 team/manager 注册请求。
+3. `VirtualMeshProxy.cs` 只补会卡住上述数据链的底层生成入口：proxy conversion、normal/tangent、edge flag、baseline、mapping/reduction/custom skinning 的输入输出边界，避免提前深挖完整行为测试。
+4. 用 `VirtualMesh / PreBuild` 生成的数据反喂 `AngleConstraint`、`SelfCollisionConstraint`、`ColliderCollisionConstraint`，不要在约束内临时推导拓扑。
+5. 继续补 `TeamManager / SimulationManager` 的 MC2 生命周期、culling、参数同步、update-list population。
+6. 当前阶段可以暂缓逐步编译；做大块原样移植后，再统一进入编译修复与 WinDbg/cdb 定位。
 
 这条路的关键不再是“能不能跑一个小 smoke”，而是把 MC2 Core 的数据流完整搬过来，让后续调试有稳定坐标系。

@@ -7,6 +7,7 @@
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace hocloth::mc2 {
 
@@ -62,6 +63,30 @@ public:
     [[nodiscard]] int DataCount() const;
     [[nodiscard]] DataChunk RegisterColliderRange(int team_id, int collider_count);
     void RemoveColliderRange(DataChunk chunk);
+    [[nodiscard]] DataChunk RegisterColliderDataRange(
+        int team_id,
+        TeamManager& team_manager,
+        TransformManager& transform_manager,
+        const std::vector<ColliderData>& colliders
+    );
+    void RemoveTeamColliderDataRange(
+        int team_id,
+        TeamManager& team_manager,
+        TransformManager& transform_manager
+    );
+    bool UpdateColliderData(
+        int team_id,
+        int local_collider_index,
+        TeamManager& team_manager,
+        const ColliderData& data
+    );
+    bool EnableCollider(
+        int team_id,
+        int local_collider_index,
+        TeamManager& team_manager,
+        TransformManager& transform_manager,
+        bool enabled
+    );
     void SetCollider(int collider_index, const ColliderData& data);
     void PreSimulationUpdate(const TeamManager& team_manager, const TransformManager& transform_manager);
     void CreateUpdateColliderList(int update_index, const TeamManager& team_manager, SimulationManager& simulation_manager) const;

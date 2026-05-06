@@ -51,6 +51,21 @@ std::vector<ManagerStatus> MagicaManager::Statuses() const
 int MagicaManager::StepFrame(
     float frame_delta_time,
     float fixed_delta_time,
+    float unscaled_delta_time
+)
+{
+    return StepFrame(
+        frame_delta_time,
+        fixed_delta_time,
+        unscaled_delta_time,
+        time_manager_.GlobalTimeScale(),
+        time_manager_.SimulationFrequency()
+    );
+}
+
+int MagicaManager::StepFrame(
+    float frame_delta_time,
+    float fixed_delta_time,
     float unscaled_delta_time,
     float global_time_scale,
     int simulation_frequency
@@ -60,6 +75,7 @@ int MagicaManager::StepFrame(
         Initialize();
     }
 
+    time_manager_.SetGlobalTimeScale(global_time_scale);
     time_manager_.FrameUpdate(simulation_frequency);
     wind_manager_.AlwaysWindUpdate();
     const float simulation_delta_time = time_manager_.SimulationDeltaTime();
@@ -127,6 +143,65 @@ int MagicaManager::StepFrame(
     collider_manager_.PostSimulationUpdate(team_manager_);
     team_manager_.PostTeamUpdate();
     return max_update_count;
+}
+
+void MagicaManager::ApplySettings(MagicaSettings settings)
+{
+    settings.DataValidate();
+    SetSimulationFrequency(settings.simulation_frequency);
+    SetMaxSimulationCountPerFrame(settings.max_simulation_count_per_frame);
+    SetInitializationLocation(settings.initialization_location);
+    SetUpdateLocation(settings.update_location);
+}
+
+void MagicaManager::SetGlobalTimeScale(float time_scale)
+{
+    time_manager_.SetGlobalTimeScale(time_scale);
+}
+
+float MagicaManager::GlobalTimeScale() const
+{
+    return time_manager_.GlobalTimeScale();
+}
+
+void MagicaManager::SetSimulationFrequency(int frequency)
+{
+    time_manager_.SetSimulationFrequency(frequency);
+}
+
+int MagicaManager::SimulationFrequency() const
+{
+    return time_manager_.SimulationFrequency();
+}
+
+void MagicaManager::SetMaxSimulationCountPerFrame(int max_count)
+{
+    time_manager_.SetMaxSimulationCountPerFrame(max_count);
+}
+
+int MagicaManager::MaxSimulationCountPerFrame() const
+{
+    return time_manager_.MaxSimulationCountPerFrame();
+}
+
+void MagicaManager::SetUpdateLocation(TimeManager::UpdateLocation update_location)
+{
+    time_manager_.SetUpdateLocation(update_location);
+}
+
+TimeManager::UpdateLocation MagicaManager::CurrentUpdateLocation() const
+{
+    return time_manager_.CurrentUpdateLocation();
+}
+
+void MagicaManager::SetInitializationLocation(InitializationLocation initialization_location)
+{
+    initialization_location_ = initialization_location;
+}
+
+InitializationLocation MagicaManager::CurrentInitializationLocation() const
+{
+    return initialization_location_;
 }
 
 TimeManager& MagicaManager::Time()

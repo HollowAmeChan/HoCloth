@@ -27,12 +27,12 @@ Status labels:
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
 | Utility/Time | partial | `_native/include/hocloth/utility/time/`, `_native/include/hocloth/manager/simulation/time_manager.hpp` |
 | Manager | partial | `_native/include/hocloth/manager/` |
-| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are collider components, Angle full PreBuild/proxy feed, SelfCollision full builder parity |
-| Cloth/Collider | planned | `_native/include/hocloth/cloth/collider/` |
+| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are Angle full PreBuild/proxy feed, SelfCollision full builder parity, and Blender-side collider lifecycle wiring |
+| Cloth/Collider | partial | `_native/include/hocloth/cloth/collider/`; native authoring data layer, collider-data conversion, and manager range registration bridge are present, Blender lifecycle bridge remains |
 | Cloth/Wind | partial | `_native/include/hocloth/cloth/wind/`, `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
 | VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/` |
-| Reduction | planned | `_native/include/hocloth/reduction/` |
-| PreBuild | planned | `_native/include/hocloth/prebuild/` |
+| Reduction | partial | `_native/include/hocloth/reduction/`; settings/work data/base step shell are present, reduction algorithms remain |
+| PreBuild | partial | `_native/include/hocloth/prebuild/`; share/unique/serialize data containers, build-id lookup, validation, and transform-id replacement are present |
 
 ## Cloth
 
@@ -64,17 +64,17 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/Collider/ColliderComponent.cs` | planned | `cloth/collider/collider_component.*` |
-| `Cloth/Collider/MagicaCapsuleCollider.cs` | planned | `cloth/collider/capsule_collider.*` |
-| `Cloth/Collider/MagicaPlaneCollider.cs` | planned | `cloth/collider/plane_collider.*` |
-| `Cloth/Collider/MagicaSphereCollider.cs` | planned | `cloth/collider/sphere_collider.*` |
+| `Cloth/Collider/ColliderComponent.cs` | partial | `cloth/collider/collider_component.hpp`; center/size/enabled/team registration, validation hook, size/reverse virtuals, and `ColliderData` conversion are present; Unity lifecycle and manager notification bridge remain at Blender/API boundary |
+| `Cloth/Collider/MagicaCapsuleCollider.cs` | complete | `cloth/collider/capsule_collider.hpp`; direction/alignment/reverse/radius separation, size normalization, local dir/up, and collider type mapping are present |
+| `Cloth/Collider/MagicaPlaneCollider.cs` | complete | `cloth/collider/plane_collider.hpp` |
+| `Cloth/Collider/MagicaSphereCollider.cs` | complete | `cloth/collider/sphere_collider.hpp`; radius validation and type mapping are present |
 
 ## Cloth/Constraints
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*`; runtime solver/work buffers are ported, native baseline arrays plus Mesh/Bone parent-generation feed are present, full PreBuild/proxy conversion remains to close |
-| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver and collider work-data path are ported, collider component authoring/registration remains separate |
+| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver, collider work-data path, native collider authoring data, and manager registration bridge are present; Blender/API lifecycle wiring remains |
 | `Cloth/Constraints/DistanceConstraint.cs` | complete | `cloth/constraints/distance_constraint.*`; params, data owner, `CreateData(...)`, register/exit, vertical/horizontal/shear runtime solver are present |
 | `Cloth/Constraints/InertiaConstraint.cs` | complete | `cloth/constraints/inertia_constraint.*`, `manager/team/team_manager.*`, `manager/simulation/simulation_manager.*`; CenterData/fixed list/CreateData plus per-frame inertia lifecycle are ported |
 | `Cloth/Constraints/MotionConstraint.cs` | complete | `cloth/constraints/motion_constraint.*`; max-distance/backstop/stiffness runtime path is ported, MC2's disabled friction block remains intentionally omitted |
@@ -108,17 +108,17 @@ Status labels:
 | --- | --- | --- |
 | `Manager/IManager.cs` | skeleton | `manager/i_manager.hpp` |
 | `Manager/MagicaManager.cs` | partial | `manager/magica_manager.*`, native frame-step orchestration now exists |
-| `Manager/MagicaManagerAPI.cs` | planned | `api/magica_manager_api.*` |
-| `Manager/MagicaSettings.cs` | planned | `manager/magica_settings.*` |
+| `Manager/MagicaManagerAPI.cs` | partial | `manager/magica_manager.*`, `manager/simulation/time_manager.*`; global time scale, simulation frequency, max frame step count, update location, and initialization location APIs are present; Unity events and PreBuild unload API remain boundary/deferred |
+| `Manager/MagicaSettings.cs` | complete | `manager/magica_settings.hpp`; refresh mode, simulation frequency, max frame step count, initialization location, update location, and validation are present |
 | `Manager/Cloth/ClothManager.cs` | partial | `manager/cloth/cloth_manager.*`, MC2 constraint solve order is centralized |
 | `Manager/Cloth/PreBuildManager.cs` | planned | `manager/cloth/prebuild_manager.*` |
 | `Manager/Render/RenderData.cs` | defer | `manager/render/render_data.*` |
 | `Manager/Render/RenderManager.cs` | defer | `manager/render/render_manager.*` |
 | `Manager/Render/RenderSetupData.cs` | defer | `manager/render/render_setup_data.*` |
-| `Manager/Render/RenderSetupDataSerialization.cs` | defer | `manager/render/render_setup_data_serialization.*` |
-| `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*` |
+| `Manager/Render/RenderSetupDataSerialization.cs` | partial | `manager/render/render_setup_data_serialization.hpp`; PreBuild share/unique serialization containers are present, Unity renderer/mesh object collection remains a Blender boundary |
+| `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*`; collider arrays, work-data, pre/start/end/post simulation jobs, update-list population, native collider range registration/removal/update/enable bridge are present |
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
-| `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`, simulation delta/max-step/power calculation is present |
+| `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`; simulation frequency/max-step/global-time-scale/update-location setters plus simulation delta/max-step/power calculation are present; Unity FixedUpdate/render counters remain boundary |
 | `Manager/Simulation/WindManager.cs` | partial | `manager/simulation/wind_manager.*`; wind data ownership, registration/removal/enable, and native zone refresh are present |
 | `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center/wind ownership, timing/update-count lifecycle, sync lists, state/control APIs, post-step flag cleanup |
 | `Manager/Team/TeamWindData.cs` | complete | `manager/team/team_wind_data.hpp` |
@@ -132,10 +132,10 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `PreBuild/PreBuildScriptableObject.cs` | defer | Blender asset/compiled scene boundary |
-| `PreBuild/PreBuildSerializeData.cs` | planned | `prebuild/prebuild_serialize_data.*` |
-| `PreBuild/SharePreBuildData.cs` | planned | `prebuild/share_prebuild_data.*` |
-| `PreBuild/UniquePreBuildData.cs` | planned | `prebuild/unique_prebuild_data.*` |
+| `PreBuild/PreBuildScriptableObject.cs` | partial | `prebuild/prebuild_serialize_data.hpp`; native `PreBuildDataLibrary` mirrors build-id lookup/add/replace, Blender asset warmup remains boundary |
+| `PreBuild/PreBuildSerializeData.cs` | partial | `prebuild/prebuild_serialize_data.hpp`; enable/build-id/share lookup/data validation/transform replacement are present |
+| `PreBuild/SharePreBuildData.cs` | partial | `prebuild/share_prebuild_data.hpp`; version/build-result/scale validation, proxy/render mesh serialization references, and constraint-data ownership are present |
+| `PreBuild/UniquePreBuildData.cs` | partial | `prebuild/unique_prebuild_data.hpp`; render/proxy/render-mesh unique data plus transform-id collection/replacement are present |
 | `Reduction/ReductionSettings.cs` | complete | `reduction/reduction_settings.hpp` |
 | `Reduction/ReductionWorkData.cs` | partial | `reduction/reduction_work_data.hpp`; native data ownership shell exists, job buffers are adapted to C++ containers |
 | `Reduction/SameDistanceReduction.cs` | planned | `reduction/same_distance_reduction.*` |
@@ -200,7 +200,7 @@ Status labels:
 | `VirtualMesh/Function/VirtualMeshOptimization.cs` | planned | `virtual_mesh/function/virtual_mesh_optimization.*` |
 | `VirtualMesh/Function/VirtualMeshProxy.cs` | partial | `virtual_mesh/virtual_mesh.*`; fixed-list/AABB, vertex bind pose, vertex-to-transform rotation, Mesh edge baseline parent generation, and Bone transform baseline generation are present; full proxy conversion/normal tangent/edge flag/reduction/custom skinning remain |
 | `VirtualMesh/Function/VirtualMeshReduction.cs` | planned | `virtual_mesh/function/virtual_mesh_reduction.*` |
-| `VirtualMesh/Function/VirtualMeshSerialization.cs` | planned | `virtual_mesh/function/virtual_mesh_serialization.*` |
+| `VirtualMesh/Function/VirtualMeshSerialization.cs` | partial | `virtual_mesh/virtual_mesh_serialization.hpp`; share/unique serialization data containers and transform-id replacement are present, raw byte deserialize/manager registration remains |
 | `VirtualMesh/Function/VirtualMeshWork.cs` | planned | `virtual_mesh/function/virtual_mesh_work.*` |
 
 ## Next

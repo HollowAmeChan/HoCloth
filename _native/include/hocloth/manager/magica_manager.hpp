@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/manager/cloth/cloth_manager.hpp"
+#include "hocloth/manager/magica_settings.hpp"
 #include "hocloth/manager/manager_status.hpp"
 #include "hocloth/manager/simulation/collider_manager.hpp"
 #include "hocloth/manager/simulation/simulation_manager.hpp"
@@ -26,10 +27,26 @@ public:
     [[nodiscard]] int StepFrame(
         float frame_delta_time,
         float fixed_delta_time,
+        float unscaled_delta_time
+    );
+    [[nodiscard]] int StepFrame(
+        float frame_delta_time,
+        float fixed_delta_time,
         float unscaled_delta_time,
         float global_time_scale,
         int simulation_frequency
     );
+    void ApplySettings(MagicaSettings settings);
+    void SetGlobalTimeScale(float time_scale);
+    [[nodiscard]] float GlobalTimeScale() const;
+    void SetSimulationFrequency(int frequency);
+    [[nodiscard]] int SimulationFrequency() const;
+    void SetMaxSimulationCountPerFrame(int max_count);
+    [[nodiscard]] int MaxSimulationCountPerFrame() const;
+    void SetUpdateLocation(TimeManager::UpdateLocation update_location);
+    [[nodiscard]] TimeManager::UpdateLocation CurrentUpdateLocation() const;
+    void SetInitializationLocation(InitializationLocation initialization_location);
+    [[nodiscard]] InitializationLocation CurrentInitializationLocation() const;
 
     [[nodiscard]] TimeManager& Time();
     [[nodiscard]] TeamManager& Team();
@@ -42,6 +59,7 @@ public:
 
 private:
     bool initialized_ = false;
+    InitializationLocation initialization_location_ = InitializationLocation::Start;
     TimeManager time_manager_;
     TeamManager team_manager_;
     TransformManager transform_manager_;
