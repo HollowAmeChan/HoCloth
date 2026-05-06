@@ -24,6 +24,8 @@ struct TransformRecord {
     {
         return id != 0;
     }
+
+    [[nodiscard]] float3 InverseTransformDirection(const float3& direction) const;
 };
 
 }  // namespace hocloth::mc2

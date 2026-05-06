@@ -21,7 +21,7 @@ Status labels:
 | --- | --- | --- |
 | Define | partial | `_native/include/hocloth/core/define/` |
 | Interface | partial | `_native/include/hocloth/manager/`, `_native/include/hocloth/core/interface/` |
-| Utility/ResultCode | partial | `_native/include/hocloth/utility/result_code/` |
+| Utility/ResultCode | complete | `_native/include/hocloth/utility/result_code/` |
 | Utility/Math | partial | `_native/include/hocloth/utility/math/` |
 | Utility/Data | partial | `_native/include/hocloth/utility/data/` |
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
@@ -120,12 +120,12 @@ Status labels:
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
 | `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`, simulation delta/max-step/power calculation is present |
 | `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
-| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership, timing/update-count lifecycle, sync lists, post-step flag cleanup |
+| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership, timing/update-count lifecycle, sync lists, state/control APIs, post-step flag cleanup |
 | `Manager/Team/TeamWindData.cs` | planned | `manager/team/team_wind_data.*` |
-| `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*` |
+| `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*`; inverse rotation/root/dirty arrays are present, Unity transform-access restore remains a boundary |
 | `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
-| `Manager/TransformManager/TransformManager.cs` | partial | `manager/transform/transform_manager.*` |
-| `Manager/TransformManager/TransformRecord.cs` | partial | `manager/transform/transform_record.*` |
+| `Manager/TransformManager/TransformManager.cs` | partial | `manager/transform/transform_manager.*`; backend transform record/update/root/dirty ownership is present |
+| `Manager/TransformManager/TransformRecord.cs` | complete | `manager/transform/transform_record.*`; Unity `Transform` object access is represented by backend record input |
 | `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*` |
 
 ## PreBuild / Reduction / Settings
@@ -149,12 +149,12 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Utility/Data/DataUtility.cs` | partial | `utility/data/data_utility.*` |
+| `Utility/Data/DataUtility.cs` | partial | `utility/data/data_utility.*`; MC2 pack/unpack and remaining-data helpers are present, Unity object conversion remains a boundary |
 | `Utility/Data/MultiDataBuilder.cs` | complete | `utility/data/multi_data_builder.hpp` |
 | `Utility/Grid/GridMap.cs` | partial | `utility/grid/grid_map.hpp`; native hash-map helper exists, Unity job/container semantics are adapted |
 | `Utility/Jobs/InterlockUtility.cs` | defer | C++ threading abstraction |
 | `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
-| `Utility/Math/AABB.cs` | partial | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
+| `Utility/Math/AABB.cs` | complete | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
 | `Utility/Math/IntAABB.cs` | complete | `utility/math/int_aabb.hpp` |
 | `Utility/Math/MathExtensions.cs` | partial | `utility/math/math_extensions.*` |
 | `Utility/Math/MathUtility.cs` | partial | `utility/math/math_utility.*` |
@@ -164,12 +164,12 @@ Status labels:
 | `Utility/Misc/StaticStringBuilder.cs` | defer | C++ logging/dump utilities |
 | `Utility/NativeCollection/DataChunk.cs` | complete | `utility/native_collection/data_chunk.*` |
 | `Utility/NativeCollection/ExBitFlag16.cs` | complete | `utility/native_collection/bit_flag.hpp` |
-| `Utility/NativeCollection/ExBitFlag8.cs` | partial | `utility/native_collection/bit_flag.hpp` |
+| `Utility/NativeCollection/ExBitFlag8.cs` | complete | `utility/native_collection/bit_flag.hpp` |
 | `Utility/NativeCollection/ExCostSortedList1.cs` | complete | `utility/native_collection/ex_cost_sorted_list1.hpp` |
 | `Utility/NativeCollection/ExCostSortedList4.cs` | complete | `utility/native_collection/ex_cost_sorted_list4.hpp` |
-| `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp` |
+| `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp`; chunk reuse, expand/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
 | `Utility/NativeCollection/ExProcessingList.cs` | partial | `utility/native_collection/ex_processing_list.*` |
-| `Utility/NativeCollection/ExSimpleNativeArray.cs` | partial | `utility/native_collection/ex_simple_native_array.hpp` |
+| `Utility/NativeCollection/ExSimpleNativeArray.cs` | partial | `utility/native_collection/ex_simple_native_array.hpp`; range add/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
 | `Utility/NativeCollection/ExTransformAccessArray.cs` | planned | `utility/native_collection/ex_transform_access_array.*` |
 | `Utility/NativeCollection/FixedList128BytesExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/FixedList32BytesExtensions.cs` | defer | C++ container compatibility |
@@ -180,7 +180,7 @@ Status labels:
 | `Utility/NativeCollection/NativeMultiHashMapExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/NativeReferenceExtensions.cs` | defer | C++ container compatibility |
 | `Utility/ResultCode/Exception.cs` | complete | `utility/result_code/exception.*` |
-| `Utility/ResultCode/ResultCode.cs` | partial | `utility/result_code/result_code.*`; core enum/status wrapper exists, warning/info/debug APIs remain simplified |
+| `Utility/ResultCode/ResultCode.cs` | complete | `utility/result_code/result_code.*`; native debug logging is treated as the C++ logging boundary |
 | `Utility/Time/TimeSpan.cs` | complete | `utility/time/time_span.*`; DebugLog/Log are omitted at the C++ logging boundary |
 | `Utility/Time/UnityTimeSpan.cs` | defer | Blender/native profiling abstraction |
 
@@ -246,6 +246,12 @@ Last completed step:
 - Added the next manager-orchestration layer: `TimeManager` now computes MC2-style `SimulationPower` and exposes max substep count, `SimulationManager::PreSimulationUpdate(...)` ports the reset/inertia-shift/negative-scale particle preparation job, `ClothManager::SolveStepConstraints(...)` centralizes the MC2 constraint order (`Tether -> Distance -> Angle -> TriangleBending -> Collider -> Distance -> Motion -> SelfCollision`), and `MagicaManager::StepFrame(...)` provides a native frame-step skeleton for Blender-side driving.
 - Closed another Team/Simulation orchestration gap from `TeamManager.CalcCenterAndInertiaAndWindJob` and `SimulationManager.UpdateStepBasicPotureJob`: `TeamManager::UpdateCenterAndInertia(...)` now prepares component/center frame poses, fixed-point-derived center fallback, negative-scale flags/sign/quaternion/triangle helper values, negative-scale teleport matrices, teleport reset/keep decisions, smoothing, world-inertia shift, frame moving speed/direction, and stabilization weights before the step loop. `MagicaManager::StepFrame(...)` now calls this before `PreSimulationUpdate(...)`. Wind-zone collection remains intentionally outside the current runtime path.
 - Extended `MathUtility` with MC2-style `ToRotation(normal,tangent)`, affine matrix multiply, and affine inverse helpers. `SimulationManager::UpdateStepBasicPosture(...)` now applies negative-scale local rotation and fixed/baseline rotation rewrite, and `CalcDisplayPosition(...)` now applies the MC2 negative-scale display-rotation conversion instead of leaving that block deferred. `VirtualMeshManager` exposes `VertexBindPoseRotations()` plus the local position/rotation accessors needed by these paths.
+- Closed another bottom-layer utility pass: `ResultCode.cs` now maps to a native `ResultStatus` wrapper with result/warning state, merge/process helpers, static success/error presets, and result/warning information strings; this module is now marked `complete` with debug logging handled by the C++ logging boundary.
+- Extended the Transform data layer with MC2-style inverse rotation storage, root-id tracking, dirty state, `InverseTransformDirection(...)`, and manager accessors for inverse rotation/root/dirty state. `TransformRecord.cs` is now file-level complete for backend record semantics, while Unity transform access/restore jobs stay at the Blender boundary.
+- Completed the C++ `AABB.cs` value-type port: center/extents/half-extents/max-side/valid/surface-area helpers, point/AABB containment, overlap, expand, encapsulate, matrix transform, equality, and string dump are now present while preserving the existing lowercase `min/max` fields used by current constraints.
+- Added more MC2-compatible NativeCollection surface area for later large-module ports: `ExNativeArray` now has vector/count range adds, whole-array add, `ExpandAndFill(...)`, `GetRef(...)`, `ToString()`, and MC2-order `RemoveAndFill(...)`; `ExSimpleNativeArray` gained counted range add and debug dump helpers. Unsafe reinterpret/serialization remains intentionally adapted to C++ containers.
+- Extended `DataUtility.cs` parity with packed int2/int3/int4 helpers, `Pack32(int4)`, unpack helpers, and `RemainingData(...)` so later builder and constraint code can follow MC2 call shapes without local workarounds.
+- Extended the `TeamManager.cs` C++ state/control surface for the next large-module pass: native active/true team counts, process query, update mode/time scale setters, sync suspend, camera/distance culling flags, anchor state, external force injection/clear, restore-transform-once query/clear, and edge-collider collision counting now exist without pulling in Unity renderer or Wind behavior.
 
 Latest verification:
 

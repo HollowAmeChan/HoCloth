@@ -203,9 +203,12 @@ public:
     [[nodiscard]] ManagerStatus Status() const override;
 
     [[nodiscard]] int TeamCount() const;
+    [[nodiscard]] int TrueTeamCount() const;
+    [[nodiscard]] int ActiveTeamCount() const;
     [[nodiscard]] bool ContainsTeamData(int team_id) const;
     [[nodiscard]] bool IsValidTeam(int team_id) const;
     [[nodiscard]] bool IsEnable(int team_id) const;
+    [[nodiscard]] bool IsProcess(int team_id) const;
     [[nodiscard]] const TeamData& GetTeamData(int team_id) const;
     [[nodiscard]] TeamData& GetTeamData(int team_id);
     [[nodiscard]] const ClothParameters& GetParameters(int team_id) const;
@@ -230,6 +233,22 @@ public:
     void SetReset(int team_id, bool reset);
     void SetTimeReset(int team_id, bool reset);
     void SetAnimationPoseRatio(int team_id, float ratio);
+    void SetUpdateMode(int team_id, ClothUpdateMode update_mode);
+    void SetTimeScale(int team_id, float time_scale);
+    void SetSyncSuspend(int team_id, bool suspend);
+    void SetCameraCullingInvisible(int team_id, bool invisible, bool keep = false);
+    void SetDistanceCullingInvisible(int team_id, bool invisible, float distance_weight = 1.0f);
+    void SetAnchor(
+        int team_id,
+        int anchor_transform_id,
+        const float3& anchor_position,
+        const quaternion& anchor_rotation
+    );
+    void AddForce(int team_id, ClothForceMode force_mode, const float3& force);
+    void ClearForce(int team_id);
+    [[nodiscard]] bool RestoreTransformOnlyOnce(int team_id) const;
+    void ClearRestoreTransformOnlyOnce(int team_id);
+    [[nodiscard]] int EdgeColliderCollisionCount() const;
     [[nodiscard]] int AlwaysTeamUpdate(
         float frame_delta_time,
         float fixed_delta_time,
@@ -262,6 +281,7 @@ private:
     ExSimpleNativeArray<ClothParameters> parameter_array_;
     ExSimpleNativeArray<InertiaCenterData> center_data_array_;
     std::vector<int> free_team_ids_;
+    int edge_collider_collision_count_ = 0;
 };
 
 }  // namespace hocloth::mc2

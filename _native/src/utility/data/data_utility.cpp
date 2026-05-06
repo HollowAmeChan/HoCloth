@@ -12,6 +12,11 @@ int2 PackInt2(int a, int b)
     return a < b ? int2{a, b} : int2{b, a};
 }
 
+int2 PackInt2(const int2& value)
+{
+    return PackInt2(value.x, value.y);
+}
+
 int3 PackInt3(int a, int b, int c)
 {
     if (a > b) {
@@ -24,6 +29,11 @@ int3 PackInt3(int a, int b, int c)
         std::swap(a, b);
     }
     return int3{a, b, c};
+}
+
+int3 PackInt3(const int3& value)
+{
+    return PackInt3(value.x, value.y, value.z);
 }
 
 int4 PackInt4(int a, int b, int c, int d)
@@ -46,6 +56,11 @@ int4 PackInt4(int a, int b, int c, int d)
     return int4{a, b, c, d};
 }
 
+int4 PackInt4(const int4& value)
+{
+    return PackInt4(value.x, value.y, value.z, value.w);
+}
+
 std::uint32_t Pack32(int hi, int low)
 {
     return (static_cast<std::uint32_t>(hi) << 16)
@@ -58,6 +73,11 @@ std::uint32_t Pack32(int x, int y, int z, int w)
         | ((static_cast<std::uint32_t>(y) & 0xffu) << 16)
         | ((static_cast<std::uint32_t>(z) & 0xffu) << 8)
         | (static_cast<std::uint32_t>(w) & 0xffu);
+}
+
+std::uint64_t Pack32(const int4& value)
+{
+    return Pack64(value);
 }
 
 std::uint32_t Pack32Sort(int a, int b)
@@ -108,6 +128,26 @@ int4 Unpack64(std::uint64_t pack)
     };
 }
 
+int Unpack64X(std::uint64_t pack)
+{
+    return static_cast<int>((pack >> 48) & 0xffffull);
+}
+
+int Unpack64Y(std::uint64_t pack)
+{
+    return static_cast<int>((pack >> 32) & 0xffffull);
+}
+
+int Unpack64Z(std::uint64_t pack)
+{
+    return static_cast<int>((pack >> 16) & 0xffffull);
+}
+
+int Unpack64W(std::uint64_t pack)
+{
+    return static_cast<int>(pack & 0xffffull);
+}
+
 std::uint32_t Pack12_20(int hi, int low)
 {
     return (static_cast<std::uint32_t>(hi) << 20)
@@ -128,6 +168,17 @@ void Unpack12_20(std::uint32_t pack, int& hi, int& low)
 {
     hi = Unpack12_20Hi(pack);
     low = Unpack12_20Low(pack);
+}
+
+int RemainingData(const int3& data, const int2& used)
+{
+    if (data.x != used.x && data.x != used.y) {
+        return data.x;
+    }
+    if (data.y != used.x && data.y != used.y) {
+        return data.y;
+    }
+    return data.z;
 }
 
 float EvaluateCurve(const float4x4& curve, float time)

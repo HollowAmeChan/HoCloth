@@ -55,6 +55,7 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/manager/team/team_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_data.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_manager.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_record.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/virtual_mesh/virtual_mesh_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/reduction/step_reduction_base.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/data/data_utility.cpp"

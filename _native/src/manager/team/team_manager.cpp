@@ -340,6 +340,28 @@ int TeamManager::TeamCount() const
     return team_data_array_.Count();
 }
 
+int TeamManager::TrueTeamCount() const
+{
+    int count = 0;
+    for (int team_id = 1; team_id < team_data_array_.Count(); ++team_id) {
+        if (team_data_array_[team_id].IsValid()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int TeamManager::ActiveTeamCount() const
+{
+    int count = 0;
+    for (int team_id = 1; team_id < team_data_array_.Count(); ++team_id) {
+        if (team_data_array_[team_id].IsValid() && team_data_array_[team_id].IsEnabled()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 bool TeamManager::ContainsTeamData(int team_id) const
 {
     return IsValidTeam(team_id);
@@ -355,6 +377,11 @@ bool TeamManager::IsValidTeam(int team_id) const
 bool TeamManager::IsEnable(int team_id) const
 {
     return IsValidTeam(team_id) && team_data_array_[team_id].IsEnabled();
+}
+
+bool TeamManager::IsProcess(int team_id) const
+{
+    return IsValidTeam(team_id) && team_data_array_[team_id].IsProcess();
 }
 
 const TeamManager::TeamData& TeamManager::GetTeamData(int team_id) const
@@ -555,6 +582,118 @@ void TeamManager::SetAnimationPoseRatio(int team_id, float ratio)
     }
 }
 
+void TeamManager::SetUpdateMode(int team_id, ClothUpdateMode update_mode)
+{
+    if (IsValidTeam(team_id)) {
+        team_data_array_[team_id].update_mode = update_mode;
+    }
+}
+
+void TeamManager::SetTimeScale(int team_id, float time_scale)
+{
+    if (IsValidTeam(team_id)) {
+        team_data_array_[team_id].time_scale = Clamp01(time_scale);
+    }
+}
+
+void TeamManager::SetSyncSuspend(int team_id, bool suspend)
+{
+    if (IsValidTeam(team_id)) {
+        team_data_array_[team_id].flag.Set(FlagSyncSuspend, suspend);
+    }
+}
+
+void TeamManager::SetCameraCullingInvisible(int team_id, bool invisible, bool keep)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+    TeamData& team_data = team_data_array_[team_id];
+    const bool changed = team_data.flag.IsSet(FlagCameraCullingInvisible) != invisible;
+    team_data.flag.Set(FlagCameraCullingInvisible, invisible);
+    team_data.flag.Set(FlagCameraCullingKeep, invisible && keep);
+    if (changed && invisible && !keep) {
+        team_data.flag.Set(FlagReset, true);
+    }
+}
+
+void TeamManager::SetDistanceCullingInvisible(int team_id, bool invisible, float distance_weight)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+    TeamData& team_data = team_data_array_[team_id];
+    const bool changed = team_data.flag.IsSet(FlagDistanceCullingInvisible) != invisible;
+    team_data.flag.Set(FlagDistanceCullingInvisible, invisible);
+    team_data.distance_weight = Clamp01(distance_weight);
+    if (changed) {
+        team_data.flag.Set(FlagReset, true);
+        team_data.flag.Set(FlagCameraCullingKeep, false);
+    }
+}
+
+void TeamManager::SetAnchor(
+    int team_id,
+    int anchor_transform_id,
+    const float3& anchor_position,
+    const quaternion& anchor_rotation
+)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+    TeamData& team_data = team_data_array_[team_id];
+    team_data.flag.Set(FlagAnchor, anchor_transform_id != 0);
+    team_data.flag.Set(FlagAnchorReset, anchor_transform_id != team_data.anchor_transform_id);
+    team_data.anchor_transform_id = anchor_transform_id;
+
+    InertiaCenterData& center_data = center_data_array_[team_id];
+    center_data.anchor_position = anchor_position;
+    center_data.anchor_rotation = anchor_rotation;
+}
+
+void TeamManager::AddForce(int team_id, ClothForceMode force_mode, const float3& force)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+    TeamData& team_data = team_data_array_[team_id];
+    if (team_data.force_mode == ClothForceMode::None || team_data.force_mode == force_mode) {
+        team_data.force_mode = force_mode;
+        team_data.impact_force = Add(team_data.impact_force, force);
+        return;
+    }
+
+    team_data.force_mode = force_mode;
+    team_data.impact_force = force;
+}
+
+void TeamManager::ClearForce(int team_id)
+{
+    if (IsValidTeam(team_id)) {
+        team_data_array_[team_id].force_mode = ClothForceMode::None;
+        team_data_array_[team_id].impact_force = float3{};
+    }
+}
+
+bool TeamManager::RestoreTransformOnlyOnce(int team_id) const
+{
+    return IsValidTeam(team_id)
+        && team_data_array_[team_id].flag.IsSet(FlagRestoreTransformOnlyOnce);
+}
+
+void TeamManager::ClearRestoreTransformOnlyOnce(int team_id)
+{
+    if (IsValidTeam(team_id)) {
+        team_data_array_[team_id].flag.Set(FlagRestoreTransformOnlyOnce, false);
+    }
+}
+
+int TeamManager::EdgeColliderCollisionCount() const
+{
+    return edge_collider_collision_count_;
+}
+
 void TeamManager::ReleaseTeam(int team_id)
 {
     if (!IsValidTeam(team_id)) {
@@ -608,6 +747,7 @@ int TeamManager::AlwaysTeamUpdate(
     }
 
     int max_update_count = 0;
+    edge_collider_collision_count_ = 0;
     const int max_count = std::max(0, max_simulation_count_per_frame);
     for (int team_id = 1; team_id < team_data_array_.Count(); ++team_id) {
         TeamData& team_data = team_data_array_[team_id];
@@ -616,6 +756,11 @@ int TeamManager::AlwaysTeamUpdate(
             team_data.skip_count = 0;
             team_data.flag.Set(FlagRunning, false);
             continue;
+        }
+
+        const ClothParameters& parameters = parameter_array_[team_id];
+        if (parameters.collider_collision_constraint.mode == ColliderCollisionMode::Edge) {
+            edge_collider_collision_count_ += team_data.EdgeCount();
         }
 
         if (team_data.flag.IsSet(FlagTimeReset)) {

@@ -18,6 +18,7 @@ struct TransformData {
     ExNativeArray<quaternion> init_local_rotation_array;
     ExNativeArray<float3> position_array;
     ExNativeArray<quaternion> rotation_array;
+    ExNativeArray<quaternion> inverse_rotation_array;
     ExNativeArray<float3> scale_array;
     ExNativeArray<float3> local_position_array;
     ExNativeArray<quaternion> local_rotation_array;
@@ -27,13 +28,17 @@ struct TransformData {
     std::vector<int> id_array;
     std::vector<int> parent_id_array;
     std::vector<std::string> name_array;
+    std::vector<int> root_id_list;
+    bool is_dirty = false;
 
     void Initialize(int capacity);
     void Dispose();
     void EnsureRecordCapacity(int count);
 
     [[nodiscard]] int Count() const;
+    [[nodiscard]] int RootCount() const;
     [[nodiscard]] bool IsValid() const;
+    [[nodiscard]] bool IsEmpty() const;
 };
 
 }  // namespace hocloth::mc2

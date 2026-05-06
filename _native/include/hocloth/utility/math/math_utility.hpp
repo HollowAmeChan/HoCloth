@@ -75,10 +75,21 @@ void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent
     const float3& shift_vector,
     const quaternion& shift_rotation
 );
+[[nodiscard]] AABB CreateAABBFromCenterAndExtents(const float3& center, const float3& extents);
+[[nodiscard]] AABB CreateAABBFromCenterAndHalfExtents(const float3& center, const float3& half_extents);
+[[nodiscard]] float3 Extents(const AABB& bounds);
+[[nodiscard]] float3 HalfExtents(const AABB& bounds);
+[[nodiscard]] float3 Center(const AABB& bounds);
+[[nodiscard]] float MaxSideLength(const AABB& bounds);
+[[nodiscard]] bool IsValid(const AABB& bounds);
+[[nodiscard]] float SurfaceArea(const AABB& bounds);
+[[nodiscard]] bool Contains(const AABB& bounds, const float3& point);
+[[nodiscard]] bool Contains(const AABB& bounds, const AABB& other);
 [[nodiscard]] bool Overlaps(const AABB& a, const AABB& b);
 void Expand(AABB& bounds, float signed_distance);
 void Encapsulate(AABB& bounds, const float3& point);
 void Encapsulate(AABB& bounds, const AABB& other);
+void Transform(AABB& bounds, const float4x4& matrix);
 [[nodiscard]] float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const float3& b);
 [[nodiscard]] float ClosestPtSegmentSegment(
     const float3& p1,

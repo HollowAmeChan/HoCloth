@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace hocloth::mc2 {
@@ -44,6 +46,11 @@ public:
         count_ = 0;
     }
 
+    void Clear()
+    {
+        count_ = 0;
+    }
+
     void SetCount(int new_count)
     {
         assert(new_count >= 0 && new_count <= Length());
@@ -77,6 +84,26 @@ public:
         return chunk;
     }
 
+    DataChunk AddRange(const std::vector<T>& values, int count)
+    {
+        assert(count >= 0);
+        assert(count <= static_cast<int>(values.size()));
+        const DataChunk chunk = AddRange(count);
+        std::copy(values.begin(), values.begin() + count, storage_.begin() + chunk.start_index);
+        return chunk;
+    }
+
+    DataChunk AddRange(const ExSimpleNativeArray<T>& values)
+    {
+        const DataChunk chunk = AddRange(values.Count());
+        std::copy(
+            values.storage_.begin(),
+            values.storage_.begin() + values.Count(),
+            storage_.begin() + chunk.start_index
+        );
+        return chunk;
+    }
+
     int Add(const T& value)
     {
         if (Length() == 0) {
@@ -100,6 +127,44 @@ public:
         );
     }
 
+    void RemoveRange(DataChunk chunk)
+    {
+        if (!chunk.IsValid() || chunk.start_index >= count_) {
+            return;
+        }
+        const int end = std::min(chunk.EndIndex(), count_);
+        const int remove_count = end - chunk.start_index;
+        if (remove_count <= 0) {
+            return;
+        }
+        std::move(
+            storage_.begin() + end,
+            storage_.begin() + count_,
+            storage_.begin() + chunk.start_index
+        );
+        count_ -= remove_count;
+    }
+
+    [[nodiscard]] std::string ToSummary() const
+    {
+        std::ostringstream stream;
+        stream << "ExSimpleNativeArray Length:" << Length()
+               << " Count:" << Count()
+               << " IsValid:" << (IsValid() ? "true" : "false");
+        return stream.str();
+    }
+
+    [[nodiscard]] std::string ToString() const
+    {
+        std::ostringstream stream;
+        stream << ToSummary() << '\n';
+        stream << "---- Datas[~100] ----\n";
+        for (int index = 0; index < Length() && index < 100; ++index) {
+            stream << storage_[static_cast<std::size_t>(index)] << '\n';
+        }
+        return stream.str();
+    }
+
     [[nodiscard]] const T& operator[](int index) const
     {
         assert(index >= 0 && index < Length());
@@ -113,6 +178,11 @@ public:
     }
 
     [[nodiscard]] const std::vector<T>& Data() const
+    {
+        return storage_;
+    }
+
+    [[nodiscard]] std::vector<T>& Data()
     {
         return storage_;
     }

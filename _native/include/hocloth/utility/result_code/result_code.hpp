@@ -123,6 +123,47 @@ struct Result {
     static Result Error(ResultCode code, std::string message);
 };
 
+class ResultStatus {
+public:
+    ResultStatus() = default;
+    explicit ResultStatus(ResultCode initial_result);
+
+    [[nodiscard]] ResultCode Code() const;
+    [[nodiscard]] ResultCode WarningCode() const;
+
+    void Clear();
+    void SetResult(ResultCode code);
+    void SetSuccess();
+    void SetCancel();
+    void SetError(ResultCode code = ResultCode::Error);
+    void SetWarning(ResultCode code = ResultCode::Warning);
+    void Merge(const ResultStatus& source);
+    void SetProcess();
+
+    [[nodiscard]] bool IsResult(ResultCode code) const;
+    [[nodiscard]] bool IsNone() const;
+    [[nodiscard]] bool IsSuccess() const;
+    [[nodiscard]] bool IsFailed() const;
+    [[nodiscard]] bool IsCancel() const;
+    [[nodiscard]] bool IsNormal() const;
+    [[nodiscard]] bool IsError() const;
+    [[nodiscard]] bool IsProcess() const;
+    [[nodiscard]] bool IsWarning() const;
+    [[nodiscard]] std::string GetResultString() const;
+    [[nodiscard]] std::string GetWarningString() const;
+    [[nodiscard]] const char* GetResultInformation() const;
+    [[nodiscard]] const char* GetWarningInformation() const;
+
+    static ResultStatus None();
+    static ResultStatus Empty();
+    static ResultStatus Success();
+    static ResultStatus Error();
+
+private:
+    ResultCode result_ = ResultCode::None;
+    ResultCode warning_ = ResultCode::None;
+};
+
 [[nodiscard]] const char* ToString(ResultCode code);
 
 }  // namespace hocloth::mc2

@@ -626,37 +626,79 @@ float3 ShiftPosition(
     );
 }
 
+AABB CreateAABBFromCenterAndExtents(const float3& center, const float3& extents)
+{
+    return AABB::CreateFromCenterAndExtents(center, extents);
+}
+
+AABB CreateAABBFromCenterAndHalfExtents(const float3& center, const float3& half_extents)
+{
+    return AABB::CreateFromCenterAndHalfExtents(center, half_extents);
+}
+
+float3 Extents(const AABB& bounds)
+{
+    return bounds.Extents();
+}
+
+float3 HalfExtents(const AABB& bounds)
+{
+    return bounds.HalfExtents();
+}
+
+float3 Center(const AABB& bounds)
+{
+    return bounds.Center();
+}
+
+float MaxSideLength(const AABB& bounds)
+{
+    return bounds.MaxSideLength();
+}
+
+bool IsValid(const AABB& bounds)
+{
+    return bounds.IsValid();
+}
+
+float SurfaceArea(const AABB& bounds)
+{
+    return bounds.SurfaceArea();
+}
+
+bool Contains(const AABB& bounds, const float3& point)
+{
+    return bounds.Contains(point);
+}
+
+bool Contains(const AABB& bounds, const AABB& other)
+{
+    return bounds.Contains(other);
+}
+
 bool Overlaps(const AABB& a, const AABB& b)
 {
-    return a.max.x >= b.min.x && a.min.x <= b.max.x
-        && a.max.y >= b.min.y && a.min.y <= b.max.y
-        && a.max.z >= b.min.z && a.min.z <= b.max.z;
+    return a.Overlaps(b);
 }
 
 void Expand(AABB& bounds, float signed_distance)
 {
-    bounds.min.x -= signed_distance;
-    bounds.min.y -= signed_distance;
-    bounds.min.z -= signed_distance;
-    bounds.max.x += signed_distance;
-    bounds.max.y += signed_distance;
-    bounds.max.z += signed_distance;
+    bounds.Expand(signed_distance);
 }
 
 void Encapsulate(AABB& bounds, const float3& point)
 {
-    bounds.min.x = std::min(bounds.min.x, point.x);
-    bounds.min.y = std::min(bounds.min.y, point.y);
-    bounds.min.z = std::min(bounds.min.z, point.z);
-    bounds.max.x = std::max(bounds.max.x, point.x);
-    bounds.max.y = std::max(bounds.max.y, point.y);
-    bounds.max.z = std::max(bounds.max.z, point.z);
+    bounds.Encapsulate(point);
 }
 
 void Encapsulate(AABB& bounds, const AABB& other)
 {
-    Encapsulate(bounds, other.min);
-    Encapsulate(bounds, other.max);
+    bounds.Encapsulate(other);
+}
+
+void Transform(AABB& bounds, const float4x4& matrix)
+{
+    bounds.Transform(matrix);
 }
 
 float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const float3& b)

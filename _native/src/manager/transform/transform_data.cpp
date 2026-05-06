@@ -12,12 +12,14 @@ void TransformData::Initialize(int capacity)
     init_local_rotation_array = ExNativeArray<quaternion>(capacity);
     position_array = ExNativeArray<float3>(capacity);
     rotation_array = ExNativeArray<quaternion>(capacity);
+    inverse_rotation_array = ExNativeArray<quaternion>(capacity);
     scale_array = ExNativeArray<float3>(capacity);
     local_position_array = ExNativeArray<float3>(capacity);
     local_rotation_array = ExNativeArray<quaternion>(capacity);
     local_to_world_matrix_array = ExNativeArray<float4x4>(capacity);
     team_id_array = ExNativeArray<std::int16_t>(capacity);
     EnsureRecordCapacity(capacity);
+    is_dirty = true;
 }
 
 void TransformData::Dispose()
@@ -27,6 +29,7 @@ void TransformData::Dispose()
     init_local_rotation_array.Dispose();
     position_array.Dispose();
     rotation_array.Dispose();
+    inverse_rotation_array.Dispose();
     scale_array.Dispose();
     local_position_array.Dispose();
     local_rotation_array.Dispose();
@@ -35,6 +38,8 @@ void TransformData::Dispose()
     id_array.clear();
     parent_id_array.clear();
     name_array.clear();
+    root_id_list.clear();
+    is_dirty = false;
 }
 
 void TransformData::EnsureRecordCapacity(int count)
@@ -56,6 +61,16 @@ int TransformData::Count() const
 bool TransformData::IsValid() const
 {
     return flag_array.IsValid();
+}
+
+int TransformData::RootCount() const
+{
+    return static_cast<int>(root_id_list.size());
+}
+
+bool TransformData::IsEmpty() const
+{
+    return !flag_array.IsValid() || flag_array.Length() == 0;
 }
 
 }  // namespace hocloth::mc2

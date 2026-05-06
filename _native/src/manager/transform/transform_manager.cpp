@@ -60,6 +60,7 @@ DataChunk TransformManager::AddTransform(int count, int team_id)
     data_.init_local_rotation_array.AddRange(count);
     data_.position_array.AddRange(count);
     data_.rotation_array.AddRange(count);
+    data_.inverse_rotation_array.AddRange(count);
     data_.scale_array.AddRange(count);
     data_.local_position_array.AddRange(count);
     data_.local_rotation_array.AddRange(count);
@@ -104,6 +105,7 @@ DataChunk TransformManager::AddTransform(const TransformRecord& record, BitFlag8
     data_.init_local_rotation_array.Add(record.local_rotation);
     data_.position_array.Add(record.position);
     data_.rotation_array.Add(record.rotation);
+    data_.inverse_rotation_array.Add(Inverse(record.rotation));
     data_.scale_array.Add(record.scale);
     data_.local_position_array.Add(record.local_position);
     data_.local_rotation_array.Add(record.local_rotation);
@@ -130,6 +132,7 @@ void TransformManager::SetTransform(int index, const TransformRecord& record, Bi
     data_.init_local_rotation_array[index] = record.local_rotation;
     data_.position_array[index] = record.position;
     data_.rotation_array[index] = record.rotation;
+    data_.inverse_rotation_array[index] = Inverse(record.rotation);
     data_.scale_array[index] = record.scale;
     data_.local_position_array[index] = record.local_position;
     data_.local_rotation_array[index] = record.local_rotation;
@@ -148,6 +151,7 @@ void TransformManager::ClearTransform(int index)
 
     data_.flag_array[index] = BitFlag8{};
     data_.team_id_array[index] = 0;
+    data_.is_dirty = true;
     data_.EnsureRecordCapacity(index + 1);
     data_.id_array[static_cast<std::size_t>(index)] = 0;
     data_.parent_id_array[static_cast<std::size_t>(index)] = 0;
@@ -168,6 +172,7 @@ void TransformManager::CopyTransform(int from_index, int to_index)
     data_.init_local_rotation_array[to_index] = data_.init_local_rotation_array[from_index];
     data_.position_array[to_index] = data_.position_array[from_index];
     data_.rotation_array[to_index] = data_.rotation_array[from_index];
+    data_.inverse_rotation_array[to_index] = data_.inverse_rotation_array[from_index];
     data_.scale_array[to_index] = data_.scale_array[from_index];
     data_.local_position_array[to_index] = data_.local_position_array[from_index];
     data_.local_rotation_array[to_index] = data_.local_rotation_array[from_index];
@@ -180,6 +185,7 @@ void TransformManager::CopyTransform(int from_index, int to_index)
         data_.parent_id_array[static_cast<std::size_t>(from_index)];
     data_.name_array[static_cast<std::size_t>(to_index)] =
         data_.name_array[static_cast<std::size_t>(from_index)];
+    data_.is_dirty = true;
 }
 
 void TransformManager::RemoveTransform(DataChunk chunk)
@@ -193,6 +199,7 @@ void TransformManager::RemoveTransform(DataChunk chunk)
     data_.init_local_rotation_array.Remove(chunk);
     data_.position_array.Remove(chunk);
     data_.rotation_array.Remove(chunk);
+    data_.inverse_rotation_array.Remove(chunk);
     data_.scale_array.Remove(chunk);
     data_.local_position_array.Remove(chunk);
     data_.local_rotation_array.Remove(chunk);
@@ -206,6 +213,7 @@ void TransformManager::RemoveTransform(DataChunk chunk)
         data_.parent_id_array[index] = 0;
         data_.name_array[index].clear();
     }
+    data_.is_dirty = true;
 }
 
 void TransformManager::EnableTransform(DataChunk chunk, bool enabled)
@@ -231,6 +239,7 @@ void TransformManager::EnableTransform(int index, bool enabled)
     }
     flag.SetFlag(FlagEnable, enabled);
     data_.flag_array[index] = flag;
+    data_.is_dirty = true;
 }
 
 DataChunk TransformManager::Expand(DataChunk chunk, int new_length)
@@ -244,6 +253,7 @@ DataChunk TransformManager::Expand(DataChunk chunk, int new_length)
     data_.init_local_rotation_array.Expand(chunk, new_length);
     data_.position_array.Expand(chunk, new_length);
     data_.rotation_array.Expand(chunk, new_length);
+    data_.inverse_rotation_array.Expand(chunk, new_length);
     data_.scale_array.Expand(chunk, new_length);
     data_.local_position_array.Expand(chunk, new_length);
     data_.local_rotation_array.Expand(chunk, new_length);
@@ -288,6 +298,7 @@ TransformRecord TransformManager::GetRecord(int index) const
     record.rotation = data_.rotation_array[index];
     record.scale = data_.scale_array[index];
     record.local_to_world_matrix = data_.local_to_world_matrix_array[index];
+    record.world_to_local_matrix = InverseAffine(record.local_to_world_matrix);
     return record;
 }
 
@@ -328,6 +339,44 @@ float4x4 TransformManager::GetLocalToWorldMatrix(int index) const
     return data_.local_to_world_matrix_array[index];
 }
 
+quaternion TransformManager::GetInverseRotation(int index) const
+{
+    if (!initialized_ || index < 0 || index >= data_.inverse_rotation_array.Length()) {
+        return quaternion{};
+    }
+    return data_.inverse_rotation_array[index];
+}
+
+bool TransformManager::IsDirty() const
+{
+    return initialized_ && data_.is_dirty;
+}
+
+void TransformManager::SetDirty(bool dirty)
+{
+    if (initialized_) {
+        data_.is_dirty = dirty;
+    }
+}
+
+int TransformManager::RootCount() const
+{
+    return initialized_ ? data_.RootCount() : 0;
+}
+
+void TransformManager::AddRootId(int transform_id)
+{
+    if (!initialized_ || transform_id == 0) {
+        return;
+    }
+    if (std::find(data_.root_id_list.begin(), data_.root_id_list.end(), transform_id)
+        != data_.root_id_list.end()) {
+        return;
+    }
+    data_.root_id_list.push_back(transform_id);
+    data_.is_dirty = true;
+}
+
 void TransformManager::SetDefaultTransform(int index, int team_id)
 {
     TransformRecord record;
@@ -341,11 +390,13 @@ void TransformManager::SetDefaultTransform(int index, int team_id)
     data_.init_local_rotation_array[index] = record.local_rotation;
     data_.position_array[index] = record.position;
     data_.rotation_array[index] = record.rotation;
+    data_.inverse_rotation_array[index] = Inverse(record.rotation);
     data_.scale_array[index] = record.scale;
     data_.local_position_array[index] = record.local_position;
     data_.local_rotation_array[index] = record.local_rotation;
     data_.local_to_world_matrix_array[index] = record.local_to_world_matrix;
     data_.team_id_array[index] = static_cast<std::int16_t>(team_id);
+    data_.is_dirty = true;
     SetTransformAccessSlot(index, &record);
 }
 

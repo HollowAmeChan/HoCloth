@@ -31,6 +31,11 @@ public:
         }
     }
 
+    explicit ExNativeArray(const std::vector<T>& data_array)
+    {
+        AddRange(data_array);
+    }
+
     [[nodiscard]] bool IsValid() const
     {
         return !storage_.empty() || use_count_ > 0;
@@ -44,6 +49,16 @@ public:
     [[nodiscard]] int Count() const
     {
         return use_count_;
+    }
+
+    [[nodiscard]] int EmptyChunkCount() const
+    {
+        return static_cast<int>(empty_chunks_.size());
+    }
+
+    [[nodiscard]] const std::vector<DataChunk>& EmptyChunks() const
+    {
+        return empty_chunks_;
     }
 
     void Dispose()
@@ -100,6 +115,25 @@ public:
         return chunk;
     }
 
+    DataChunk AddRange(const std::vector<T>& values, int length)
+    {
+        if (length <= 0 || values.empty()) {
+            return DataChunk::Empty();
+        }
+        assert(length <= static_cast<int>(values.size()));
+        const DataChunk chunk = AddRange(length);
+        std::copy(values.begin(), values.begin() + length, storage_.begin() + chunk.start_index);
+        return chunk;
+    }
+
+    DataChunk AddRange(const ExNativeArray<T>& values)
+    {
+        if (!values.IsValid() || values.Count() <= 0) {
+            return DataChunk::Empty();
+        }
+        return AddRange(values.Data(), values.Count());
+    }
+
     DataChunk AddRange(const ExSimpleNativeArray<T>& values)
     {
         const int count = values.Count();
@@ -110,6 +144,22 @@ public:
         std::copy(
             values.Data().begin(),
             values.Data().begin() + count,
+            storage_.begin() + chunk.start_index
+        );
+        return chunk;
+    }
+
+    DataChunk AddRange(const ExNativeArray<T>& values, DataChunk source_chunk)
+    {
+        if (!source_chunk.IsValid()) {
+            return DataChunk::Empty();
+        }
+        assert(source_chunk.start_index >= 0);
+        assert(source_chunk.EndIndex() <= values.Length());
+        const DataChunk chunk = AddRange(source_chunk.data_length);
+        std::copy(
+            values.Data().begin() + source_chunk.start_index,
+            values.Data().begin() + source_chunk.EndIndex(),
             storage_.begin() + chunk.start_index
         );
         return chunk;
@@ -138,6 +188,27 @@ public:
         return new_chunk;
     }
 
+    DataChunk ExpandAndFill(
+        DataChunk chunk,
+        int new_data_length,
+        const T& fill_data = T{},
+        const T& clear_data = T{}
+    )
+    {
+        if (!chunk.IsValid() || new_data_length <= chunk.data_length) {
+            return chunk;
+        }
+
+        const DataChunk new_chunk = AddRange(new_data_length, fill_data);
+        std::copy(
+            storage_.begin() + chunk.start_index,
+            storage_.begin() + chunk.start_index + chunk.data_length,
+            storage_.begin() + new_chunk.start_index
+        );
+        RemoveAndFill(chunk, clear_data);
+        return new_chunk;
+    }
+
     void AddEmpty(int data_length)
     {
         Remove(AddRange(data_length));
@@ -156,8 +227,8 @@ public:
 
     void RemoveAndFill(DataChunk chunk, const T& clear_data = T{})
     {
-        Fill(chunk, clear_data);
         Remove(chunk);
+        Fill(chunk, clear_data);
     }
 
     void Fill(const T& fill_data = T{})
@@ -200,6 +271,18 @@ public:
         return storage_[static_cast<std::size_t>(index)];
     }
 
+    [[nodiscard]] T& GetRef(int index)
+    {
+        assert(index >= 0 && index < Length());
+        return storage_[static_cast<std::size_t>(index)];
+    }
+
+    [[nodiscard]] const T& GetRef(int index) const
+    {
+        assert(index >= 0 && index < Length());
+        return storage_[static_cast<std::size_t>(index)];
+    }
+
     [[nodiscard]] const std::vector<T>& Data() const
     {
         return storage_;
@@ -216,6 +299,21 @@ public:
         stream << "ExNativeArray Length:" << Length()
                << " Count:" << Count()
                << " IsValid:" << (IsValid() ? "true" : "false");
+        return stream.str();
+    }
+
+    [[nodiscard]] std::string ToString() const
+    {
+        std::ostringstream stream;
+        stream << ToSummary() << '\n';
+        stream << "---- Datas[100] ----\n";
+        for (int index = 0; index < Length() && index < 100; ++index) {
+            stream << storage_[static_cast<std::size_t>(index)] << '\n';
+        }
+        stream << "---- Empty Chunks ----\n";
+        for (const DataChunk& chunk : empty_chunks_) {
+            stream << chunk.ToString() << '\n';
+        }
         return stream.str();
     }
 

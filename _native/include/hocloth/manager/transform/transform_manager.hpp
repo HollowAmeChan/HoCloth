@@ -43,6 +43,11 @@ public:
     [[nodiscard]] int GetTransformIdFromIndex(int index) const;
     [[nodiscard]] int GetParentIdFromIndex(int index) const;
     [[nodiscard]] float4x4 GetLocalToWorldMatrix(int index) const;
+    [[nodiscard]] quaternion GetInverseRotation(int index) const;
+    [[nodiscard]] bool IsDirty() const;
+    void SetDirty(bool dirty);
+    [[nodiscard]] int RootCount() const;
+    void AddRootId(int transform_id);
 
 private:
     bool initialized_ = false;
