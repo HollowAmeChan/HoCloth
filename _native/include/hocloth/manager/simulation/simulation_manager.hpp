@@ -73,9 +73,15 @@ public:
     [[nodiscard]] ExNativeArray<float>& Frictions();
     [[nodiscard]] const ExNativeArray<float3>& CollisionNormals() const;
     [[nodiscard]] ExNativeArray<float3>& CollisionNormals();
+    [[nodiscard]] const ExNativeArray<int>& CountArray() const;
+    [[nodiscard]] ExNativeArray<int>& CountArray();
+    [[nodiscard]] const ExNativeArray<int>& SumArray() const;
+    [[nodiscard]] ExNativeArray<int>& SumArray();
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepTriangleBending() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepEdgeCollision() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepBaseLines() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepColliders() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepMotionParticles() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
@@ -101,7 +107,9 @@ public:
     );
     void MarkStepParticle(int particle_index);
     void MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index);
+    void MarkStepEdgeCollision(int edge_index);
     void MarkStepBaseLine(std::uint32_t packed_team_and_baseline_index);
+    void MarkStepCollider(int collider_index);
     void MarkStepMotionParticle(int particle_index);
     void EndSimulationStep();
 
@@ -126,6 +134,8 @@ private:
     ExNativeArray<float> friction_array_;
     ExNativeArray<float> static_friction_array_;
     ExNativeArray<float3> collision_normal_array_;
+    ExNativeArray<int> count_array_;
+    ExNativeArray<int> sum_array_;
 
     ExProcessingList<int> processing_step_particle_;
     ExProcessingList<int> processing_step_triangle_bending_;

@@ -122,6 +122,8 @@ Result SimulationManager::Initialize()
     friction_array_ = ExNativeArray<float>(capacity);
     static_friction_array_ = ExNativeArray<float>(capacity);
     collision_normal_array_ = ExNativeArray<float3>(capacity);
+    count_array_ = ExNativeArray<int>(capacity);
+    sum_array_ = ExNativeArray<int>(capacity);
 
     return Result::Ok();
 }
@@ -145,6 +147,8 @@ void SimulationManager::Dispose()
     friction_array_.Dispose();
     static_friction_array_.Dispose();
     collision_normal_array_.Dispose();
+    count_array_.Dispose();
+    sum_array_.Dispose();
 
     processing_step_particle_.Dispose();
     processing_step_triangle_bending_.Dispose();
@@ -329,6 +333,26 @@ ExNativeArray<float3>& SimulationManager::CollisionNormals()
     return collision_normal_array_;
 }
 
+const ExNativeArray<int>& SimulationManager::CountArray() const
+{
+    return count_array_;
+}
+
+ExNativeArray<int>& SimulationManager::CountArray()
+{
+    return count_array_;
+}
+
+const ExNativeArray<int>& SimulationManager::SumArray() const
+{
+    return sum_array_;
+}
+
+ExNativeArray<int>& SimulationManager::SumArray()
+{
+    return sum_array_;
+}
+
 const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
 {
     return processing_step_particle_;
@@ -339,9 +363,19 @@ const ExProcessingList<int>& SimulationManager::ProcessingStepTriangleBending() 
     return processing_step_triangle_bending_;
 }
 
+const ExProcessingList<int>& SimulationManager::ProcessingStepEdgeCollision() const
+{
+    return processing_step_edge_collision_;
+}
+
 const ExProcessingList<int>& SimulationManager::ProcessingStepBaseLines() const
 {
     return processing_step_baseline_;
+}
+
+const ExProcessingList<int>& SimulationManager::ProcessingStepColliders() const
+{
+    return processing_step_collider_;
 }
 
 const ExProcessingList<int>& SimulationManager::ProcessingStepMotionParticles() const
@@ -377,6 +411,8 @@ SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int
     chunks.friction_chunk = friction_array_.AddRange(particle_count, 0.0f);
     chunks.static_friction_chunk = static_friction_array_.AddRange(particle_count, 0.0f);
     chunks.collision_normal_chunk = collision_normal_array_.AddRange(particle_count, float3{});
+    count_array_.AddRange(particle_count, 0);
+    sum_array_.AddRange(particle_count * 3, 0);
     return chunks;
 }
 
@@ -399,6 +435,8 @@ void SimulationManager::RemoveParticleRange(const ParticleChunkSet& chunks)
     friction_array_.Remove(chunks.friction_chunk);
     static_friction_array_.Remove(chunks.static_friction_chunk);
     collision_normal_array_.Remove(chunks.collision_normal_chunk);
+    count_array_.Remove(DataChunk{chunks.team_id_chunk.start_index, chunks.team_id_chunk.data_length});
+    sum_array_.Remove(DataChunk{chunks.team_id_chunk.start_index * 3, chunks.team_id_chunk.data_length * 3});
 }
 
 void SimulationManager::PrepareProcessingBuffers(int particle_capacity)
@@ -717,9 +755,19 @@ void SimulationManager::MarkStepTriangleBending(std::uint32_t packed_team_and_pa
     processing_step_triangle_bending_.Add(static_cast<int>(packed_team_and_pair_index));
 }
 
+void SimulationManager::MarkStepEdgeCollision(int edge_index)
+{
+    processing_step_edge_collision_.Add(edge_index);
+}
+
 void SimulationManager::MarkStepBaseLine(std::uint32_t packed_team_and_baseline_index)
 {
     processing_step_baseline_.Add(static_cast<int>(packed_team_and_baseline_index));
+}
+
+void SimulationManager::MarkStepCollider(int collider_index)
+{
+    processing_step_collider_.Add(collider_index);
 }
 
 void SimulationManager::MarkStepMotionParticle(int particle_index)

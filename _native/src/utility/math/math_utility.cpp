@@ -328,6 +328,60 @@ void ToAngleAxis(const quaternion& value, float& angle, float3& axis)
     axis = float3{q.x / sin_half_angle, q.y / sin_half_angle, q.z / sin_half_angle};
 }
 
+void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent)
+{
+    normal = Rotate(rotation, float3{0.0f, 1.0f, 0.0f});
+    tangent = Rotate(rotation, float3{0.0f, 0.0f, 1.0f});
+}
+
+quaternion LookRotation(const float3& forward, const float3& up)
+{
+    const float3 f = Normalize(forward, float3{0.0f, 0.0f, 1.0f});
+    const float3 u0 = Normalize(up, float3{0.0f, 1.0f, 0.0f});
+    float3 r = Normalize(Cross(u0, f), float3{1.0f, 0.0f, 0.0f});
+    float3 u = Cross(f, r);
+
+    const float m00 = r.x;
+    const float m01 = u.x;
+    const float m02 = f.x;
+    const float m10 = r.y;
+    const float m11 = u.y;
+    const float m12 = f.y;
+    const float m20 = r.z;
+    const float m21 = u.z;
+    const float m22 = f.z;
+    const float trace = m00 + m11 + m22;
+
+    quaternion q;
+    if (trace > 0.0f) {
+        const float s = std::sqrt(trace + 1.0f) * 2.0f;
+        q.w = 0.25f * s;
+        q.x = (m21 - m12) / s;
+        q.y = (m02 - m20) / s;
+        q.z = (m10 - m01) / s;
+    } else if (m00 > m11 && m00 > m22) {
+        const float s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+        q.w = (m21 - m12) / s;
+        q.x = 0.25f * s;
+        q.y = (m01 + m10) / s;
+        q.z = (m02 + m20) / s;
+    } else if (m11 > m22) {
+        const float s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+        q.w = (m02 - m20) / s;
+        q.x = (m01 + m10) / s;
+        q.y = 0.25f * s;
+        q.z = (m12 + m21) / s;
+    } else {
+        const float s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+        q.w = (m10 - m01) / s;
+        q.x = (m02 + m20) / s;
+        q.y = (m12 + m21) / s;
+        q.z = 0.25f * s;
+    }
+
+    return Normalize(q);
+}
+
 float3 Rotate(const quaternion& rotation, const float3& vector)
 {
     const quaternion q = Normalize(rotation);
@@ -376,6 +430,103 @@ float4x4 TRS(const float3& position, const quaternion& rotation, const float3& s
     return matrix;
 }
 
+float3 TransformPoint(const float3& position, const float4x4& matrix)
+{
+    return float3{
+        matrix.c0.x * position.x + matrix.c1.x * position.y + matrix.c2.x * position.z + matrix.c3.x,
+        matrix.c0.y * position.x + matrix.c1.y * position.y + matrix.c2.y * position.z + matrix.c3.y,
+        matrix.c0.z * position.x + matrix.c1.z * position.y + matrix.c2.z * position.z + matrix.c3.z,
+    };
+}
+
+float3 TransformPoint(
+    const float3& position,
+    const float3& world_position,
+    const quaternion& world_rotation,
+    const float3& world_scale
+)
+{
+    return TransformPoint(position, TRS(world_position, world_rotation, world_scale));
+}
+
+float3 TransformVector(const float3& vector, const float4x4& matrix)
+{
+    return float3{
+        matrix.c0.x * vector.x + matrix.c1.x * vector.y + matrix.c2.x * vector.z,
+        matrix.c0.y * vector.x + matrix.c1.y * vector.y + matrix.c2.y * vector.z,
+        matrix.c0.z * vector.x + matrix.c1.z * vector.y + matrix.c2.z * vector.z,
+    };
+}
+
+float3 TransformDirection(const float3& direction, const float4x4& matrix)
+{
+    const float length = Length(direction);
+    if (length <= define::system::Epsilon) {
+        return direction;
+    }
+    return Scale(Normalize(TransformVector(direction, matrix)), length);
+}
+
+float TransformDistance(float distance, const float4x4& matrix)
+{
+    const float3 transformed = TransformVector(float3{distance, distance, distance}, matrix);
+    return (transformed.x + transformed.y + transformed.z) / 3.0f;
+}
+
+float TransformLength(float length, const float4x4& matrix)
+{
+    constexpr float inv_sqrt_three = 0.5773502691896258f;
+    return Length(TransformVector(float3{length, length, length}, matrix)) * inv_sqrt_three;
+}
+
+quaternion TransformRotation(
+    const quaternion& rotation,
+    const float4x4& matrix,
+    const float3& normal_tangent_flip
+)
+{
+    float3 normal;
+    float3 tangent;
+    ToNormalTangent(rotation, normal, tangent);
+    normal = Scale(TransformVector(normal, matrix), normal_tangent_flip.y);
+    tangent = Scale(TransformVector(tangent, matrix), normal_tangent_flip.z);
+    return LookRotation(tangent, normal);
+}
+
+float3 InverseTransformPoint(const float3& position, const float4x4& world_to_local_matrix)
+{
+    return TransformPoint(position, world_to_local_matrix);
+}
+
+float3 InverseTransformPoint(
+    const float3& position,
+    const float3& world_position,
+    const quaternion& world_rotation,
+    const float3& world_scale
+)
+{
+    const float3 local = Rotate(Inverse(world_rotation), Subtract(position, world_position));
+    return float3{
+        std::abs(world_scale.x) > define::system::Epsilon ? local.x / world_scale.x : 0.0f,
+        std::abs(world_scale.y) > define::system::Epsilon ? local.y / world_scale.y : 0.0f,
+        std::abs(world_scale.z) > define::system::Epsilon ? local.z / world_scale.z : 0.0f,
+    };
+}
+
+float3 ShiftPosition(
+    const float3& old_position,
+    const float3& old_pivot_position,
+    const float3& shift_vector,
+    const quaternion& shift_rotation
+)
+{
+    const float3 local_position = Subtract(old_position, old_pivot_position);
+    return Add(
+        old_pivot_position,
+        Add(Rotate(shift_rotation, local_position), shift_vector)
+    );
+}
+
 bool Overlaps(const AABB& a, const AABB& b)
 {
     return a.max.x >= b.min.x && a.min.x <= b.max.x
@@ -417,6 +568,105 @@ float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const flo
         return 0.0f;
     }
     return Clamp01(Dot(Subtract(point, a), ab) / denominator);
+}
+
+float ClosestPtSegmentSegment(
+    const float3& p1,
+    const float3& q1,
+    const float3& p2,
+    const float3& q2,
+    float& s,
+    float& t,
+    float3& c1,
+    float3& c2
+)
+{
+    const float3 d1 = Subtract(q1, p1);
+    const float3 d2 = Subtract(q2, p2);
+    const float3 r = Subtract(p1, p2);
+    const float a = Dot(d1, d1);
+    const float e = Dot(d2, d2);
+    const float f = Dot(d2, r);
+
+    if (a <= 1.0e-8f && e <= 1.0e-8f) {
+        s = 0.0f;
+        t = 0.0f;
+        c1 = p1;
+        c2 = p2;
+        return LengthSquared(Subtract(c1, c2));
+    }
+
+    if (a <= 1.0e-8f) {
+        s = 0.0f;
+        t = Clamp01(f / e);
+    } else {
+        const float c = Dot(d1, r);
+        if (e <= 1.0e-8f) {
+            t = 0.0f;
+            s = Clamp01(-c / a);
+        } else {
+            const float b = Dot(d1, d2);
+            const float denom = a * e - b * b;
+            s = denom != 0.0f ? Clamp01((b * f - c * e) / denom) : 0.0f;
+
+            t = (b * s + f) / e;
+            if (t < 0.0f) {
+                t = 0.0f;
+                s = Clamp01(-c / a);
+            } else if (t > 1.0f) {
+                t = 1.0f;
+                s = Clamp01((b - c) / a);
+            }
+        }
+    }
+
+    c1 = Add(p1, Scale(d1, s));
+    c2 = Add(p2, Scale(d2, t));
+    return LengthSquared(Subtract(c1, c2));
+}
+
+void ClosestPtSegmentSegment2(
+    const float3& p1,
+    const float3& q1,
+    const float3& p2,
+    const float3& q2,
+    float& s,
+    float& t
+)
+{
+    const float3 d1 = Subtract(q1, p1);
+    const float3 d2 = Subtract(q2, p2);
+    const float3 r = Subtract(p1, p2);
+    const float a = Dot(d1, d1);
+    const float e = Dot(d2, d2);
+    const float f = Dot(d2, r);
+
+    if (a <= 1.0e-8f && e <= 1.0e-8f) {
+        s = 0.0f;
+        t = 0.0f;
+    } else if (a <= 1.0e-8f) {
+        s = 0.0f;
+        t = Clamp01(f / e);
+    } else {
+        const float c = Dot(d1, r);
+        if (e <= 1.0e-8f) {
+            t = 0.0f;
+            s = Clamp01(-c / a);
+        } else {
+            const float b = Dot(d1, d2);
+            const float denom = a * e - b * b;
+            s = denom != 0.0f ? Clamp01((b * f - c * e) / denom) : 0.0f;
+
+            t = (b * s + f) / e;
+            if (t < 0.0f) {
+                t = 0.0f;
+                s = Clamp01(-c / a);
+            } else if (t > 1.0f) {
+                t = 1.0f;
+                s = Clamp01((b - c) / a);
+            }
+        }
+    }
 }
 
 float IntersectPointPlaneDist(

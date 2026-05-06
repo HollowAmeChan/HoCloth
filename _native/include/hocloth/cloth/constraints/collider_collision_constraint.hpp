@@ -46,6 +46,29 @@ private:
         const ColliderManager::WorkData& collider_work,
         float3& normal
     );
+    [[nodiscard]] static float EdgeSphereColliderDetection(
+        float3 next_positions[2],
+        const float radius[2],
+        const AABB& edge_bounds,
+        float collision_friction_range,
+        const ColliderManager::WorkData& collider_work,
+        float3& normal
+    );
+    [[nodiscard]] static float EdgeCapsuleColliderDetection(
+        float3 next_positions[2],
+        const float radius[2],
+        const AABB& edge_bounds,
+        float collision_friction_range,
+        const ColliderManager::WorkData& collider_work,
+        float3& normal
+    );
+    [[nodiscard]] static float EdgePlaneColliderDetection(
+        float3 next_positions[2],
+        const float radius[2],
+        const ColliderManager::WorkData& collider_work,
+        float3& normal
+    );
+    void SolveEdgeBufferAndClear(SimulationManager& simulation_manager);
 
     ExNativeArray<int> temp_friction_array_;
     ExNativeArray<int> temp_normal_array_;

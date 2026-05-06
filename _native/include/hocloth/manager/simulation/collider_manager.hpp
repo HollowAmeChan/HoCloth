@@ -10,6 +10,10 @@
 
 namespace hocloth::mc2 {
 
+class SimulationManager;
+class TeamManager;
+class TransformManager;
+
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Simulation/ColliderManager.cs
 class ColliderManager final : public IManager {
 public:
@@ -59,6 +63,11 @@ public:
     [[nodiscard]] DataChunk RegisterColliderRange(int team_id, int collider_count);
     void RemoveColliderRange(DataChunk chunk);
     void SetCollider(int collider_index, const ColliderData& data);
+    void PreSimulationUpdate(const TeamManager& team_manager, const TransformManager& transform_manager);
+    void CreateUpdateColliderList(int update_index, const TeamManager& team_manager, SimulationManager& simulation_manager) const;
+    void StartSimulationStep(const TeamManager& team_manager, const SimulationManager& simulation_manager);
+    void EndSimulationStep(const SimulationManager& simulation_manager);
+    void PostSimulationUpdate(const TeamManager& team_manager);
 
     [[nodiscard]] const ExNativeArray<short>& TeamIds() const;
     [[nodiscard]] const ExNativeArray<BitFlag8>& Flags() const;
@@ -66,8 +75,15 @@ public:
     [[nodiscard]] const ExNativeArray<float3>& Centers() const;
     [[nodiscard]] const ExNativeArray<float3>& Sizes() const;
     [[nodiscard]] const ExNativeArray<float3>& FramePositions() const;
+    [[nodiscard]] ExNativeArray<float3>& FramePositions();
     [[nodiscard]] const ExNativeArray<quaternion>& FrameRotations() const;
+    [[nodiscard]] ExNativeArray<quaternion>& FrameRotations();
     [[nodiscard]] const ExNativeArray<float3>& FrameScales() const;
+    [[nodiscard]] ExNativeArray<float3>& FrameScales();
+    [[nodiscard]] const ExNativeArray<float3>& OldFramePositions() const;
+    [[nodiscard]] ExNativeArray<float3>& OldFramePositions();
+    [[nodiscard]] const ExNativeArray<quaternion>& OldFrameRotations() const;
+    [[nodiscard]] ExNativeArray<quaternion>& OldFrameRotations();
     [[nodiscard]] const ExNativeArray<float3>& NowPositions() const;
     [[nodiscard]] ExNativeArray<float3>& NowPositions();
     [[nodiscard]] const ExNativeArray<quaternion>& NowRotations() const;

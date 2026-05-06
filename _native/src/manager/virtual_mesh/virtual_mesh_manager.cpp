@@ -270,6 +270,21 @@ const ExNativeArray<int>& VirtualMeshManager::VertexParentIndices() const
     return vertex_parent_indices_;
 }
 
+const ExNativeArray<std::int16_t>& VirtualMeshManager::EdgeTeamIds() const
+{
+    return edge_team_ids_;
+}
+
+const ExNativeArray<int2>& VirtualMeshManager::Edges() const
+{
+    return edges_;
+}
+
+const ExNativeArray<BitFlag8>& VirtualMeshManager::EdgeFlags() const
+{
+    return edge_flags_;
+}
+
 const ExNativeArray<std::uint16_t>& VirtualMeshManager::BaseLineStartDataIndices() const
 {
     return base_line_start_data_indices_;
