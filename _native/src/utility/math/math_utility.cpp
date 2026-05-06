@@ -17,9 +17,23 @@ float Clamp01(float value)
     return Clamp(value, 0.0f, 1.0f);
 }
 
+float Clamp1(float value)
+{
+    return Clamp(value, -1.0f, 1.0f);
+}
+
 float Dot(const float3& a, const float3& b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float3 Cross(const float3& a, const float3& b)
+{
+    return float3{
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    };
 }
 
 float Length(const float3& value)

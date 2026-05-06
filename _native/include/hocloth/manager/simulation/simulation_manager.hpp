@@ -6,6 +6,8 @@
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 #include "hocloth/utility/native_collection/ex_processing_list.hpp"
 
+#include <cstdint>
+
 namespace hocloth::mc2 {
 
 class TeamManager;
@@ -24,6 +26,7 @@ public:
         DataChunk old_position_chunk;
         DataChunk old_rotation_chunk;
         DataChunk velocity_pos_chunk;
+        DataChunk step_basic_position_chunk;
         DataChunk disp_pos_chunk;
         DataChunk velocity_chunk;
         DataChunk real_velocity_chunk;
@@ -55,6 +58,8 @@ public:
     [[nodiscard]] ExNativeArray<quaternion>& OldFrameRotations();
     [[nodiscard]] const ExNativeArray<float3>& VelocityPositions() const;
     [[nodiscard]] ExNativeArray<float3>& VelocityPositions();
+    [[nodiscard]] const ExNativeArray<float3>& StepBasicPositions() const;
+    [[nodiscard]] ExNativeArray<float3>& StepBasicPositions();
     [[nodiscard]] const ExNativeArray<float3>& DisplayPositions() const;
     [[nodiscard]] ExNativeArray<float3>& DisplayPositions();
     [[nodiscard]] const ExNativeArray<float3>& Velocities() const;
@@ -64,6 +69,7 @@ public:
     [[nodiscard]] const ExNativeArray<float>& Frictions() const;
     [[nodiscard]] ExNativeArray<float>& Frictions();
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepTriangleBending() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepMotionParticles() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
@@ -88,6 +94,7 @@ public:
         VirtualMeshManager& virtual_mesh_manager
     );
     void MarkStepParticle(int particle_index);
+    void MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index);
     void MarkStepMotionParticle(int particle_index);
     void EndSimulationStep();
 
@@ -104,6 +111,7 @@ private:
     ExNativeArray<float3> old_position_array_;
     ExNativeArray<quaternion> old_rotation_array_;
     ExNativeArray<float3> velocity_pos_array_;
+    ExNativeArray<float3> step_basic_position_array_;
     ExNativeArray<float3> disp_pos_array_;
     ExNativeArray<float3> velocity_array_;
     ExNativeArray<float3> real_velocity_array_;

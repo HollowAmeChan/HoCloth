@@ -77,6 +77,22 @@ struct MotionConstraintParams {
     float4x4 backstop_distance_curve_data = ConstantCurve(0.0f);
 };
 
+struct TetherConstraintParams {
+    float compression_limit = define::system::BoneSpringTetherCompressionLimit;
+    float stretch_limit = define::system::TetherStretchLimit;
+};
+
+enum class TriangleBendingMethod {
+    None = 0,
+    DihedralAngle = 1,
+    DirectionDihedralAngle = 2,
+};
+
+struct TriangleBendingConstraintParams {
+    TriangleBendingMethod method = TriangleBendingMethod::DirectionDihedralAngle;
+    float stiffness = 1.0f;
+};
+
 struct ClothParameters {
     int simulation_frequency = define::system::DefaultSimulationFrequency;
     float gravity = 5.0f;
@@ -84,11 +100,14 @@ struct ClothParameters {
     float gravity_falloff = 0.0f;
     float stabilization_time_after_reset = 0.1f;
     float blend_weight = 1.0f;
+    float4x4 radius_curve_data = ConstantCurve(0.02f);
     float4x4 damping_curve_data = ConstantCurve(0.0f);
     ClothNormalAxis normal_axis = ClothNormalAxis::Up;
     InertiaConstraintParams inertia_constraint;
     SpringConstraintParams spring_constraint;
     MotionConstraintParams motion_constraint;
+    TetherConstraintParams tether_constraint;
+    TriangleBendingConstraintParams triangle_bending_constraint;
     DistanceConstraintParams distance_constraint = DistanceConstraintParams::BoneSpringDefaults();
 };
 

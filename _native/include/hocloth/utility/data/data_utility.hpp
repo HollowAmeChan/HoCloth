@@ -9,10 +9,16 @@ namespace hocloth::mc2::data {
 // Port target for Magica Cloth 2: Scripts/Core/Utility/Data/DataUtility.cs
 [[nodiscard]] int2 PackInt2(int a, int b);
 [[nodiscard]] int3 PackInt3(int a, int b, int c);
+[[nodiscard]] int4 PackInt4(int a, int b, int c, int d);
 [[nodiscard]] std::uint32_t Pack32(int hi, int low);
+[[nodiscard]] std::uint32_t Pack32(int x, int y, int z, int w);
 [[nodiscard]] std::uint32_t Pack32Sort(int a, int b);
 [[nodiscard]] int Unpack32Hi(std::uint32_t pack);
 [[nodiscard]] int Unpack32Low(std::uint32_t pack);
+[[nodiscard]] int4 Unpack32(std::uint32_t pack);
+[[nodiscard]] std::uint64_t Pack64(int x, int y, int z, int w);
+[[nodiscard]] std::uint64_t Pack64(const int4& value);
+[[nodiscard]] int4 Unpack64(std::uint64_t pack);
 [[nodiscard]] std::uint32_t Pack12_20(int hi, int low);
 [[nodiscard]] int Unpack12_20Hi(std::uint32_t pack);
 [[nodiscard]] int Unpack12_20Low(std::uint32_t pack);

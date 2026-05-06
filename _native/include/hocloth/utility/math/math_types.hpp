@@ -48,6 +48,27 @@ struct int3 {
     int z = 0;
 };
 
+struct int4 {
+    int x = 0;
+    int y = 0;
+    int z = 0;
+    int w = 0;
+
+    [[nodiscard]] int operator[](int index) const
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        default:
+            return w;
+        }
+    }
+};
+
 struct AABB {
     float3 min{
         std::numeric_limits<float>::max(),

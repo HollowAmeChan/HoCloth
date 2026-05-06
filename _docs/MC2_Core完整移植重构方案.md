@@ -247,8 +247,14 @@ API 层不应暴露内部 manager 指针，不应让 Python 逐项操作 constra
 
 - BoneSpring 的数据不绕开 TeamManager / SimulationManager
 - `SpringConstraint / InertiaConstraint / ColliderCollisionConstraint / AngleConstraint` 来源和行为有 MC2 对照
+- 当前 native smoke 已串起 `SimulationStepTeamUpdate -> StartSimulationStep -> MotionConstraint -> DistanceConstraint -> EndSimulationStepSolve -> EndSimulationStep -> CalcDisplayPosition`，并覆盖 Motion max-distance / backstop、固定点 Spring、Distance、old/display/proxy 写回的有限值断言。
 - Blender 侧只传 compiled data + 每帧 transform
 - 旧效果对照场景能稳定复现或明确指出差异来源
+
+当前推进边界：
+
+- `MotionConstraint` 的 max-distance / backstop 主路径已经落地并通过 native smoke；下一步优先移植 `TetherConstraint` 与 `TriangleBendingConstraint`。
+- `Wind` 与完整 `VirtualMesh` 行为暂不进入 smoke 行为测试，只保留底层构建、数组所有权和编译安全检查，避免在 XPBD 主链稳定前扩大调试面。
 
 ### 阶段 E：ClothBone
 

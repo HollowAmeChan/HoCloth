@@ -245,6 +245,11 @@ const ExNativeArray<float>& VirtualMeshManager::VertexDepths() const
     return vertex_depths_;
 }
 
+const ExNativeArray<int>& VirtualMeshManager::VertexRootIndices() const
+{
+    return vertex_root_indices_;
+}
+
 const ExNativeArray<float3>& VirtualMeshManager::Positions() const
 {
     return positions_;

@@ -26,10 +26,38 @@ int3 PackInt3(int a, int b, int c)
     return int3{a, b, c};
 }
 
+int4 PackInt4(int a, int b, int c, int d)
+{
+    if (a > d) {
+        std::swap(a, d);
+    }
+    if (b > c) {
+        std::swap(b, c);
+    }
+    if (a > b) {
+        std::swap(a, b);
+    }
+    if (c > d) {
+        std::swap(c, d);
+    }
+    if (b > c) {
+        std::swap(b, c);
+    }
+    return int4{a, b, c, d};
+}
+
 std::uint32_t Pack32(int hi, int low)
 {
     return (static_cast<std::uint32_t>(hi) << 16)
         | (static_cast<std::uint32_t>(low) & 0xffffu);
+}
+
+std::uint32_t Pack32(int x, int y, int z, int w)
+{
+    return ((static_cast<std::uint32_t>(x) & 0xffu) << 24)
+        | ((static_cast<std::uint32_t>(y) & 0xffu) << 16)
+        | ((static_cast<std::uint32_t>(z) & 0xffu) << 8)
+        | (static_cast<std::uint32_t>(w) & 0xffu);
 }
 
 std::uint32_t Pack32Sort(int a, int b)
@@ -45,6 +73,39 @@ int Unpack32Hi(std::uint32_t pack)
 int Unpack32Low(std::uint32_t pack)
 {
     return static_cast<int>(pack & 0xffffu);
+}
+
+int4 Unpack32(std::uint32_t pack)
+{
+    return int4{
+        static_cast<int>((pack >> 24) & 0xffu),
+        static_cast<int>((pack >> 16) & 0xffu),
+        static_cast<int>((pack >> 8) & 0xffu),
+        static_cast<int>(pack & 0xffu),
+    };
+}
+
+std::uint64_t Pack64(int x, int y, int z, int w)
+{
+    return ((static_cast<std::uint64_t>(x) & 0xffffull) << 48)
+        | ((static_cast<std::uint64_t>(y) & 0xffffull) << 32)
+        | ((static_cast<std::uint64_t>(z) & 0xffffull) << 16)
+        | (static_cast<std::uint64_t>(w) & 0xffffull);
+}
+
+std::uint64_t Pack64(const int4& value)
+{
+    return Pack64(value.x, value.y, value.z, value.w);
+}
+
+int4 Unpack64(std::uint64_t pack)
+{
+    return int4{
+        static_cast<int>((pack >> 48) & 0xffffull),
+        static_cast<int>((pack >> 32) & 0xffffull),
+        static_cast<int>((pack >> 16) & 0xffffull),
+        static_cast<int>(pack & 0xffffull),
+    };
 }
 
 std::uint32_t Pack12_20(int hi, int low)

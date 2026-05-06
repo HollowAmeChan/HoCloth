@@ -114,6 +114,7 @@ Result SimulationManager::Initialize()
     old_position_array_ = ExNativeArray<float3>(capacity);
     old_rotation_array_ = ExNativeArray<quaternion>(capacity);
     velocity_pos_array_ = ExNativeArray<float3>(capacity);
+    step_basic_position_array_ = ExNativeArray<float3>(capacity);
     disp_pos_array_ = ExNativeArray<float3>(capacity);
     velocity_array_ = ExNativeArray<float3>(capacity);
     real_velocity_array_ = ExNativeArray<float3>(capacity);
@@ -135,6 +136,7 @@ void SimulationManager::Dispose()
     old_position_array_.Dispose();
     old_rotation_array_.Dispose();
     velocity_pos_array_.Dispose();
+    step_basic_position_array_.Dispose();
     disp_pos_array_.Dispose();
     velocity_array_.Dispose();
     real_velocity_array_.Dispose();
@@ -255,6 +257,16 @@ ExNativeArray<float3>& SimulationManager::VelocityPositions()
     return velocity_pos_array_;
 }
 
+const ExNativeArray<float3>& SimulationManager::StepBasicPositions() const
+{
+    return step_basic_position_array_;
+}
+
+ExNativeArray<float3>& SimulationManager::StepBasicPositions()
+{
+    return step_basic_position_array_;
+}
+
 const ExNativeArray<float3>& SimulationManager::DisplayPositions() const
 {
     return disp_pos_array_;
@@ -300,6 +312,11 @@ const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
     return processing_step_particle_;
 }
 
+const ExProcessingList<int>& SimulationManager::ProcessingStepTriangleBending() const
+{
+    return processing_step_triangle_bending_;
+}
+
 const ExProcessingList<int>& SimulationManager::ProcessingStepMotionParticles() const
 {
     return processing_step_motion_particle_;
@@ -317,20 +334,21 @@ SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int
     // Ported from Magica Cloth 2: Scripts/Core/Manager/Simulation/SimulationManager.cs RegisterProxyMesh(...)
     ParticleChunkSet chunks;
     chunks.team_id_chunk = team_id_array_.AddRange(particle_count, static_cast<short>(team_id));
-    chunks.next_pos_chunk = next_pos_array_.AddRange(particle_count);
-    chunks.old_pos_chunk = old_pos_array_.AddRange(particle_count);
-    chunks.old_rot_chunk = old_rot_array_.AddRange(particle_count);
-    chunks.base_pos_chunk = base_pos_array_.AddRange(particle_count);
-    chunks.base_rot_chunk = base_rot_array_.AddRange(particle_count);
-    chunks.old_position_chunk = old_position_array_.AddRange(particle_count);
-    chunks.old_rotation_chunk = old_rotation_array_.AddRange(particle_count);
-    chunks.velocity_pos_chunk = velocity_pos_array_.AddRange(particle_count);
-    chunks.disp_pos_chunk = disp_pos_array_.AddRange(particle_count);
-    chunks.velocity_chunk = velocity_array_.AddRange(particle_count);
-    chunks.real_velocity_chunk = real_velocity_array_.AddRange(particle_count);
-    chunks.friction_chunk = friction_array_.AddRange(particle_count);
-    chunks.static_friction_chunk = static_friction_array_.AddRange(particle_count);
-    chunks.collision_normal_chunk = collision_normal_array_.AddRange(particle_count);
+    chunks.next_pos_chunk = next_pos_array_.AddRange(particle_count, float3{});
+    chunks.old_pos_chunk = old_pos_array_.AddRange(particle_count, float3{});
+    chunks.old_rot_chunk = old_rot_array_.AddRange(particle_count, quaternion{});
+    chunks.base_pos_chunk = base_pos_array_.AddRange(particle_count, float3{});
+    chunks.base_rot_chunk = base_rot_array_.AddRange(particle_count, quaternion{});
+    chunks.old_position_chunk = old_position_array_.AddRange(particle_count, float3{});
+    chunks.old_rotation_chunk = old_rotation_array_.AddRange(particle_count, quaternion{});
+    chunks.velocity_pos_chunk = velocity_pos_array_.AddRange(particle_count, float3{});
+    chunks.step_basic_position_chunk = step_basic_position_array_.AddRange(particle_count, float3{});
+    chunks.disp_pos_chunk = disp_pos_array_.AddRange(particle_count, float3{});
+    chunks.velocity_chunk = velocity_array_.AddRange(particle_count, float3{});
+    chunks.real_velocity_chunk = real_velocity_array_.AddRange(particle_count, float3{});
+    chunks.friction_chunk = friction_array_.AddRange(particle_count, 0.0f);
+    chunks.static_friction_chunk = static_friction_array_.AddRange(particle_count, 0.0f);
+    chunks.collision_normal_chunk = collision_normal_array_.AddRange(particle_count, float3{});
     return chunks;
 }
 
@@ -345,6 +363,7 @@ void SimulationManager::RemoveParticleRange(const ParticleChunkSet& chunks)
     old_position_array_.Remove(chunks.old_position_chunk);
     old_rotation_array_.Remove(chunks.old_rotation_chunk);
     velocity_pos_array_.Remove(chunks.velocity_pos_chunk);
+    step_basic_position_array_.Remove(chunks.step_basic_position_chunk);
     disp_pos_array_.Remove(chunks.disp_pos_chunk);
     velocity_array_.Remove(chunks.velocity_chunk);
     real_velocity_array_.Remove(chunks.real_velocity_chunk);
@@ -442,6 +461,7 @@ void SimulationManager::StartSimulationStep(
             Normalize(Slerp(previous_base_rotation, proxy_rotation, team_data.frame_interpolation));
         base_pos_array_[particle_index] = base_position;
         base_rot_array_[particle_index] = base_rotation;
+        step_basic_position_array_[particle_index] = base_position;
 
         if (attr.IsMove() || team_data.IsSpring()) {
             float3 velocity = velocity_array_[particle_index];
@@ -660,6 +680,11 @@ void SimulationManager::CalcDisplayPosition(
 void SimulationManager::MarkStepParticle(int particle_index)
 {
     processing_step_particle_.Add(particle_index);
+}
+
+void SimulationManager::MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index)
+{
+    processing_step_triangle_bending_.Add(static_cast<int>(packed_team_and_pair_index));
 }
 
 void SimulationManager::MarkStepMotionParticle(int particle_index)

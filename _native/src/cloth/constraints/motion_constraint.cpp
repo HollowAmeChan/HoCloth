@@ -5,9 +5,33 @@
 #include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 
+#include <algorithm>
 #include <cstddef>
 
 namespace hocloth::mc2 {
+
+namespace {
+
+float3 NormalAxisVector(ClothNormalAxis normal_axis)
+{
+    switch (normal_axis) {
+    case ClothNormalAxis::Right:
+        return float3{1.0f, 0.0f, 0.0f};
+    case ClothNormalAxis::Forward:
+        return float3{0.0f, 0.0f, 1.0f};
+    case ClothNormalAxis::InverseRight:
+        return float3{-1.0f, 0.0f, 0.0f};
+    case ClothNormalAxis::InverseUp:
+        return float3{0.0f, -1.0f, 0.0f};
+    case ClothNormalAxis::InverseForward:
+        return float3{0.0f, 0.0f, -1.0f};
+    case ClothNormalAxis::Up:
+    default:
+        return float3{0.0f, 1.0f, 0.0f};
+    }
+}
+
+}  // namespace
 
 void MotionConstraint::Dispose()
 {
@@ -26,6 +50,7 @@ void MotionConstraint::Solve(
     const auto& attributes = virtual_mesh_manager.Attributes();
     const auto& depths = virtual_mesh_manager.VertexDepths();
     const auto& base_positions = simulation_manager.BasePositions();
+    const auto& base_rotations = simulation_manager.BaseRotations();
     auto& next_positions = simulation_manager.NextPositions();
     auto& velocity_positions = simulation_manager.VelocityPositions();
 
@@ -66,15 +91,44 @@ void MotionConstraint::Solve(
         const float3 base_position = base_positions[particle_index];
         float depth = depths[vertex_index];
         float stiffness = Clamp01(motion_params.stiffness);
+        const float radius = std::max(
+            MC2EvaluateCurve(parameters.radius_curve_data, depth),
+            0.0001f
+        );
+        const float collision_friction_range = radius;
+        depth *= depth;
+
+        const quaternion base_rotation =
+            particle_index < base_rotations.Length() ? base_rotations[particle_index] : quaternion{};
+        const float3 normal_direction =
+            Rotate(base_rotation, NormalAxisVector(parameters.normal_axis));
 
         if (motion_params.use_max_distance) {
-            depth *= depth;
             const float max_distance =
-                MC2EvaluateCurveClamp01(motion_params.max_distance_curve_data, depth);
+                MC2EvaluateCurve(motion_params.max_distance_curve_data, depth);
             next_position = Add(
                 base_position,
                 ClampVector(Subtract(next_position, base_position), max_distance * team_data.scale_ratio)
             );
+        }
+
+        if (motion_params.use_backstop && motion_params.backstop_radius > 0.0f) {
+            const float backstop_radius = motion_params.backstop_radius;
+            const float backstop_distance =
+                MC2EvaluateCurve(motion_params.backstop_distance_curve_data, depth);
+            const float3 center = Subtract(
+                base_position,
+                Scale(normal_direction, backstop_distance + backstop_radius)
+            );
+            const float3 vector = Subtract(next_position, center);
+            const float length = Length(vector);
+            if (length > define::system::Epsilon
+                && length < backstop_radius + collision_friction_range) {
+                const float3 normal = Scale(vector, 1.0f / length);
+                if (length < backstop_radius) {
+                    next_position = Add(center, Scale(normal, backstop_radius));
+                }
+            }
         }
 
         next_position = Lerp(old_next_position, next_position, stiffness);
