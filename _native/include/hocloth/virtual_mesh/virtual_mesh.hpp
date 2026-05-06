@@ -68,6 +68,9 @@ public:
     ExSimpleNativeArray<int> vertex_parent_indices;
     ExSimpleNativeArray<float3> vertex_local_positions;
     ExSimpleNativeArray<quaternion> vertex_local_rotations;
+    ExSimpleNativeArray<std::uint16_t> base_line_start_data_indices;
+    ExSimpleNativeArray<std::uint16_t> base_line_data_counts;
+    ExSimpleNativeArray<std::uint16_t> base_line_data;
     ExSimpleNativeArray<quaternion> normal_adjustment_rotations;
     ExSimpleNativeArray<quaternion> vertex_to_transform_rotations;
 

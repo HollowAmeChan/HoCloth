@@ -3,6 +3,7 @@
 #include "hocloth/cloth/cloth_force_mode.hpp"
 #include "hocloth/cloth/cloth_normal_axis.hpp"
 #include "hocloth/core/define/system_define.hpp"
+#include "hocloth/manager/simulation/collider_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 
 namespace hocloth::mc2 {
@@ -93,6 +94,23 @@ struct TriangleBendingConstraintParams {
     float stiffness = 1.0f;
 };
 
+struct AngleConstraintParams {
+    int use_angle_restoration = 0;
+    float4x4 restoration_stiffness = ConstantCurve(0.04f);
+    float restoration_velocity_attenuation = 0.8f;
+    float restoration_gravity_falloff = 0.0f;
+    int use_angle_limit = 0;
+    float4x4 limit_curve_data = ConstantCurve(60.0f);
+    float limit_stiffness = 1.0f;
+};
+
+struct ColliderCollisionConstraintParams {
+    ColliderManager::ColliderType mode = ColliderManager::ColliderType::Point;
+    float dynamic_friction = define::system::BoneSpringCollisionFriction;
+    float static_friction = define::system::BoneSpringCollisionFriction;
+    float4x4 limit_distance = ConstantCurve(0.05f);
+};
+
 struct ClothParameters {
     int simulation_frequency = define::system::DefaultSimulationFrequency;
     float gravity = 5.0f;
@@ -108,6 +126,8 @@ struct ClothParameters {
     MotionConstraintParams motion_constraint;
     TetherConstraintParams tether_constraint;
     TriangleBendingConstraintParams triangle_bending_constraint;
+    AngleConstraintParams angle_constraint;
+    ColliderCollisionConstraintParams collider_collision_constraint;
     DistanceConstraintParams distance_constraint = DistanceConstraintParams::BoneSpringDefaults();
 };
 

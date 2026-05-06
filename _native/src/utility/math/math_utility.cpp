@@ -189,6 +189,19 @@ quaternion Multiply(const quaternion& a, const quaternion& b)
     };
 }
 
+quaternion AxisAngle(const float3& axis, float angle)
+{
+    const float3 normalized_axis = Normalize(axis, float3{1.0f, 0.0f, 0.0f});
+    const float half_angle = angle * 0.5f;
+    const float sin_half_angle = std::sin(half_angle);
+    return Normalize(quaternion{
+        std::cos(half_angle),
+        normalized_axis.x * sin_half_angle,
+        normalized_axis.y * sin_half_angle,
+        normalized_axis.z * sin_half_angle,
+    });
+}
+
 quaternion Slerp(const quaternion& a, const quaternion& b, float t)
 {
     t = Clamp01(t);
@@ -221,6 +234,27 @@ quaternion Slerp(const quaternion& a, const quaternion& b, float t)
     });
 }
 
+quaternion FromToRotation(const float3& from, const float3& to, float t)
+{
+    const float3 v1 = Normalize(from);
+    const float3 v2 = Normalize(to);
+    const float c = Clamp1(Dot(v1, v2));
+    float angle = std::acos(c);
+    float3 axis = Cross(v1, v2);
+
+    if (std::abs(1.0f + c) < 1.0e-6f) {
+        constexpr float pi = 3.14159265358979323846f;
+        angle = pi;
+        axis = v1.x > v1.y && v1.x > v1.z
+            ? Cross(v1, float3{0.0f, 1.0f, 0.0f})
+            : Cross(v1, float3{1.0f, 0.0f, 0.0f});
+    } else if (std::abs(1.0f - c) < 1.0e-6f) {
+        return quaternion{};
+    }
+
+    return AxisAngle(Normalize(axis, float3{1.0f, 0.0f, 0.0f}), angle * Clamp01(t));
+}
+
 quaternion FromToRotation(const quaternion& from, const quaternion& to)
 {
     return Multiply(to, Inverse(from));
@@ -236,6 +270,40 @@ float Angle(const quaternion& a, const quaternion& b)
     }
     const float angle = std::acos(Clamp(dot, -1.0f, 1.0f)) * 2.0f;
     return angle > pi ? two_pi - angle : angle;
+}
+
+bool ClampAngle(
+    const float3& direction,
+    const float3& base_direction,
+    float max_angle,
+    float3& out_direction
+)
+{
+    const float3 v1 = Normalize(direction);
+    const float3 v2 = Normalize(base_direction);
+    const float c = Clamp1(Dot(v1, v2));
+    float angle = std::acos(c);
+    if (angle <= max_angle) {
+        out_direction = direction;
+        return false;
+    }
+
+    const float t = (angle - max_angle) / angle;
+    float3 axis = Cross(v1, v2);
+    if (std::abs(1.0f + c) < 1.0e-6f) {
+        constexpr float pi = 3.14159265358979323846f;
+        angle = pi;
+        axis = v1.x > v1.y && v1.x > v1.z
+            ? Cross(v1, float3{0.0f, 1.0f, 0.0f})
+            : Cross(v1, float3{1.0f, 0.0f, 0.0f});
+    } else if (std::abs(1.0f - c) < 1.0e-6f) {
+        out_direction = direction;
+        return false;
+    }
+
+    const quaternion rotation = AxisAngle(Normalize(axis, float3{1.0f, 0.0f, 0.0f}), angle * t);
+    out_direction = Rotate(rotation, direction);
+    return true;
 }
 
 void ToAngleAxis(const quaternion& value, float& angle, float3& axis)

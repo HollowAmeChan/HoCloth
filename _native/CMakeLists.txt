@@ -38,6 +38,8 @@ set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
 
 add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/angle_constraint.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/collider_collision_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/distance_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/inertia_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/motion_constraint.cpp"

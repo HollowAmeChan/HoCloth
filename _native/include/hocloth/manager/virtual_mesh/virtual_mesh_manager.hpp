@@ -44,6 +44,10 @@ public:
     [[nodiscard]] const ExNativeArray<VertexAttribute>& Attributes() const;
     [[nodiscard]] const ExNativeArray<float>& VertexDepths() const;
     [[nodiscard]] const ExNativeArray<int>& VertexRootIndices() const;
+    [[nodiscard]] const ExNativeArray<int>& VertexParentIndices() const;
+    [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineStartDataIndices() const;
+    [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineDataCounts() const;
+    [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineData() const;
     [[nodiscard]] const ExNativeArray<float3>& Positions() const;
     [[nodiscard]] const ExNativeArray<quaternion>& Rotations() const;
     [[nodiscard]] ExNativeArray<float3>& Positions();
@@ -76,6 +80,10 @@ private:
     ExNativeArray<std::int16_t> edge_team_ids_;
     ExNativeArray<int2> edges_;
     ExNativeArray<BitFlag8> edge_flags_;
+
+    ExNativeArray<std::uint16_t> base_line_start_data_indices_;
+    ExNativeArray<std::uint16_t> base_line_data_counts_;
+    ExNativeArray<std::uint16_t> base_line_data_;
 
     ExNativeArray<float3> local_positions_;
     ExNativeArray<float3> local_normals_;

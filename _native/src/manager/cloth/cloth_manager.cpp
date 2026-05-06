@@ -13,6 +13,8 @@ Result ClothManager::Initialize()
 
 void ClothManager::Dispose()
 {
+    angle_constraint_.Dispose();
+    collider_collision_constraint_.Dispose();
     distance_constraint_.Dispose();
     inertia_constraint_.Dispose();
     motion_constraint_.Dispose();
@@ -28,6 +30,26 @@ ManagerStatus ClothManager::Status() const
            << " fixed=" << inertia_constraint_.FixedCount()
            << " bending_pairs=" << triangle_bending_constraint_.DataCount();
     return ManagerStatus{"ClothManager", initialized_, 0, detail.str()};
+}
+
+AngleConstraint& ClothManager::Angle()
+{
+    return angle_constraint_;
+}
+
+const AngleConstraint& ClothManager::Angle() const
+{
+    return angle_constraint_;
+}
+
+ColliderCollisionConstraint& ClothManager::ColliderCollision()
+{
+    return collider_collision_constraint_;
+}
+
+const ColliderCollisionConstraint& ClothManager::ColliderCollision() const
+{
+    return collider_collision_constraint_;
 }
 
 DistanceConstraint& ClothManager::Distance()

@@ -27,6 +27,7 @@ public:
         DataChunk old_rotation_chunk;
         DataChunk velocity_pos_chunk;
         DataChunk step_basic_position_chunk;
+        DataChunk step_basic_rotation_chunk;
         DataChunk disp_pos_chunk;
         DataChunk velocity_chunk;
         DataChunk real_velocity_chunk;
@@ -60,6 +61,8 @@ public:
     [[nodiscard]] ExNativeArray<float3>& VelocityPositions();
     [[nodiscard]] const ExNativeArray<float3>& StepBasicPositions() const;
     [[nodiscard]] ExNativeArray<float3>& StepBasicPositions();
+    [[nodiscard]] const ExNativeArray<quaternion>& StepBasicRotations() const;
+    [[nodiscard]] ExNativeArray<quaternion>& StepBasicRotations();
     [[nodiscard]] const ExNativeArray<float3>& DisplayPositions() const;
     [[nodiscard]] ExNativeArray<float3>& DisplayPositions();
     [[nodiscard]] const ExNativeArray<float3>& Velocities() const;
@@ -68,8 +71,11 @@ public:
     [[nodiscard]] ExNativeArray<float3>& RealVelocities();
     [[nodiscard]] const ExNativeArray<float>& Frictions() const;
     [[nodiscard]] ExNativeArray<float>& Frictions();
+    [[nodiscard]] const ExNativeArray<float3>& CollisionNormals() const;
+    [[nodiscard]] ExNativeArray<float3>& CollisionNormals();
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepTriangleBending() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepBaseLines() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepMotionParticles() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
@@ -95,6 +101,7 @@ public:
     );
     void MarkStepParticle(int particle_index);
     void MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index);
+    void MarkStepBaseLine(std::uint32_t packed_team_and_baseline_index);
     void MarkStepMotionParticle(int particle_index);
     void EndSimulationStep();
 
@@ -112,6 +119,7 @@ private:
     ExNativeArray<quaternion> old_rotation_array_;
     ExNativeArray<float3> velocity_pos_array_;
     ExNativeArray<float3> step_basic_position_array_;
+    ExNativeArray<quaternion> step_basic_rotation_array_;
     ExNativeArray<float3> disp_pos_array_;
     ExNativeArray<float3> velocity_array_;
     ExNativeArray<float3> real_velocity_array_;

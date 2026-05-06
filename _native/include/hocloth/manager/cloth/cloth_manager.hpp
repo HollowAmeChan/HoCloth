@@ -1,5 +1,7 @@
 #pragma once
 
+#include "hocloth/cloth/constraints/angle_constraint.hpp"
+#include "hocloth/cloth/constraints/collider_collision_constraint.hpp"
 #include "hocloth/cloth/constraints/distance_constraint.hpp"
 #include "hocloth/cloth/constraints/inertia_constraint.hpp"
 #include "hocloth/cloth/constraints/motion_constraint.hpp"
@@ -16,6 +18,10 @@ public:
     void Dispose() override;
     [[nodiscard]] ManagerStatus Status() const override;
 
+    [[nodiscard]] AngleConstraint& Angle();
+    [[nodiscard]] const AngleConstraint& Angle() const;
+    [[nodiscard]] ColliderCollisionConstraint& ColliderCollision();
+    [[nodiscard]] const ColliderCollisionConstraint& ColliderCollision() const;
     [[nodiscard]] DistanceConstraint& Distance();
     [[nodiscard]] const DistanceConstraint& Distance() const;
     [[nodiscard]] InertiaConstraint& Inertia();
@@ -29,6 +35,8 @@ public:
 
 private:
     bool initialized_ = false;
+    AngleConstraint angle_constraint_;
+    ColliderCollisionConstraint collider_collision_constraint_;
     DistanceConstraint distance_constraint_;
     InertiaConstraint inertia_constraint_;
     MotionConstraint motion_constraint_;

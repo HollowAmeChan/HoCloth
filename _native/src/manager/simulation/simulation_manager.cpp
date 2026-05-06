@@ -115,6 +115,7 @@ Result SimulationManager::Initialize()
     old_rotation_array_ = ExNativeArray<quaternion>(capacity);
     velocity_pos_array_ = ExNativeArray<float3>(capacity);
     step_basic_position_array_ = ExNativeArray<float3>(capacity);
+    step_basic_rotation_array_ = ExNativeArray<quaternion>(capacity);
     disp_pos_array_ = ExNativeArray<float3>(capacity);
     velocity_array_ = ExNativeArray<float3>(capacity);
     real_velocity_array_ = ExNativeArray<float3>(capacity);
@@ -137,6 +138,7 @@ void SimulationManager::Dispose()
     old_rotation_array_.Dispose();
     velocity_pos_array_.Dispose();
     step_basic_position_array_.Dispose();
+    step_basic_rotation_array_.Dispose();
     disp_pos_array_.Dispose();
     velocity_array_.Dispose();
     real_velocity_array_.Dispose();
@@ -267,6 +269,16 @@ ExNativeArray<float3>& SimulationManager::StepBasicPositions()
     return step_basic_position_array_;
 }
 
+const ExNativeArray<quaternion>& SimulationManager::StepBasicRotations() const
+{
+    return step_basic_rotation_array_;
+}
+
+ExNativeArray<quaternion>& SimulationManager::StepBasicRotations()
+{
+    return step_basic_rotation_array_;
+}
+
 const ExNativeArray<float3>& SimulationManager::DisplayPositions() const
 {
     return disp_pos_array_;
@@ -307,6 +319,16 @@ ExNativeArray<float>& SimulationManager::Frictions()
     return friction_array_;
 }
 
+const ExNativeArray<float3>& SimulationManager::CollisionNormals() const
+{
+    return collision_normal_array_;
+}
+
+ExNativeArray<float3>& SimulationManager::CollisionNormals()
+{
+    return collision_normal_array_;
+}
+
 const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
 {
     return processing_step_particle_;
@@ -315,6 +337,11 @@ const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
 const ExProcessingList<int>& SimulationManager::ProcessingStepTriangleBending() const
 {
     return processing_step_triangle_bending_;
+}
+
+const ExProcessingList<int>& SimulationManager::ProcessingStepBaseLines() const
+{
+    return processing_step_baseline_;
 }
 
 const ExProcessingList<int>& SimulationManager::ProcessingStepMotionParticles() const
@@ -343,6 +370,7 @@ SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int
     chunks.old_rotation_chunk = old_rotation_array_.AddRange(particle_count, quaternion{});
     chunks.velocity_pos_chunk = velocity_pos_array_.AddRange(particle_count, float3{});
     chunks.step_basic_position_chunk = step_basic_position_array_.AddRange(particle_count, float3{});
+    chunks.step_basic_rotation_chunk = step_basic_rotation_array_.AddRange(particle_count, quaternion{});
     chunks.disp_pos_chunk = disp_pos_array_.AddRange(particle_count, float3{});
     chunks.velocity_chunk = velocity_array_.AddRange(particle_count, float3{});
     chunks.real_velocity_chunk = real_velocity_array_.AddRange(particle_count, float3{});
@@ -364,6 +392,7 @@ void SimulationManager::RemoveParticleRange(const ParticleChunkSet& chunks)
     old_rotation_array_.Remove(chunks.old_rotation_chunk);
     velocity_pos_array_.Remove(chunks.velocity_pos_chunk);
     step_basic_position_array_.Remove(chunks.step_basic_position_chunk);
+    step_basic_rotation_array_.Remove(chunks.step_basic_rotation_chunk);
     disp_pos_array_.Remove(chunks.disp_pos_chunk);
     velocity_array_.Remove(chunks.velocity_chunk);
     real_velocity_array_.Remove(chunks.real_velocity_chunk);
@@ -462,6 +491,7 @@ void SimulationManager::StartSimulationStep(
         base_pos_array_[particle_index] = base_position;
         base_rot_array_[particle_index] = base_rotation;
         step_basic_position_array_[particle_index] = base_position;
+        step_basic_rotation_array_[particle_index] = base_rotation;
 
         if (attr.IsMove() || team_data.IsSpring()) {
             float3 velocity = velocity_array_[particle_index];
@@ -685,6 +715,11 @@ void SimulationManager::MarkStepParticle(int particle_index)
 void SimulationManager::MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index)
 {
     processing_step_triangle_bending_.Add(static_cast<int>(packed_team_and_pair_index));
+}
+
+void SimulationManager::MarkStepBaseLine(std::uint32_t packed_team_and_baseline_index)
+{
+    processing_step_baseline_.Add(static_cast<int>(packed_team_and_baseline_index));
 }
 
 void SimulationManager::MarkStepMotionParticle(int particle_index)

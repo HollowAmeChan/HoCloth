@@ -72,8 +72,8 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/Constraints/AngleConstraint.cs` | legacy-partial | `cloth/constraints/angle_constraint.*` |
-| `Cloth/Constraints/ColliderCollisionConstraint.cs` | legacy-partial | `cloth/constraints/collider_collision_constraint.*` |
+| `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*` |
+| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*` |
 | `Cloth/Constraints/DistanceConstraint.cs` | partial | `cloth/constraints/distance_constraint.*` |
 | `Cloth/Constraints/InertiaConstraint.cs` | partial | `cloth/constraints/inertia_constraint.*` |
 | `Cloth/Constraints/MotionConstraint.cs` | partial | `cloth/constraints/motion_constraint.*` |
@@ -115,7 +115,7 @@ Status labels:
 | `Manager/Render/RenderManager.cs` | defer | `manager/render/render_manager.*` |
 | `Manager/Render/RenderSetupData.cs` | defer | `manager/render/render_setup_data.*` |
 | `Manager/Render/RenderSetupDataSerialization.cs` | defer | `manager/render/render_setup_data_serialization.*` |
-| `Manager/Simulation/ColliderManager.cs` | skeleton | `manager/simulation/collider_manager.*` |
+| `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*` |
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*` |
 | `Manager/Simulation/TimeManager.cs` | skeleton | `manager/simulation/time_manager.*` |
 | `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
@@ -217,6 +217,9 @@ Last completed step:
 - Added the C++ `TetherConstraint` module from `Cloth/Constraints/TetherConstraint.cs`: `TetherConstraintParams` now live in `ClothParameters`, `ClothManager::Tether()` owns the constraint instance, `SimulationManager` now carries the per-step basic position buffer used by tether solving, and `VirtualMeshManager` exposes `VertexRootIndices()` for root-particle lookup. This is a bottom-up code port and has not been routed through the smoke chain yet.
 - Added the runtime-side C++ `TriangleBendingConstraint` module from `Cloth/Constraints/TriangleBendingConstraint.cs`: triangle pair/rest/sign/write-buffer arrays, `Register(...)` / `Exit(...)`, pair solve, volume solve, dihedral angle solve, and aggregate write-buffer application are now present. `TriangleBendingConstraintParams`, `TriangleBendingMethod`, `ClothManager::TriangleBending()`, and `SimulationManager` triangle-bending processing list accessors were added. The `CreateData(...)` mesh-topology builder remains deferred until the VirtualMesh/PreBuild data path is ported.
 - Extended low-level `DataUtility` / `MathUtility` for later MC2 constraints: `int4`, sorted `PackInt4`, ushort `Pack64` / `Unpack64`, byte `Pack32` / `Unpack32`, `Cross(...)`, and `Clamp1(...)`.
+- Added the runtime-side C++ `AngleConstraint` module from `Cloth/Constraints/AngleConstraint.cs`: angle restoration/limit parameters, work buffers, baseline processing-list access, step basic rotation buffer, baseline arrays on `VirtualMesh` / `VirtualMeshManager`, and the MC2-style baseline solve loop are now present. Baseline data generation remains deferred to the VirtualMesh/PreBuild port.
+- Extended `MathUtility` for AngleConstraint and later constraints: `AxisAngle(...)`, vector `FromToRotation(...)`, and vector `ClampAngle(...)`.
+- Added the first bottom-layer collider port: `ColliderManager` now owns MC2-style collider arrays, collider flags/types, `ColliderData`, `WorkData`, collider range registration/removal, and array accessors. `ColliderCollisionConstraintParams`, `ClothManager::ColliderCollision()`, and the `ColliderCollisionConstraint` ownership/work-buffer shell are present; Point/Edge collider solve jobs and collider shape detection remain to be ported.
 
 Latest verification:
 
@@ -238,4 +241,4 @@ Wind / VirtualMesh test boundary:
 - Do not route current smoke coverage through `WindManager`, `TeamWindData`, or full `VirtualMesh` behavior. These modules should stay as low-level construction/ownership targets until the main XPBD solver chain is stable.
 - For now, wind and virtual mesh work should be limited to compile-safe data structures and manager skeletons. Avoid behavior assertions that depend on wind zone scanning, moving wind, proxy generation, mapping, reduction, or skinning.
 
-Next priority: continue the bottom-up XPBD core port. `TetherConstraint` and runtime-side `TriangleBendingConstraint` source structures are now present; next targets are the remaining runtime constraint bodies and the data builders needed to feed these constraints.
+Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtime-side `TriangleBendingConstraint`, runtime-side `AngleConstraint`, and the collider manager/constraint ownership layer are now present; next targets are Point/Edge collider collision solve bodies and the data builders needed to feed these constraints.

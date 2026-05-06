@@ -41,6 +41,9 @@ void VirtualMeshManager::Dispose()
     edge_team_ids_.Dispose();
     edges_.Dispose();
     edge_flags_.Dispose();
+    base_line_start_data_indices_.Dispose();
+    base_line_data_counts_.Dispose();
+    base_line_data_.Dispose();
     local_positions_.Dispose();
     local_normals_.Dispose();
     local_tangents_.Dispose();
@@ -196,6 +199,18 @@ void VirtualMeshManager::RegisterProxyMesh(
         edge_flags_.AddRange(proxy_mesh->edge_flags);
     }
 
+    if (proxy_mesh->base_line_start_data_indices.Count() > 0
+        && proxy_mesh->base_line_data_counts.Count()
+            == proxy_mesh->base_line_start_data_indices.Count()) {
+        team_data.baseline_chunk =
+            base_line_start_data_indices_.AddRange(proxy_mesh->base_line_start_data_indices);
+        base_line_data_counts_.AddRange(proxy_mesh->base_line_data_counts);
+    }
+
+    if (proxy_mesh->base_line_data.Count() > 0) {
+        team_data.baseline_data_chunk = base_line_data_.AddRange(proxy_mesh->base_line_data);
+    }
+
     if (proxy_mesh->VertexCount() > 0) {
         team_data.proxy_mesh_chunk = local_positions_.AddRange(proxy_mesh->local_positions);
         local_normals_.AddRange(proxy_mesh->local_normals);
@@ -248,6 +263,26 @@ const ExNativeArray<float>& VirtualMeshManager::VertexDepths() const
 const ExNativeArray<int>& VirtualMeshManager::VertexRootIndices() const
 {
     return vertex_root_indices_;
+}
+
+const ExNativeArray<int>& VirtualMeshManager::VertexParentIndices() const
+{
+    return vertex_parent_indices_;
+}
+
+const ExNativeArray<std::uint16_t>& VirtualMeshManager::BaseLineStartDataIndices() const
+{
+    return base_line_start_data_indices_;
+}
+
+const ExNativeArray<std::uint16_t>& VirtualMeshManager::BaseLineDataCounts() const
+{
+    return base_line_data_counts_;
+}
+
+const ExNativeArray<std::uint16_t>& VirtualMeshManager::BaseLineData() const
+{
+    return base_line_data_;
 }
 
 const ExNativeArray<float3>& VirtualMeshManager::Positions() const

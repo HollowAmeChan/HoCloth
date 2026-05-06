@@ -27,6 +27,9 @@ void VirtualMesh::Dispose()
     vertex_parent_indices.Dispose();
     vertex_local_positions.Dispose();
     vertex_local_rotations.Dispose();
+    base_line_start_data_indices.Dispose();
+    base_line_data_counts.Dispose();
+    base_line_data.Dispose();
     normal_adjustment_rotations.Dispose();
     vertex_to_transform_rotations.Dispose();
     merge_chunk.Clear();
