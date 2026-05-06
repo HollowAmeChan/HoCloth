@@ -80,6 +80,11 @@ public:
     ExSimpleNativeArray<quaternion> vertex_to_transform_rotations;
 
     void Dispose();
+    void CreateProxyFixedListAndAABB();
+    void CreateVertexBindPose();
+    void CreateVertexToTransformRotations();
+    void BuildMeshBaseLinesFromEdges();
+    void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();
 
     [[nodiscard]] bool IsValid() const;

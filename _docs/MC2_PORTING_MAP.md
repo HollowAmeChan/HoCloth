@@ -27,7 +27,7 @@ Status labels:
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
 | Utility/Time | partial | `_native/include/hocloth/utility/time/`, `_native/include/hocloth/manager/simulation/time_manager.hpp` |
 | Manager | partial | `_native/include/hocloth/manager/` |
-| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are collider components, Angle baseline generation, SelfCollision full builder parity |
+| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are collider components, Angle full PreBuild/proxy feed, SelfCollision full builder parity |
 | Cloth/Collider | planned | `_native/include/hocloth/cloth/collider/` |
 | Cloth/Wind | partial | `_native/include/hocloth/cloth/wind/`, `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
 | VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/` |
@@ -73,7 +73,7 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*`; runtime solver/work buffers are ported, parent-driven native baseline feed is present, full Mesh/Bone baseline generation remains under VirtualMeshProxy/PreBuild |
+| `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*`; runtime solver/work buffers are ported, native baseline arrays plus Mesh/Bone parent-generation feed are present, full PreBuild/proxy conversion remains to close |
 | `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver and collider work-data path are ported, collider component authoring/registration remains separate |
 | `Cloth/Constraints/DistanceConstraint.cs` | complete | `cloth/constraints/distance_constraint.*`; params, data owner, `CreateData(...)`, register/exit, vertical/horizontal/shear runtime solver are present |
 | `Cloth/Constraints/InertiaConstraint.cs` | complete | `cloth/constraints/inertia_constraint.*`, `manager/team/team_manager.*`, `manager/simulation/simulation_manager.*`; CenterData/fixed list/CreateData plus per-frame inertia lifecycle are ported |
@@ -189,7 +189,7 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `VirtualMesh/VertexAttribute.cs` | complete | `virtual_mesh/vertex_attribute.hpp` |
-| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, center fixed list, baseline arrays, and parent-driven baseline/root/depth/local-pose builder are present |
+| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, fixed list/AABB, bind pose, transform restore rotations, baseline arrays, and parent-driven baseline/root/depth/local-pose builder are present |
 | `VirtualMesh/VirtualMeshBoneWeight.cs` | complete | `virtual_mesh/virtual_mesh_bone_weight.*` |
 | `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*` |
 | `VirtualMesh/VirtualMeshPrimitive.cs` | complete | `virtual_mesh/virtual_mesh_primitive.hpp` |
@@ -198,7 +198,7 @@ Status labels:
 | `VirtualMesh/Function/VirtualMeshInputOutput.cs` | planned | `virtual_mesh/function/virtual_mesh_input_output.*` |
 | `VirtualMesh/Function/VirtualMeshMapping.cs` | planned | `virtual_mesh/function/virtual_mesh_mapping.*` |
 | `VirtualMesh/Function/VirtualMeshOptimization.cs` | planned | `virtual_mesh/function/virtual_mesh_optimization.*` |
-| `VirtualMesh/Function/VirtualMeshProxy.cs` | planned | `virtual_mesh/function/virtual_mesh_proxy.*` |
+| `VirtualMesh/Function/VirtualMeshProxy.cs` | partial | `virtual_mesh/virtual_mesh.*`; fixed-list/AABB, vertex bind pose, vertex-to-transform rotation, Mesh edge baseline parent generation, and Bone transform baseline generation are present; full proxy conversion/normal tangent/edge flag/reduction/custom skinning remain |
 | `VirtualMesh/Function/VirtualMeshReduction.cs` | planned | `virtual_mesh/function/virtual_mesh_reduction.*` |
 | `VirtualMesh/Function/VirtualMeshSerialization.cs` | planned | `virtual_mesh/function/virtual_mesh_serialization.*` |
 | `VirtualMesh/Function/VirtualMeshWork.cs` | planned | `virtual_mesh/function/virtual_mesh_work.*` |
