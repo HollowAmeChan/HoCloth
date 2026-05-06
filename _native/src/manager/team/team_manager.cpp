@@ -2,10 +2,13 @@
 
 #include "hocloth/manager/transform/transform_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/manager/simulation/wind_manager.hpp"
+#include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -294,15 +297,18 @@ Result TeamManager::Initialize()
     mapping_data_array_.Dispose();
     parameter_array_.Dispose();
     center_data_array_.Dispose();
+    team_wind_array_.Dispose();
     team_data_array_ = ExSimpleNativeArray<TeamData>(1, false);
     team_mapping_index_array_ = ExSimpleNativeArray<TeamMappingList>(1, false);
     mapping_data_array_ = ExNativeArray<MappingData>(32);
     parameter_array_ = ExSimpleNativeArray<ClothParameters>(1, false);
     center_data_array_ = ExSimpleNativeArray<InertiaCenterData>(1, false);
+    team_wind_array_ = ExSimpleNativeArray<TeamWindData>(1, false);
     team_data_array_[0] = MakeEmptyTeamData();
     team_mapping_index_array_[0] = TeamMappingList{};
     parameter_array_[0] = ClothParameters{};
     center_data_array_[0] = InertiaCenterData{};
+    team_wind_array_[0] = TeamWindData{};
     free_team_ids_.clear();
     return Result::Ok();
 }
@@ -314,6 +320,7 @@ void TeamManager::Dispose()
     mapping_data_array_.Dispose();
     parameter_array_.Dispose();
     center_data_array_.Dispose();
+    team_wind_array_.Dispose();
     free_team_ids_.clear();
     initialized_ = false;
 }
@@ -331,6 +338,7 @@ ManagerStatus TeamManager::Status() const
         initialized_,
         static_cast<std::uint32_t>(valid_count),
         "center_data=" + std::to_string(center_data_array_.Count())
+            + " wind_data=" + std::to_string(team_wind_array_.Count())
             + " mapping=" + std::to_string(MappingCount()),
     };
 }
@@ -453,6 +461,22 @@ int TeamManager::CenterDataCount() const
     return center_data_array_.Count();
 }
 
+const TeamWindData& TeamManager::GetTeamWindData(int team_id) const
+{
+    if (!IsValidTeam(team_id)) {
+        throw std::runtime_error("Invalid MC2 team id.");
+    }
+    return team_wind_array_[team_id];
+}
+
+TeamWindData& TeamManager::GetTeamWindData(int team_id)
+{
+    if (!IsValidTeam(team_id)) {
+        throw std::runtime_error("Invalid MC2 team id.");
+    }
+    return team_wind_array_[team_id];
+}
+
 int TeamManager::MappingCount() const
 {
     return mapping_data_array_.Count();
@@ -507,6 +531,7 @@ int TeamManager::CreateTeam(const ClothParameters& parameters, bool enabled, boo
         team_mapping_index_array_.Add(TeamMappingList{});
         parameter_array_.Add(ClothParameters{});
         center_data_array_.Add(InertiaCenterData{});
+        team_wind_array_.Add(TeamWindData{});
     }
 
     TeamData data = MakeEmptyTeamData();
@@ -534,6 +559,7 @@ int TeamManager::CreateTeam(const ClothParameters& parameters, bool enabled, boo
     team_mapping_index_array_[team_id] = TeamMappingList{};
     parameter_array_[team_id] = parameters;
     center_data_array_[team_id] = InertiaCenterData{};
+    team_wind_array_[team_id] = TeamWindData{};
     return team_id;
 }
 
@@ -714,6 +740,7 @@ void TeamManager::ReleaseTeam(int team_id)
     team_mapping_index_array_[team_id] = TeamMappingList{};
     parameter_array_[team_id] = ClothParameters{};
     center_data_array_[team_id] = InertiaCenterData{};
+    team_wind_array_[team_id] = TeamWindData{};
     free_team_ids_.push_back(team_id);
 }
 
@@ -723,12 +750,14 @@ void TeamManager::ClearTeams()
         team_data_array_.SetCount(1);
         parameter_array_.SetCount(1);
         center_data_array_.SetCount(1);
+        team_wind_array_.SetCount(1);
         team_mapping_index_array_.SetCount(1);
         mapping_data_array_.Clear();
         team_data_array_[0] = MakeEmptyTeamData();
         team_mapping_index_array_[0] = TeamMappingList{};
         parameter_array_[0] = ClothParameters{};
         center_data_array_[0] = InertiaCenterData{};
+        team_wind_array_[0] = TeamWindData{};
     }
     free_team_ids_.clear();
 }
@@ -1088,6 +1117,7 @@ void TeamManager::UpdateCenterAndInertia(
     float simulation_delta_time,
     const TransformManager& transform_manager,
     const VirtualMeshManager& virtual_mesh_manager,
+    const WindManager& wind_manager,
     const ExNativeArray<std::uint16_t>& fixed_array
 )
 {
@@ -1523,8 +1553,115 @@ void TeamManager::UpdateCenterAndInertia(
             team_data.blend_weight = team_data.velocity_weight;
         }
 
+        UpdateTeamWind(team_id, parameters, center_world_position, wind_manager);
+
         (void)old_component_scale;
     }
+}
+
+void TeamManager::UpdateTeamWind(
+    int team_id,
+    const ClothParameters& parameters,
+    const float3& center_world_position,
+    const WindManager& wind_manager
+)
+{
+    if (!IsValidTeam(team_id)) {
+        return;
+    }
+
+    const TeamWindData old_wind_data = team_wind_array_[team_id];
+    TeamWindData new_wind_data;
+
+    if (parameters.wind.IsValid()) {
+        float min_volume = std::numeric_limits<float>::max();
+        int addition_count = 0;
+        int latest_wind_id = -1;
+        const auto& wind_data_array = wind_manager.WindDataArray();
+
+        for (int wind_id = 0; wind_id < wind_data_array.Length(); ++wind_id) {
+            const WindManager::WindData& wind_data = wind_data_array[wind_id];
+            if (!wind_data.IsValid() || !wind_data.IsEnabled()) {
+                continue;
+            }
+
+            const bool is_addition = wind_data.IsAddition();
+            if (is_addition && addition_count >= 3) {
+                continue;
+            }
+
+            const float3 local_position =
+                TransformPoint(center_world_position, wind_data.world_to_local_matrix);
+            const float local_length = Length(local_position);
+
+            switch (wind_data.mode) {
+            case WindZoneMode::BoxDirection: {
+                const float3 local_size{
+                    std::abs(local_position.x) * 2.0f,
+                    std::abs(local_position.y) * 2.0f,
+                    std::abs(local_position.z) * 2.0f,
+                };
+                if (local_size.x > wind_data.size.x
+                    || local_size.y > wind_data.size.y
+                    || local_size.z > wind_data.size.z) {
+                    continue;
+                }
+                break;
+            }
+            case WindZoneMode::SphereDirection:
+            case WindZoneMode::SphereRadial:
+                if (local_length > wind_data.size.x) {
+                    continue;
+                }
+                break;
+            case WindZoneMode::GlobalDirection:
+                break;
+            }
+
+            if (!is_addition && wind_data.zone_volume > min_volume) {
+                continue;
+            }
+
+            float3 main_direction = wind_data.world_wind_direction;
+            if (wind_data.mode == WindZoneMode::SphereRadial) {
+                if (local_length <= 1.0e-6f) {
+                    continue;
+                }
+                main_direction =
+                    Normalize(Subtract(center_world_position, wind_data.world_position));
+            }
+
+            float wind_main = wind_data.main;
+            if (wind_data.mode == WindZoneMode::SphereRadial) {
+                if (local_length <= 1.0e-6f || wind_data.size.x <= 1.0e-6f) {
+                    continue;
+                }
+                const float depth = Clamp01(local_length / wind_data.size.x);
+                const float attenuation = MC2EvaluateCurveClamp01(wind_data.attenuation, depth);
+                wind_main *= attenuation;
+            }
+
+            TeamWindInfo wind_info;
+            wind_info.wind_id = wind_id;
+            wind_info.time = -define::system::WindMaxTime;
+            wind_info.main = wind_main;
+            wind_info.direction = main_direction;
+
+            if (is_addition) {
+                if (new_wind_data.AddOrReplaceWindZone(wind_info, old_wind_data)) {
+                    ++addition_count;
+                }
+            } else {
+                new_wind_data.RemoveWindZone(latest_wind_id);
+                new_wind_data.AddOrReplaceWindZone(wind_info, old_wind_data);
+                min_volume = wind_data.zone_volume;
+                latest_wind_id = wind_id;
+            }
+        }
+    }
+
+    new_wind_data.moving_wind = old_wind_data.moving_wind;
+    team_wind_array_[team_id] = new_wind_data;
 }
 
 void TeamManager::PostTeamUpdate()

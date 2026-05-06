@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hocloth/cloth/cloth_parameters.hpp"
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
@@ -11,6 +12,7 @@ namespace hocloth::mc2 {
 
 class SimulationManager;
 class VirtualMeshManager;
+class VirtualMesh;
 
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/Constraints/DistanceConstraint.cs
 class DistanceConstraint {
@@ -32,6 +34,10 @@ public:
     [[nodiscard]] int DataCount() const;
     [[nodiscard]] int ConnectionCount() const;
 
+    [[nodiscard]] static ConstraintData CreateData(
+        const VirtualMesh& proxy_mesh,
+        const ClothParameters& parameters
+    );
     void Register(int team_id, const ConstraintData& data, TeamManager& team_manager);
     void Exit(int team_id, TeamManager& team_manager);
     void Solve(

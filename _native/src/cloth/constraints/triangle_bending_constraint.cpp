@@ -4,10 +4,13 @@
 #include "hocloth/manager/simulation/simulation_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
 #include "hocloth/utility/data/data_utility.hpp"
+#include "hocloth/utility/data/multi_data_builder.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
 #include <cmath>
 #include <cstddef>
+#include <unordered_set>
 
 namespace hocloth::mc2 {
 
@@ -29,6 +32,136 @@ int TriangleBendingConstraint::DataCount() const
 int TriangleBendingConstraint::WriteBufferCount() const
 {
     return write_buffer_.Count();
+}
+
+TriangleBendingConstraint::ConstraintData TriangleBendingConstraint::CreateData(
+    const VirtualMesh& proxy_mesh,
+    const ClothParameters& parameters
+)
+{
+    // Ported from Magica Cloth 2: Scripts/Core/Cloth/Constraints/TriangleBendingConstraint.cs
+    (void)parameters;
+    ConstraintData constraint_data;
+    const int vertex_count = proxy_mesh.VertexCount();
+    const int triangle_count = proxy_mesh.TriangleCount();
+    if (vertex_count <= 0
+        || triangle_count <= 0
+        || proxy_mesh.attributes.Count() < vertex_count
+        || proxy_mesh.local_positions.Count() < vertex_count) {
+        return constraint_data;
+    }
+
+    data::MultiDataBuilder<std::uint8_t> write_builder(vertex_count, vertex_count * 2);
+    std::unordered_set<std::uint64_t> volume_set;
+
+    for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
+        const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+        const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
+        for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
+            const int3 tri1 = proxy_mesh.triangles[triangle_index1];
+            const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
+            int common[2] = {-1, -1};
+            int common_count = 0;
+            for (int value0 : tri0_values) {
+                for (int value1 : tri1_values) {
+                    if (value0 == value1 && common_count < 2) {
+                        common[common_count++] = value0;
+                    }
+                }
+            }
+            if (common_count != 2) {
+                continue;
+            }
+
+            const int2 edge{common[0], common[1]};
+            const int2 diagonal = GetRestTriangleVertex(tri0, tri1, edge);
+            const int4 vertices{diagonal.x, diagonal.y, edge.x, edge.y};
+            bool valid = true;
+            bool all_fixed = true;
+            for (int index = 0; index < 4; ++index) {
+                const int vertex = vertices[index];
+                if (vertex < 0 || vertex >= vertex_count) {
+                    valid = false;
+                    break;
+                }
+                const VertexAttribute attr = proxy_mesh.attributes[vertex];
+                if (attr.IsInvalid()) {
+                    valid = false;
+                    break;
+                }
+                all_fixed = all_fixed && attr.IsDontMove();
+            }
+            if (!valid || all_fixed) {
+                continue;
+            }
+
+            const float3 pos0 = proxy_mesh.local_positions[vertices.x];
+            const float3 pos1 = proxy_mesh.local_positions[vertices.y];
+            const float3 pos2 = proxy_mesh.local_positions[vertices.z];
+            const float3 pos3 = proxy_mesh.local_positions[vertices.w];
+            float3 normal1 = Normalize(Cross(Subtract(pos2, pos0), Subtract(pos3, pos0)));
+            float3 normal2 = Normalize(Cross(Subtract(pos3, pos1), Subtract(pos2, pos1)));
+            float rest_angle = std::acos(Clamp1(Dot(normal1, normal2)));
+            const float direction = Dot(Cross(normal1, normal2), Subtract(pos3, pos2));
+            const std::int8_t sign_flag = direction < 0.0f ? static_cast<std::int8_t>(-1) : 1;
+            constexpr float radians_to_degrees = 57.29577951308232f;
+            const float degree_angle = Abs(rest_angle * radians_to_degrees);
+            const std::uint64_t pair = data::Pack64(vertices);
+
+            if (degree_angle < define::system::TriangleBendingMaxAngle) {
+                constraint_data.triangle_pair_array.push_back(pair);
+                constraint_data.rest_angle_or_volume_array.push_back(rest_angle);
+                constraint_data.sign_or_volume_array.push_back(sign_flag);
+                constraint_data.write_data_array.push_back(data::Pack32(
+                    write_builder.CountValuesForKey(vertices.x),
+                    write_builder.CountValuesForKey(vertices.y),
+                    write_builder.CountValuesForKey(vertices.z),
+                    write_builder.CountValuesForKey(vertices.w)
+                ));
+                write_builder.Add(vertices.x, 0);
+                write_builder.Add(vertices.y, 0);
+                write_builder.Add(vertices.z, 0);
+                write_builder.Add(vertices.w, 0);
+            }
+
+            if (degree_angle >= define::system::VolumeMinAngle
+                && degree_angle <= define::system::MaxAngleLimit) {
+                const int4 sorted_vertices = data::PackInt4(vertices);
+                const std::uint64_t sorted_key = data::Pack64(sorted_vertices);
+                if (volume_set.find(sorted_key) != volume_set.end()) {
+                    continue;
+                }
+                volume_set.insert(sorted_key);
+
+                const float3 world0 = TransformPoint(pos0, proxy_mesh.init_local_to_world);
+                const float3 world1 = TransformPoint(pos1, proxy_mesh.init_local_to_world);
+                const float3 world2 = TransformPoint(pos2, proxy_mesh.init_local_to_world);
+                const float3 world3 = TransformPoint(pos3, proxy_mesh.init_local_to_world);
+                float volume_rest = (1.0f / 6.0f)
+                    * Dot(Cross(Subtract(world1, world0), Subtract(world2, world0)), Subtract(world3, world0));
+                volume_rest *= VolumeScale;
+
+                constraint_data.triangle_pair_array.push_back(pair);
+                constraint_data.rest_angle_or_volume_array.push_back(volume_rest);
+                constraint_data.sign_or_volume_array.push_back(VolumeSign);
+                constraint_data.write_data_array.push_back(data::Pack32(
+                    write_builder.CountValuesForKey(vertices.x),
+                    write_builder.CountValuesForKey(vertices.y),
+                    write_builder.CountValuesForKey(vertices.z),
+                    write_builder.CountValuesForKey(vertices.w)
+                ));
+                write_builder.Add(vertices.x, 0);
+                write_builder.Add(vertices.y, 0);
+                write_builder.Add(vertices.z, 0);
+                write_builder.Add(vertices.w, 0);
+            }
+        }
+    }
+
+    constraint_data.write_buffer_count = write_builder.Count();
+    const std::vector<std::uint32_t> write_indices32 = write_builder.ToIndexArray();
+    constraint_data.write_index_array.assign(write_indices32.begin(), write_indices32.end());
+    return constraint_data;
 }
 
 void TriangleBendingConstraint::Register(

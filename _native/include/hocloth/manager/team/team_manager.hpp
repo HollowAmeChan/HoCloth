@@ -4,6 +4,7 @@
 #include "hocloth/cloth/constraints/inertia_constraint_data.hpp"
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/manager/i_manager.hpp"
+#include "hocloth/manager/team/team_wind_data.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/utility/native_collection/bit_flag.hpp"
 #include "hocloth/utility/native_collection/data_chunk.hpp"
@@ -20,6 +21,7 @@ namespace hocloth::mc2 {
 
 class TransformManager;
 class VirtualMeshManager;
+class WindManager;
 
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Team/TeamManager.cs
 class TeamManager final : public IManager {
@@ -218,6 +220,8 @@ public:
     [[nodiscard]] InertiaCenterData& GetCenterData(int team_id);
     void SetCenterData(int team_id, const InertiaCenterData& center_data);
     [[nodiscard]] int CenterDataCount() const;
+    [[nodiscard]] const TeamWindData& GetTeamWindData(int team_id) const;
+    [[nodiscard]] TeamWindData& GetTeamWindData(int team_id);
     [[nodiscard]] int MappingCount() const;
     [[nodiscard]] const ExNativeArray<MappingData>& MappingDataArray() const;
     [[nodiscard]] ExNativeArray<MappingData>& MappingDataArray();
@@ -262,6 +266,7 @@ public:
         float simulation_delta_time,
         const TransformManager& transform_manager,
         const VirtualMeshManager& virtual_mesh_manager,
+        const WindManager& wind_manager,
         const ExNativeArray<std::uint16_t>& fixed_array
     );
     void PostTeamUpdate();
@@ -280,8 +285,16 @@ private:
     ExNativeArray<MappingData> mapping_data_array_;
     ExSimpleNativeArray<ClothParameters> parameter_array_;
     ExSimpleNativeArray<InertiaCenterData> center_data_array_;
+    ExSimpleNativeArray<TeamWindData> team_wind_array_;
     std::vector<int> free_team_ids_;
     int edge_collider_collision_count_ = 0;
+
+    void UpdateTeamWind(
+        int team_id,
+        const ClothParameters& parameters,
+        const float3& center_world_position,
+        const WindManager& wind_manager
+    );
 };
 
 }  // namespace hocloth::mc2

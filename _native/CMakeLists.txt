@@ -61,6 +61,7 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/utility/data/data_utility.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_extensions.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_utility.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/utility/misc/develop.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/data_chunk.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/ex_processing_list.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/utility/result_code/exception.cpp"

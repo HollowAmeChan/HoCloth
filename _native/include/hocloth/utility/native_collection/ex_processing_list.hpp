@@ -36,6 +36,16 @@ public:
         counter_ = 0;
     }
 
+    [[nodiscard]] int* GetJobSchedulePtr()
+    {
+        return &counter_;
+    }
+
+    [[nodiscard]] const int* GetJobSchedulePtr() const
+    {
+        return &counter_;
+    }
+
     int Add(const T& value)
     {
         if (counter_ >= static_cast<int>(buffer_.size())) {
@@ -50,12 +60,27 @@ public:
         return counter_;
     }
 
+    [[nodiscard]] int& Counter()
+    {
+        return counter_;
+    }
+
+    [[nodiscard]] const int& Counter() const
+    {
+        return counter_;
+    }
+
     [[nodiscard]] int Capacity() const
     {
         return static_cast<int>(buffer_.size());
     }
 
     [[nodiscard]] const std::vector<T>& Buffer() const
+    {
+        return buffer_;
+    }
+
+    [[nodiscard]] std::vector<T>& Buffer()
     {
         return buffer_;
     }

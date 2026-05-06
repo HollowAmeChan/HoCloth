@@ -69,8 +69,10 @@ public:
     ExSimpleNativeArray<float> vertex_depths;
     ExSimpleNativeArray<int> vertex_root_indices;
     ExSimpleNativeArray<int> vertex_parent_indices;
+    ExSimpleNativeArray<std::uint16_t> center_fixed_list;
     ExSimpleNativeArray<float3> vertex_local_positions;
     ExSimpleNativeArray<quaternion> vertex_local_rotations;
+    ExSimpleNativeArray<BitFlag8> base_line_flags;
     ExSimpleNativeArray<std::uint16_t> base_line_start_data_indices;
     ExSimpleNativeArray<std::uint16_t> base_line_data_counts;
     ExSimpleNativeArray<std::uint16_t> base_line_data;
@@ -78,6 +80,7 @@ public:
     ExSimpleNativeArray<quaternion> vertex_to_transform_rotations;
 
     void Dispose();
+    void BuildBaseLinesFromParents();
 
     [[nodiscard]] bool IsValid() const;
     [[nodiscard]] int VertexCount() const;
@@ -85,6 +88,8 @@ public:
     [[nodiscard]] int LineCount() const;
     [[nodiscard]] int SkinBoneCount() const;
     [[nodiscard]] int TransformCount() const;
+    [[nodiscard]] int CenterFixedPointCount() const;
+    [[nodiscard]] int BaseLineCount() const;
     [[nodiscard]] bool IsProxy() const;
     [[nodiscard]] bool IsMapping() const;
 };

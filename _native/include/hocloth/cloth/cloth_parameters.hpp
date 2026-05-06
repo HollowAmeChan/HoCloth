@@ -2,6 +2,7 @@
 
 #include "hocloth/cloth/cloth_force_mode.hpp"
 #include "hocloth/cloth/cloth_normal_axis.hpp"
+#include "hocloth/cloth/wind/wind_params.hpp"
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 
@@ -145,6 +146,7 @@ struct ClothParameters {
     float4x4 radius_curve_data = ConstantCurve(0.02f);
     float4x4 damping_curve_data = ConstantCurve(0.0f);
     ClothNormalAxis normal_axis = ClothNormalAxis::Up;
+    WindParams wind;
     InertiaConstraintParams inertia_constraint;
     SpringConstraintParams spring_constraint;
     MotionConstraintParams motion_constraint;

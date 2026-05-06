@@ -175,6 +175,13 @@ Blender runtime session 可以包住这些 manager，但不能替代这些 manag
 
 BoneSpring 只是其中一个使用场景。后续 ClothBone 和 MeshCloth 需要的是同一套 constraint pipeline，而不是三套互不相干的求解器。
 
+当前约束层闭合标准分两层判断：
+
+- `solver/data-owner complete`：约束参数、运行时 buffer、注册/释放、step list 消费、XPBD 投影路径已经落到 C++。
+- `builder complete`：MC2 的 `CreateData(...)` 或等价数据生成入口已经能从 native `VirtualMesh` / manager 数据生成约束数据。
+
+截至当前，`MotionConstraint`、`TetherConstraint`、`SpringConstraint`、`DistanceConstraint`、`InertiaConstraint`、`TriangleBendingConstraint` 已进入 file/API level complete。`AngleConstraint` 的 runtime solver 已完成，但 baseline 生成归 `VirtualMesh / PreBuild`；`ColliderCollisionConstraint` 的 point/edge runtime 已完成，但 collider component authoring/registration 未闭合；`SelfCollisionConstraint` 已有 primitive、broad phase、XPBD contact、intersect/tangle 路径，但完整 builder parity 还要继续核对。
+
 ### 5.4 VirtualMesh / PreBuild 层
 
 这是从 BoneSpring 走向 ClothBone / MeshCloth 的核心：
@@ -253,8 +260,8 @@ API 层不应暴露内部 manager 指针，不应让 Python 逐项操作 constra
 
 当前推进边界：
 
-- `MotionConstraint` 的 max-distance / backstop 主路径已经落地并通过 native smoke；下一步优先移植 `TetherConstraint` 与 `TriangleBendingConstraint`。
-- `Wind` 与完整 `VirtualMesh` 行为暂不进入 smoke 行为测试，只保留底层构建、数组所有权和编译安全检查，避免在 XPBD 主链稳定前扩大调试面。
+- Constraints 进入大模块 closure pass：`DistanceConstraint::CreateData(...)`、`TriangleBendingConstraint::CreateData(...)`、`InertiaConstraint::CreateData(...)` 已迁入 native，后续优先补 `AngleConstraint` baseline 生成、Collider component 注册、SelfCollision builder parity。
+- `Wind` 与 `VirtualMesh` 可以开始补底层行为，但 smoke 仍保持克制；避免在完整 proxy/mapping/reduction/skinning 没闭合前做深行为断言。
 
 ### 阶段 E：ClothBone
 

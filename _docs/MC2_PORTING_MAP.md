@@ -27,9 +27,9 @@ Status labels:
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
 | Utility/Time | partial | `_native/include/hocloth/utility/time/`, `_native/include/hocloth/manager/simulation/time_manager.hpp` |
 | Manager | partial | `_native/include/hocloth/manager/` |
-| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/` |
+| Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/`; solver/data-owner layer is mostly ported, remaining gaps are collider components, Angle baseline generation, SelfCollision full builder parity |
 | Cloth/Collider | planned | `_native/include/hocloth/cloth/collider/` |
-| Cloth/Wind | skeleton | `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
+| Cloth/Wind | partial | `_native/include/hocloth/cloth/wind/`, `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
 | VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/` |
 | Reduction | planned | `_native/include/hocloth/reduction/` |
 | PreBuild | planned | `_native/include/hocloth/prebuild/` |
@@ -42,7 +42,7 @@ Status labels:
 | `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
 | `Cloth/ClothForceMode.cs` | complete | `cloth/cloth_force_mode.hpp` |
 | `Cloth/ClothNormalAxis.cs` | complete | `cloth/cloth_normal_axis.hpp` |
-| `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp` |
+| `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp`; native wind parameter ownership is present |
 | `Cloth/ClothProcess.cs` | planned | `cloth/cloth_process.*` |
 | `Cloth/ClothProcessData.cs` | planned | `cloth/cloth_process_data.*` |
 | `Cloth/ClothProcessGeneration.cs` | planned | `cloth/cloth_process_generation.*` |
@@ -73,23 +73,23 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*` |
-| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*` |
-| `Cloth/Constraints/DistanceConstraint.cs` | partial | `cloth/constraints/distance_constraint.*` |
-| `Cloth/Constraints/InertiaConstraint.cs` | partial | `cloth/constraints/inertia_constraint.*` |
-| `Cloth/Constraints/MotionConstraint.cs` | partial | `cloth/constraints/motion_constraint.*` |
-| `Cloth/Constraints/SelfCollisionConstraint.cs` | partial | `cloth/constraints/self_collision_constraint.*` |
-| `Cloth/Constraints/SpringConstraint.cs` | partial | `cloth/cloth_parameters.hpp`, fixed-particle branch in `manager/simulation/simulation_manager.*` |
-| `Cloth/Constraints/TetherConstraint.cs` | partial | `cloth/constraints/tether_constraint.*` |
-| `Cloth/Constraints/TriangleBendingConstraint.cs` | partial | `cloth/constraints/triangle_bending_constraint.*` |
+| `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*`; runtime solver/work buffers are ported, parent-driven native baseline feed is present, full Mesh/Bone baseline generation remains under VirtualMeshProxy/PreBuild |
+| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver and collider work-data path are ported, collider component authoring/registration remains separate |
+| `Cloth/Constraints/DistanceConstraint.cs` | complete | `cloth/constraints/distance_constraint.*`; params, data owner, `CreateData(...)`, register/exit, vertical/horizontal/shear runtime solver are present |
+| `Cloth/Constraints/InertiaConstraint.cs` | complete | `cloth/constraints/inertia_constraint.*`, `manager/team/team_manager.*`, `manager/simulation/simulation_manager.*`; CenterData/fixed list/CreateData plus per-frame inertia lifecycle are ported |
+| `Cloth/Constraints/MotionConstraint.cs` | complete | `cloth/constraints/motion_constraint.*`; max-distance/backstop/stiffness runtime path is ported, MC2's disabled friction block remains intentionally omitted |
+| `Cloth/Constraints/SelfCollisionConstraint.cs` | partial | `cloth/constraints/self_collision_constraint.*`; primitive ownership, broad phase, XPBD contacts, intersect/tangle paths are present, full create/update-list parity remains to audit |
+| `Cloth/Constraints/SpringConstraint.cs` | complete | `cloth/cloth_parameters.hpp`, fixed-particle branch in `manager/simulation/simulation_manager.*`; MC2 class has no active solver beyond params, BoneSpring runtime branch is ported |
+| `Cloth/Constraints/TetherConstraint.cs` | complete | `cloth/constraints/tether_constraint.*`; params and runtime root-distance compression/stretch solver are ported |
+| `Cloth/Constraints/TriangleBendingConstraint.cs` | complete | `cloth/constraints/triangle_bending_constraint.*`; params, data owner, `CreateData(...)`, register/exit, dihedral/volume solver, and aggregate writeback are present |
 
 ## Cloth/Wind
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/Wind/MagicaWindZone.cs` | planned | `cloth/wind/magica_wind_zone.*` |
-| `Cloth/Wind/WindParams.cs` | planned | `cloth/wind/wind_params.*` |
-| `Cloth/Wind/WindSettings.cs` | planned | `cloth/wind/wind_settings.*` |
+| `Cloth/Wind/MagicaWindZone.cs` | partial | `cloth/wind/magica_wind_zone.hpp`; native data-form zone and direction helpers are present, Unity component lifecycle remains Blender boundary |
+| `Cloth/Wind/WindParams.cs` | complete | `cloth/wind/wind_params.hpp` |
+| `Cloth/Wind/WindSettings.cs` | complete | `cloth/wind/wind_settings.hpp` |
 
 ## Define / Interface
 
@@ -119,14 +119,14 @@ Status labels:
 | `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*` |
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
 | `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`, simulation delta/max-step/power calculation is present |
-| `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
-| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership, timing/update-count lifecycle, sync lists, state/control APIs, post-step flag cleanup |
-| `Manager/Team/TeamWindData.cs` | planned | `manager/team/team_wind_data.*` |
+| `Manager/Simulation/WindManager.cs` | partial | `manager/simulation/wind_manager.*`; wind data ownership, registration/removal/enable, and native zone refresh are present |
+| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center/wind ownership, timing/update-count lifecycle, sync lists, state/control APIs, post-step flag cleanup |
+| `Manager/Team/TeamWindData.cs` | complete | `manager/team/team_wind_data.hpp` |
 | `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*`; inverse rotation/root/dirty arrays are present, Unity transform-access restore remains a boundary |
 | `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
 | `Manager/TransformManager/TransformManager.cs` | partial | `manager/transform/transform_manager.*`; backend transform record/update/root/dirty ownership is present |
 | `Manager/TransformManager/TransformRecord.cs` | complete | `manager/transform/transform_record.*`; Unity `Transform` object access is represented by backend record input |
-| `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*` |
+| `Manager/VirtualMesh/VirtualMeshManager.cs` | partial | `manager/virtual_mesh/virtual_mesh_manager.*`; proxy/mapping/common buffers plus baseline flags/team ids/start/count/data ownership are present |
 
 ## PreBuild / Reduction / Settings
 
@@ -156,11 +156,11 @@ Status labels:
 | `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
 | `Utility/Math/AABB.cs` | complete | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
 | `Utility/Math/IntAABB.cs` | complete | `utility/math/int_aabb.hpp` |
-| `Utility/Math/MathExtensions.cs` | partial | `utility/math/math_extensions.*` |
+| `Utility/Math/MathExtensions.cs` | complete | `utility/math/math_extensions.*` |
 | `Utility/Math/MathUtility.cs` | partial | `utility/math/math_utility.*` |
 | `Utility/Math/MinimumData.cs` | complete | `utility/math/minimum_data.hpp` |
 | `Utility/Mesh/MeshUtility.cs` | planned | `utility/mesh/mesh_utility.*` |
-| `Utility/Misc/Develop.cs` | planned | `utility/misc/develop.*` |
+| `Utility/Misc/Develop.cs` | complete | `utility/misc/develop.*`; native output/assert backend replaces Unity `Debug` |
 | `Utility/Misc/StaticStringBuilder.cs` | defer | C++ logging/dump utilities |
 | `Utility/NativeCollection/DataChunk.cs` | complete | `utility/native_collection/data_chunk.*` |
 | `Utility/NativeCollection/ExBitFlag16.cs` | complete | `utility/native_collection/bit_flag.hpp` |
@@ -168,7 +168,7 @@ Status labels:
 | `Utility/NativeCollection/ExCostSortedList1.cs` | complete | `utility/native_collection/ex_cost_sorted_list1.hpp` |
 | `Utility/NativeCollection/ExCostSortedList4.cs` | complete | `utility/native_collection/ex_cost_sorted_list4.hpp` |
 | `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp`; chunk reuse, expand/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
-| `Utility/NativeCollection/ExProcessingList.cs` | partial | `utility/native_collection/ex_processing_list.*` |
+| `Utility/NativeCollection/ExProcessingList.cs` | complete | `utility/native_collection/ex_processing_list.*`; C++ counter pointer replaces Unity `NativeReference` job pointer |
 | `Utility/NativeCollection/ExSimpleNativeArray.cs` | partial | `utility/native_collection/ex_simple_native_array.hpp`; range add/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
 | `Utility/NativeCollection/ExTransformAccessArray.cs` | planned | `utility/native_collection/ex_transform_access_array.*` |
 | `Utility/NativeCollection/FixedList128BytesExtensions.cs` | defer | C++ container compatibility |
@@ -189,7 +189,7 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `VirtualMesh/VertexAttribute.cs` | complete | `virtual_mesh/vertex_attribute.hpp` |
-| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*` |
+| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, center fixed list, baseline arrays, and parent-driven baseline/root/depth/local-pose builder are present |
 | `VirtualMesh/VirtualMeshBoneWeight.cs` | complete | `virtual_mesh/virtual_mesh_bone_weight.*` |
 | `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*` |
 | `VirtualMesh/VirtualMeshPrimitive.cs` | complete | `virtual_mesh/virtual_mesh_primitive.hpp` |
@@ -252,6 +252,11 @@ Last completed step:
 - Added more MC2-compatible NativeCollection surface area for later large-module ports: `ExNativeArray` now has vector/count range adds, whole-array add, `ExpandAndFill(...)`, `GetRef(...)`, `ToString()`, and MC2-order `RemoveAndFill(...)`; `ExSimpleNativeArray` gained counted range add and debug dump helpers. Unsafe reinterpret/serialization remains intentionally adapted to C++ containers.
 - Extended `DataUtility.cs` parity with packed int2/int3/int4 helpers, `Pack32(int4)`, unpack helpers, and `RemainingData(...)` so later builder and constraint code can follow MC2 call shapes without local workarounds.
 - Extended the `TeamManager.cs` C++ state/control surface for the next large-module pass: native active/true team counts, process query, update mode/time scale setters, sync suspend, camera/distance culling flags, anchor state, external force injection/clear, restore-transform-once query/clear, and edge-collider collision counting now exist without pulling in Unity renderer or Wind behavior.
+- Closed three small Utility files at file/API level: `MathExtensions.cs` is now marked complete for float4x4 element access and curve evaluation helpers; `Develop.cs` has a native logging/assert backend with MC2 prefixes and debug macro gates; `ExProcessingList.cs` now exposes counter/buffer ownership plus a C++ counter pointer equivalent to the Unity job schedule pointer.
+- Started the Wind module proper. `WindSettings.cs` and `WindParams.cs` are now complete native data ports; `MagicaWindZone.cs` has a native data-form zone with direction/radial/addition helpers and local/world direction conversion; `WindManager.cs` now owns MC2-style `WindData`, wind arrays, registration/removal/enable, and per-frame native zone refresh including volume, direction, attenuation, and addition flags. `TeamWindData.cs` is complete and is now owned by `TeamManager`. The actual team wind-zone selection and particle wind force solve remain the next Wind behavior layer.
+- Ported the next Wind behavior layer from `TeamManager.CalcCenterAndInertiaAndWindJob`: `ClothParameters` now owns `WindParams`, `MagicaManager::StepFrame(...)` refreshes `WindManager` every frame, and `TeamManager::UpdateCenterAndInertia(...)` now builds each team's `TeamWindData` from enabled wind zones. The selection logic follows MC2's rules: non-addition zones choose the smallest containing volume, addition zones can contribute up to three entries, sphere radial zones evaluate attenuation, and previous wind time is preserved through `AddOrReplaceWindZone(...)`. Moving wind and final particle wind-force mixing remain pending.
+- Closed a large chunk of `Cloth/Constraints` at file/API level. `DistanceConstraint` now has a native `CreateData(...)` builder for MC2 vertical/horizontal/shear connections from current `VirtualMesh` edges/triangles; `TriangleBendingConstraint` now has a native `CreateData(...)` builder for dihedral and volume pairs plus write-buffer indices; `InertiaConstraint` now has `CreateData(...)` for CenterData, local gravity direction, and fixed-center list ownership. `MotionConstraint`, `TetherConstraint`, `SpringConstraint`, `DistanceConstraint`, `InertiaConstraint`, and `TriangleBendingConstraint` are now marked `complete`; `AngleConstraint`, `ColliderCollisionConstraint`, and `SelfCollisionConstraint` remain intentionally `partial` because their remaining work belongs to baseline/PreBuild generation, collider component registration, or full self-collision builder parity.
+- Added a parent-driven native baseline feed for `AngleConstraint` and other baseline consumers. `VirtualMesh::BuildBaseLinesFromParents()` now builds MC2-style child arrays, baseline flags/start/count/data, vertex local position/rotation, root indices, and depth values from existing `vertex_parent_indices`; `VirtualMeshManager` now owns baseline flags and team ids in addition to start/count/data. This does not replace the full `VirtualMeshProxy.cs` Mesh/Bone baseline generation path, but it closes the low-level feed needed once parent indices are available.
 
 Latest verification:
 
@@ -272,7 +277,7 @@ VirtualMesh scope note:
 
 Wind / VirtualMesh test boundary:
 
-- Do not route current smoke coverage through `WindManager`, `TeamWindData`, or full `VirtualMesh` behavior. These modules should stay as low-level construction/ownership targets until the main XPBD solver chain is stable.
-- For now, wind and virtual mesh work should be limited to compile-safe data structures and manager skeletons. Avoid behavior assertions that depend on wind zone scanning, moving wind, proxy generation, mapping, reduction, or skinning.
+- Wind and VirtualMesh can now move beyond skeletons, but keep tests focused. Wind currently has data ownership and refresh logic; avoid behavior assertions that depend on final wind-zone scanning or particle force mixing until that layer is explicitly ported.
+- VirtualMesh work can resume as compile-safe function/data ports first. Avoid deep behavior assertions around proxy generation, mapping solve, reduction, or skinning until those functions have been ported end to end.
 
 Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtime-side `TriangleBendingConstraint`, runtime-side `AngleConstraint`, collider collision, SelfCollision Self/Sync/ParentSync runtime paths, and the first TeamData/mapping ownership layer are now present; next targets are the remaining data builders/update-list population needed to feed these constraints, plus more TeamManager lifecycle/culling/parameter synchronization pieces.

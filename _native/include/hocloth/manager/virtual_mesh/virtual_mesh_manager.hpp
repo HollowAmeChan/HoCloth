@@ -52,6 +52,7 @@ public:
     [[nodiscard]] int ProxyVertexCount() const;
     [[nodiscard]] int ProxyTriangleCount() const;
     [[nodiscard]] int ProxyEdgeCount() const;
+    [[nodiscard]] int ProxyBaseLineCount() const;
     [[nodiscard]] int ProxyLocalPositionCount() const;
     [[nodiscard]] int MappingVertexCount() const;
     [[nodiscard]] const ExNativeArray<VertexAttribute>& Attributes() const;
@@ -66,6 +67,8 @@ public:
     [[nodiscard]] const ExNativeArray<std::int16_t>& EdgeTeamIds() const;
     [[nodiscard]] const ExNativeArray<int2>& Edges() const;
     [[nodiscard]] const ExNativeArray<BitFlag8>& EdgeFlags() const;
+    [[nodiscard]] const ExNativeArray<BitFlag8>& BaseLineFlags() const;
+    [[nodiscard]] const ExNativeArray<std::int16_t>& BaseLineTeamIds() const;
     [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineStartDataIndices() const;
     [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineDataCounts() const;
     [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineData() const;
@@ -112,6 +115,8 @@ private:
     ExNativeArray<int2> edges_;
     ExNativeArray<BitFlag8> edge_flags_;
 
+    ExNativeArray<BitFlag8> base_line_flags_;
+    ExNativeArray<std::int16_t> base_line_team_ids_;
     ExNativeArray<std::uint16_t> base_line_start_data_indices_;
     ExNativeArray<std::uint16_t> base_line_data_counts_;
     ExNativeArray<std::uint16_t> base_line_data_;

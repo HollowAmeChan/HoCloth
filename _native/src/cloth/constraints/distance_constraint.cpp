@@ -4,10 +4,13 @@
 #include "hocloth/manager/simulation/simulation_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
 #include "hocloth/utility/data/data_utility.hpp"
+#include "hocloth/utility/data/multi_data_builder.hpp"
 #include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
 #include <cstddef>
+#include <unordered_set>
 
 namespace hocloth::mc2 {
 
@@ -26,6 +29,170 @@ int DistanceConstraint::DataCount() const
 int DistanceConstraint::ConnectionCount() const
 {
     return data_array_.Count();
+}
+
+DistanceConstraint::ConstraintData DistanceConstraint::CreateData(
+    const VirtualMesh& proxy_mesh,
+    const ClothParameters& parameters
+)
+{
+    // Ported from Magica Cloth 2: Scripts/Core/Cloth/Constraints/DistanceConstraint.cs
+    (void)parameters;
+    ConstraintData constraint_data;
+    const int vertex_count = proxy_mesh.VertexCount();
+    if (vertex_count <= 0
+        || proxy_mesh.attributes.Count() < vertex_count
+        || proxy_mesh.local_positions.Count() < vertex_count) {
+        return constraint_data;
+    }
+
+    data::MultiDataBuilder<std::uint16_t> vertical_connection(vertex_count, vertex_count * 2);
+    data::MultiDataBuilder<std::uint16_t> horizontal_connection(vertex_count, vertex_count * 2);
+    std::unordered_set<std::uint32_t> connect_set;
+
+    const int edge_count = proxy_mesh.edges.Count();
+    for (int edge_index = 0; edge_index < edge_count; ++edge_index) {
+        const int2 edge = proxy_mesh.edges[edge_index];
+        if (edge.x < 0 || edge.y < 0 || edge.x >= vertex_count || edge.y >= vertex_count) {
+            continue;
+        }
+        const VertexAttribute attr0 = proxy_mesh.attributes[edge.x];
+        const VertexAttribute attr1 = proxy_mesh.attributes[edge.y];
+        if ((attr0.IsMove() == false && attr1.IsMove() == false)
+            || attr0.IsInvalid()
+            || attr1.IsInvalid()) {
+            continue;
+        }
+
+        const int parent0 =
+            edge.x < proxy_mesh.vertex_parent_indices.Count()
+                ? proxy_mesh.vertex_parent_indices[edge.x]
+                : -1;
+        const int parent1 =
+            edge.y < proxy_mesh.vertex_parent_indices.Count()
+                ? proxy_mesh.vertex_parent_indices[edge.y]
+                : -1;
+
+        if (edge.y == parent0 || edge.x == parent1) {
+            vertical_connection.Add(edge.x, static_cast<std::uint16_t>(edge.y));
+            vertical_connection.Add(edge.y, static_cast<std::uint16_t>(edge.x));
+        } else {
+            horizontal_connection.Add(edge.x, static_cast<std::uint16_t>(edge.y));
+            horizontal_connection.Add(edge.y, static_cast<std::uint16_t>(edge.x));
+        }
+        connect_set.insert(data::Pack32Sort(edge.x, edge.y));
+    }
+
+    const int triangle_count = proxy_mesh.TriangleCount();
+    for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
+        const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+        const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
+        for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
+            const int3 tri1 = proxy_mesh.triangles[triangle_index1];
+            int common[2] = {-1, -1};
+            int common_count = 0;
+            const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
+            for (int value0 : tri0_values) {
+                for (int value1 : tri1_values) {
+                    if (value0 == value1 && common_count < 2) {
+                        common[common_count++] = value0;
+                    }
+                }
+            }
+            if (common_count != 2) {
+                continue;
+            }
+
+            const int2 edge{common[0], common[1]};
+            const int3 packed_edge_tri0 = tri0;
+            const int3 packed_edge_tri1 = tri1;
+            const int2 diagonal = GetRestTriangleVertex(packed_edge_tri0, packed_edge_tri1, edge);
+            const int e3 = diagonal.x;
+            const int e4 = diagonal.y;
+            if (e3 < 0 || e4 < 0 || e3 >= vertex_count || e4 >= vertex_count) {
+                continue;
+            }
+            if (connect_set.find(data::Pack32Sort(e3, e4)) != connect_set.end()) {
+                continue;
+            }
+
+            const float3 p1 = proxy_mesh.local_positions[edge.x];
+            const float3 p2 = proxy_mesh.local_positions[edge.y];
+            const float3 p3 = proxy_mesh.local_positions[e3];
+            const float3 p4 = proxy_mesh.local_positions[e4];
+            const float edge_length1 = Distance(p1, p2);
+            if (edge_length1 < define::system::Epsilon) {
+                continue;
+            }
+
+            const VertexAttribute attr3 = proxy_mesh.attributes[e3];
+            const VertexAttribute attr4 = proxy_mesh.attributes[e4];
+            if ((attr3.IsMove() == false && attr4.IsMove() == false)
+                || attr3.IsInvalid()
+                || attr4.IsInvalid()) {
+                continue;
+            }
+
+            const float dot = Abs(Dot(TriangleNormal(p1, p2, p3), TriangleNormal(p1, p2, p4)));
+            if (dot < 0.9396926f) {
+                continue;
+            }
+
+            const float edge_length2 = Distance(p3, p4);
+            const float ratio = Abs(edge_length2 / edge_length1 - 1.0f);
+            if (ratio <= 0.3f) {
+                connect_set.insert(data::Pack32Sort(e3, e4));
+                horizontal_connection.Add(e3, static_cast<std::uint16_t>(e4));
+                horizontal_connection.Add(e4, static_cast<std::uint16_t>(e3));
+            }
+        }
+    }
+
+    const auto [vertical_data, vertical_index] = vertical_connection.ToArray();
+    const auto [horizontal_data, horizontal_index] = horizontal_connection.ToArray();
+    const int total_count =
+        static_cast<int>(vertical_data.size() + horizontal_data.size());
+    if (total_count <= 0) {
+        return constraint_data;
+    }
+
+    constraint_data.index_array.reserve(static_cast<std::size_t>(vertex_count));
+    constraint_data.data_array.reserve(static_cast<std::size_t>(total_count));
+    constraint_data.distance_array.reserve(static_cast<std::size_t>(total_count));
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const int start = static_cast<int>(constraint_data.data_array.size());
+        int count = 0;
+        const float3 position = proxy_mesh.local_positions[vertex_index];
+
+        for (int type = 0; type < TypeCount; ++type) {
+            int data_count = 0;
+            int data_start = 0;
+            data::Unpack12_20(
+                type == 0 ? vertical_index[static_cast<std::size_t>(vertex_index)]
+                          : horizontal_index[static_cast<std::size_t>(vertex_index)],
+                data_count,
+                data_start
+            );
+            for (int index = 0; index < data_count; ++index) {
+                const std::uint16_t target =
+                    type == 0
+                        ? vertical_data[static_cast<std::size_t>(data_start + index)]
+                        : horizontal_data[static_cast<std::size_t>(data_start + index)];
+                const float distance = Distance(position, proxy_mesh.local_positions[target]);
+                if (distance < 1.0e-6f) {
+                    continue;
+                }
+                constraint_data.data_array.push_back(target);
+                constraint_data.distance_array.push_back(type == 0 ? distance : -distance);
+                ++count;
+            }
+        }
+
+        constraint_data.index_array.push_back(data::Pack12_20(count, start));
+    }
+
+    return constraint_data;
 }
 
 void DistanceConstraint::Register(int team_id, const ConstraintData& data, TeamManager& team_manager)

@@ -41,6 +41,8 @@ void VirtualMeshManager::Dispose()
     edge_team_ids_.Dispose();
     edges_.Dispose();
     edge_flags_.Dispose();
+    base_line_flags_.Dispose();
+    base_line_team_ids_.Dispose();
     base_line_start_data_indices_.Dispose();
     base_line_data_counts_.Dispose();
     base_line_data_.Dispose();
@@ -70,6 +72,7 @@ ManagerStatus VirtualMeshManager::Status() const
     detail << "proxy_vertices=" << ProxyVertexCount()
            << " proxy_triangles=" << ProxyTriangleCount()
            << " proxy_edges=" << ProxyEdgeCount()
+           << " proxy_baselines=" << ProxyBaseLineCount()
            << " local_positions=" << ProxyLocalPositionCount()
            << " mapping_vertices=" << MappingVertexCount();
     return ManagerStatus{
@@ -211,6 +214,19 @@ void VirtualMeshManager::RegisterProxyMesh(
     if (proxy_mesh->base_line_start_data_indices.Count() > 0
         && proxy_mesh->base_line_data_counts.Count()
             == proxy_mesh->base_line_start_data_indices.Count()) {
+        if (proxy_mesh->base_line_flags.Count()
+            == proxy_mesh->base_line_start_data_indices.Count()) {
+            base_line_flags_.AddRange(proxy_mesh->base_line_flags);
+        } else {
+            base_line_flags_.AddRange(
+                proxy_mesh->base_line_start_data_indices.Count(),
+                BitFlag8{}
+            );
+        }
+        base_line_team_ids_.AddRange(
+            proxy_mesh->base_line_start_data_indices.Count(),
+            static_cast<std::int16_t>(team_id)
+        );
         team_data.baseline_chunk =
             base_line_start_data_indices_.AddRange(proxy_mesh->base_line_start_data_indices);
         base_line_data_counts_.AddRange(proxy_mesh->base_line_data_counts);
@@ -345,6 +361,11 @@ int VirtualMeshManager::ProxyEdgeCount() const
     return edges_.Count();
 }
 
+int VirtualMeshManager::ProxyBaseLineCount() const
+{
+    return base_line_flags_.Count();
+}
+
 int VirtualMeshManager::ProxyLocalPositionCount() const
 {
     return local_positions_.Count();
@@ -413,6 +434,16 @@ const ExNativeArray<int2>& VirtualMeshManager::Edges() const
 const ExNativeArray<BitFlag8>& VirtualMeshManager::EdgeFlags() const
 {
     return edge_flags_;
+}
+
+const ExNativeArray<BitFlag8>& VirtualMeshManager::BaseLineFlags() const
+{
+    return base_line_flags_;
+}
+
+const ExNativeArray<std::int16_t>& VirtualMeshManager::BaseLineTeamIds() const
+{
+    return base_line_team_ids_;
 }
 
 const ExNativeArray<std::uint16_t>& VirtualMeshManager::BaseLineStartDataIndices() const

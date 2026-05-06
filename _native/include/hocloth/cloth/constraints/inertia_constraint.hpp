@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/cloth/constraints/inertia_constraint_data.hpp"
+#include "hocloth/cloth/cloth_parameters.hpp"
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace hocloth::mc2 {
+
+class VirtualMesh;
 
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/Constraints/InertiaConstraint.cs
 class InertiaConstraint {
@@ -29,6 +32,10 @@ public:
     void Dispose();
     [[nodiscard]] int FixedCount() const;
 
+    [[nodiscard]] static ConstraintData CreateData(
+        const VirtualMesh& proxy_mesh,
+        const ClothParameters& parameters
+    );
     void Register(int team_id, const ConstraintData& data, TeamManager& team_manager);
     void Exit(int team_id, TeamManager& team_manager);
 

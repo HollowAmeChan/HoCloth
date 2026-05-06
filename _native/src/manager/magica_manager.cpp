@@ -61,6 +61,7 @@ int MagicaManager::StepFrame(
     }
 
     time_manager_.FrameUpdate(simulation_frequency);
+    wind_manager_.AlwaysWindUpdate();
     const float simulation_delta_time = time_manager_.SimulationDeltaTime();
     const float4 simulation_power = time_manager_.SimulationPower();
     const int max_update_count = team_manager_.AlwaysTeamUpdate(
@@ -82,6 +83,7 @@ int MagicaManager::StepFrame(
         simulation_delta_time,
         transform_manager_,
         virtual_mesh_manager_,
+        wind_manager_,
         cloth_manager_.Inertia().FixedArray()
     );
     simulation_manager_.PreSimulationUpdate(team_manager_, virtual_mesh_manager_);
