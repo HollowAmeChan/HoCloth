@@ -31,7 +31,7 @@ Status labels:
 | Cloth/Collider | partial | `_native/include/hocloth/cloth/collider/`; native authoring data layer, collider-data conversion, and manager range registration bridge are present, Blender lifecycle bridge remains |
 | Cloth/Wind | partial | `_native/include/hocloth/cloth/wind/`, `_native/include/hocloth/manager/simulation/wind_manager.hpp` |
 | VirtualMesh | partial | `_native/include/hocloth/virtual_mesh/`; structured share/unique PreBuild deserialization, raw-byte proxy array restoration, and container ownership are now present, packed hash dictionaries remain |
-| Reduction | partial | `_native/include/hocloth/reduction/`; settings/work data/base step shell are present, reduction algorithms remain |
+| Reduction | partial | `_native/include/hocloth/reduction/`; settings/work data, Same/Simple/Shape reduction passes, base step flow, and VirtualMesh reduction handoff are present; full parity audit remains |
 | PreBuild | partial | `_native/include/hocloth/prebuild/`, `_native/include/hocloth/manager/cloth/prebuild_manager.hpp`; share/unique/serialize data containers, build-id lookup, validation, transform-id replacement, manager reference-cache ownership, structured VirtualMesh restoration, and RenderSetup share restoration are present |
 
 ## Cloth
@@ -137,11 +137,11 @@ Status labels:
 | `PreBuild/SharePreBuildData.cs` | partial | `prebuild/share_prebuild_data.hpp`; version/build-result/scale validation, proxy/render mesh serialization references, and constraint-data ownership are present |
 | `PreBuild/UniquePreBuildData.cs` | partial | `prebuild/unique_prebuild_data.hpp`; render/proxy/render-mesh unique data plus transform-id collection/replacement are present |
 | `Reduction/ReductionSettings.cs` | complete | `reduction/reduction_settings.hpp` |
-| `Reduction/ReductionWorkData.cs` | partial | `reduction/reduction_work_data.hpp`; native data ownership shell exists, job buffers are adapted to C++ containers |
-| `Reduction/SameDistanceReduction.cs` | planned | `reduction/same_distance_reduction.*` |
-| `Reduction/ShapeDistanceReduction.cs` | planned | `reduction/shape_distance_reduction.*` |
-| `Reduction/SimpleDistanceReduction.cs` | planned | `reduction/simple_distance_reduction.*` |
-| `Reduction/StepReductionBase.cs` | skeleton | `reduction/step_reduction_base.*`; JoinEdge and base state are present, reduction algorithm/jobs remain deferred |
+| `Reduction/ReductionWorkData.cs` | partial | `reduction/reduction_work_data.hpp`; native data ownership shell exists, job buffers are adapted to C++ containers, and reduction remap/organization buffers are present |
+| `Reduction/SameDistanceReduction.cs` | partial | `reduction/same_distance_reduction.*`; grid search, join-pair collection, JoinJob2-style live/dead vertex merge, link update, attribute/bone-weight merge, and final normal/weight cleanup are present |
+| `Reduction/ShapeDistanceReduction.cs` | partial | `reduction/shape_distance_reduction.*`; connected-neighbor candidate search, CheckJoin2 filtering, and min-cost join-edge selection are present |
+| `Reduction/SimpleDistanceReduction.cs` | partial | `reduction/simple_distance_reduction.*`; grid-based candidate search and MC2-style cost join-edge generation are present |
+| `Reduction/StepReductionBase.cs` | partial | `reduction/step_reduction_base.*`; JoinEdge, step scheduling, merge-length stepping, join-edge sorting/selection, pair merge, link refresh, and final normal/bone-weight cleanup are present |
 | `Settings/ClothDebugSettings.cs` | complete | `settings/cloth_debug_settings.hpp` |
 | `Settings/VirtualMeshDebugSettings.cs` | complete | `settings/virtual_mesh_debug_settings.hpp` |
 
@@ -189,7 +189,7 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `VirtualMesh/VertexAttribute.cs` | complete | `virtual_mesh/vertex_attribute.hpp` |
-| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, fixed list/AABB, bind pose, transform restore rotations, baseline arrays, and parent-driven baseline/root/depth/local-pose builder are present |
+| `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*`; core arrays, fixed list/AABB, bind pose, transform restore rotations, baseline arrays, parent-driven baseline/root/depth/local-pose builder, optimization entry, and reduction organization entry points are present |
 | `VirtualMesh/VirtualMeshBoneWeight.cs` | complete | `virtual_mesh/virtual_mesh_bone_weight.*` |
 | `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*`; share mesh plus unique transform-record override are present, and managed PreBuild meshes are left owned by PreBuildManager |
 | `VirtualMesh/VirtualMeshPrimitive.cs` | complete | `virtual_mesh/virtual_mesh_primitive.hpp` |
@@ -197,11 +197,11 @@ Status labels:
 | `VirtualMesh/VirtualMeshTransform.cs` | partial | `virtual_mesh/virtual_mesh_transform.*` |
 | `VirtualMesh/Function/VirtualMeshInputOutput.cs` | planned | `virtual_mesh/function/virtual_mesh_input_output.*` |
 | `VirtualMesh/Function/VirtualMeshMapping.cs` | planned | `virtual_mesh/function/virtual_mesh_mapping.*` |
-| `VirtualMesh/Function/VirtualMeshOptimization.cs` | planned | `virtual_mesh/function/virtual_mesh_optimization.*` |
+| `VirtualMesh/Function/VirtualMeshOptimization.cs` | partial | `virtual_mesh/virtual_mesh.*`; duplicate triangle removal path is present |
 | `VirtualMesh/Function/VirtualMeshProxy.cs` | partial | `virtual_mesh/virtual_mesh.*`; fixed-list/AABB, vertex bind pose, vertex-to-transform rotation, Mesh edge baseline parent generation, and Bone transform baseline generation are present; full proxy conversion/normal tangent/edge flag/reduction/custom skinning remain |
-| `VirtualMesh/Function/VirtualMeshReduction.cs` | planned | `virtual_mesh/function/virtual_mesh_reduction.*` |
+| `VirtualMesh/Function/VirtualMeshReduction.cs` | partial | `virtual_mesh/virtual_mesh.*`, `reduction/*.hpp`; Reduction entry point, InitReductionWorkData, Same/Simple/Shape algorithm chain, OrganizationInit, remap, basic-data copy/remap, line/triangle rebuild, and store-back are present; full parity audit remains |
 | `VirtualMesh/Function/VirtualMeshSerialization.cs` | partial | `virtual_mesh/virtual_mesh_serialization.*`; share/unique serialization data containers, structured simple-array restore, raw-byte proxy array restore, unique transform-record restore, center fixed list, and baseline fallback are present; packed hash dictionaries remain deferred |
-| `VirtualMesh/Function/VirtualMeshWork.cs` | planned | `virtual_mesh/function/virtual_mesh_work.*` |
+| `VirtualMesh/Function/VirtualMeshWork.cs` | partial | `virtual_mesh/virtual_mesh.*`; average/max vertex distance sampling is present |
 
 ## Next
 
@@ -244,7 +244,7 @@ Last completed step:
 - Added native cloth parameter helpers: `CheckSliderSerializeData` is complete, `CurveSerializeData` now supports value/linear-curve/float4x4 curve-data evaluation and conversion, and `CullingSettings` carries the MC2 culling enums plus distance-culling values/validation. Unity `AnimationCurve`, `Renderer`, and `GameObject` references remain integration-boundary concerns.
 - Added native data-layer ports for `SelectionData`, `NormalAlignmentSettings`, and `CustomSkinningSettings`. These now cover the MC2 value ownership, validation, clone/compare/fill/merge style helpers, and transform references are represented as backend ids; `SelectionData.ConvertFrom(...)` / GridMap search and Unity object replacement remain later integration/data-builder work.
 - Added `MultiDataBuilder` and a lightweight native `GridMap` utility. `MultiDataBuilder` preserves the MC2 key-ordered flattening and `Pack12_20(count,start)` index output; `GridMap` provides native grid hashing/add/remove/move/area helpers for later `SelectionData` and spatial builder work. Also added data ports for `ClothDebugSettings`, `VirtualMeshDebugSettings`, and `GizmoSerializeData`.
-- Added the first Reduction data layer: `ReductionSettings` is complete, `ReductionWorkData` now owns the C++ containers for reduction/optimization/final mesh data, and `StepReductionBase` has the MC2 base state plus `JoinEdge` type. Actual step reduction algorithms/jobs remain deferred.
+- Added the first Reduction data layer: `ReductionSettings` is complete, `ReductionWorkData` now owns the C++ containers for reduction/optimization/final mesh data, and `StepReductionBase` has the MC2 base state plus `JoinEdge` type.
 - Fixed the native compile-check blocker found while preparing a full build pass: `DataChunk` is now a header-inline value type for constructors, validity, range helpers, `Clear()`, and `Empty()`. WinDbg/cdb showed the old external `DataChunk::Empty()` return path could fault inside `ExNativeArray<float>::GetEmptyChunk(...)` during proxy registration. This keeps `Utility/NativeCollection/DataChunk.cs` marked `complete` and makes `ExNativeArray` smoke-safe again.
 - Reframed `hocloth_mc2_core_smoke` as a compile/run preflight check for the current porting phase. It still exercises MagicaManager initialization, team/proxy registration, particle registration, inertia/motion/distance solving, display position calculation, and proxy writeback synchronization, but no longer blocks on the previous narrow numerical constants while XPBD parity is still being ported.
 - Started the large-module closure pass for `TeamManager` and `SimulationManager`: `TeamManager` now has MC2-style enable/skip/reset/time-reset controls, create-time reset flags, `AlwaysTeamUpdate(...)` timing/update-count scheduling, and `PostTeamUpdate(...)` post-frame flag/force/time cleanup. `SimulationManager::CreateStepParticleList(...)` now ports the MC2 `CreateUpdateParticleList` population path for step particles, baselines, triangle bending pairs, edge collider collision, motion particles, and self-collision lists from team state and cloth parameters.
@@ -263,6 +263,8 @@ Last completed step:
 - Ported the next Wind behavior layer from `TeamManager.CalcCenterAndInertiaAndWindJob`: `ClothParameters` now owns `WindParams`, `MagicaManager::StepFrame(...)` refreshes `WindManager` every frame, and `TeamManager::UpdateCenterAndInertia(...)` now builds each team's `TeamWindData` from enabled wind zones. The selection logic follows MC2's rules: non-addition zones choose the smallest containing volume, addition zones can contribute up to three entries, sphere radial zones evaluate attenuation, and previous wind time is preserved through `AddOrReplaceWindZone(...)`. Moving wind and final particle wind-force mixing remain pending.
 - Closed a large chunk of `Cloth/Constraints` at file/API level. `DistanceConstraint` now has a native `CreateData(...)` builder for MC2 vertical/horizontal/shear connections from current `VirtualMesh` edges/triangles; `TriangleBendingConstraint` now has a native `CreateData(...)` builder for dihedral and volume pairs plus write-buffer indices; `InertiaConstraint` now has `CreateData(...)` for CenterData, local gravity direction, and fixed-center list ownership. `MotionConstraint`, `TetherConstraint`, `SpringConstraint`, `DistanceConstraint`, `InertiaConstraint`, and `TriangleBendingConstraint` are now marked `complete`; `AngleConstraint`, `ColliderCollisionConstraint`, and `SelfCollisionConstraint` remain intentionally `partial` because their remaining work belongs to baseline/PreBuild generation, collider component registration, or full self-collision builder parity.
 - Added a parent-driven native baseline feed for `AngleConstraint` and other baseline consumers. `VirtualMesh::BuildBaseLinesFromParents()` now builds MC2-style child arrays, baseline flags/start/count/data, vertex local position/rotation, root indices, and depth values from existing `vertex_parent_indices`; `VirtualMeshManager` now owns baseline flags and team ids in addition to start/count/data. This does not replace the full `VirtualMeshProxy.cs` Mesh/Bone baseline generation path, but it closes the low-level feed needed once parent indices are available.
+- Started closing the lower `VirtualMeshWork` / `VirtualMeshOptimization` / `VirtualMeshReduction` layer: `VirtualMesh::CalcAverageAndMaxVertexDistanceRun()`, `Optimization()`, duplicate triangle removal, reduction work-data initialization, Same/Simple/Shape reduction chain, remap/organization/basic-data generation, line/triangle rebuild, and store-back into `VirtualMesh` are now present. Full parity audit remains deferred.
+- Added the native Reduction algorithm pass: `SameDistanceReduction` has grid-based neighbor search, join pair collection, JoinJob2-style dead-to-live merge, link-map refresh, live vertex normal normalization, and bone-weight adjustment; `StepReductionBase` now has MC2-style multi-step merge scheduling, non-overlapping pair selection, pair merge, link refresh, and final cleanup; `SimpleDistanceReduction` and `ShapeDistanceReduction` now generate MC2-style candidate join edges.
 
 Latest verification:
 
@@ -277,7 +279,7 @@ The native smoke test now contains finite-value assertions plus synchronization 
 
 VirtualMesh scope note:
 
-- `VirtualMesh` / `VirtualMeshManager` are intentionally partial for now. Simple proxy ownership and mapping buffer registration/release are present; full proxy generation, mapping solve/generation behavior, optimization/reduction/work functions, normal/tangent update jobs, transform/skinning update jobs, and serialization/prebuild restore are not current XPBD-core blockers.
+- `VirtualMesh` / `VirtualMeshManager` are intentionally partial for now. Simple proxy ownership, mapping buffer registration/release, structured serialization restore, average-distance work, duplicate-triangle optimization, and reduction organization/store-back are present; full proxy generation, mapping solve/generation behavior, reduction step algorithms, normal/tangent update jobs, and transform/skinning update jobs are still separate integration work.
 - Do not spend deep test effort on VirtualMesh-specific behavior yet. Current tests only need to cover the lower-level infrastructure it depends on: `ExNativeArray` / `ExSimpleNativeArray`, `DataChunk`, packed index helpers, `VertexAttribute`, transform chunk registration, and simple proxy array ownership needed by the solver smoke path.
 - When the core XPBD flow is stable, return to VirtualMesh as a separate integration/prebuild phase.
 

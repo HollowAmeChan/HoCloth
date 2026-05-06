@@ -22,6 +22,7 @@ struct ReductionWorkData {
     std::unordered_map<std::uint16_t, std::vector<std::uint16_t>> vertex_to_vertex_map;
 
     std::vector<int> vertex_remap_indices;
+    std::vector<int> old_vertex_to_new_vertex_indices;
     std::unordered_map<int, int> use_skin_bone_map;
     std::unordered_map<std::uint16_t, std::vector<std::uint16_t>> new_vertex_to_vertex_map;
     std::unordered_set<std::uint64_t> edge_set;
@@ -56,6 +57,7 @@ struct ReductionWorkData {
         vertex_join_indices.clear();
         vertex_to_vertex_map.clear();
         vertex_remap_indices.clear();
+        old_vertex_to_new_vertex_indices.clear();
         use_skin_bone_map.clear();
         new_vertex_to_vertex_map.clear();
         edge_set.clear();

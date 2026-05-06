@@ -15,6 +15,9 @@
 
 namespace hocloth::mc2 {
 
+struct ReductionSettings;
+struct ReductionWorkData;
+
 // Port target for Magica Cloth 2: Scripts/Core/VirtualMesh/VirtualMesh.cs
 class VirtualMesh {
 public:
@@ -90,6 +93,17 @@ public:
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();
+    void CalcAverageAndMaxVertexDistanceRun();
+    void Optimization();
+    void RemoveDuplicateTriangles();
+    void Reduction(const ReductionSettings& settings);
+    void InitReductionWorkData(ReductionWorkData& work_data);
+    void Organization(const ReductionSettings& settings, ReductionWorkData& work_data);
+    void OrganizationInit(const ReductionSettings& settings, ReductionWorkData& work_data);
+    void OrganizationCreateRemapData(ReductionWorkData& work_data);
+    void OrganizationCreateBasicData(ReductionWorkData& work_data);
+    void OrganizationCreateLineTriangle(ReductionWorkData& work_data);
+    void OrganizeStoreVirtualMesh(ReductionWorkData& work_data);
 
     [[nodiscard]] bool IsValid() const;
     [[nodiscard]] int VertexCount() const;

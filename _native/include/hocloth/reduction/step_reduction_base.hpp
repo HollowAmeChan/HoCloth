@@ -3,7 +3,9 @@
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/utility/result_code/result_code.hpp"
 
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace hocloth::mc2 {
@@ -52,6 +54,7 @@ public:
     virtual ~StepReductionBase() = default;
 
     virtual void Dispose();
+    virtual Result Reduction();
 
     [[nodiscard]] const Result& GetResult() const
     {
@@ -59,6 +62,13 @@ public:
     }
 
 protected:
+    virtual void StepInitialize();
+    virtual void CustomReductionStep();
+    virtual ResultCode ExceptionCode() const;
+
+    [[nodiscard]] int CountLinks(int vertex_index) const;
+    [[nodiscard]] bool CheckJoin2(int vertex_index, int target_vertex_index) const;
+
     std::string name_;
     VirtualMesh* vmesh_ = nullptr;
     ReductionWorkData* work_data_ = nullptr;
@@ -72,6 +82,21 @@ protected:
     float now_merge_length_ = 0.0f;
     float now_step_scale_ = 0.0f;
     std::vector<JoinEdge> join_edge_list_;
+    std::vector<int2> remove_pair_list_;
+    std::vector<int> result_array_;
+
+private:
+    void InitStep();
+    [[nodiscard]] bool IsEndStep() const;
+    void NextStep();
+    void ReductionStep();
+    void PreReductionStep();
+    void PostReductionStep();
+    void SortJoinEdge();
+    void DetermineJoinEdge();
+    void RunJoinEdge();
+    void UpdateJoinAndLink();
+    void UpdateReductionResult();
 };
 
 }  // namespace hocloth::mc2
