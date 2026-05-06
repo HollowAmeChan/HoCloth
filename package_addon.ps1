@@ -4,8 +4,11 @@
 param(
     [string]$Version = "dev",
     [switch]$IncludeNativeBuild,
+    [switch]$RunNativeSmoke,
     [switch]$CreateZip,
+    [switch]$FreshConfigure,
     [string]$CMakeExecutable = "",
+    [string]$PythonExecutable = "",
     [string]$ConfigurePreset = "vs2022-release-native",
     [string]$BuildPreset = "build-vs2022-release-native",
     [string]$BuildConfiguration = "Release"
@@ -33,11 +36,28 @@ function Resolve-CMakeExecutable {
     $wellKnownCandidates = @(
         "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
         "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
-        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "D:\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "D:\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "D:\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "E:\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "E:\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe",
+        "E:\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
     )
     foreach ($candidatePath in $wellKnownCandidates) {
         if (Test-Path -LiteralPath $candidatePath) {
             return $candidatePath
+        }
+    }
+
+    $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path -LiteralPath $vswhere) {
+        $vsInstallations = & $vswhere -products * -requires Microsoft.Component.MSBuild -property installationPath
+        foreach ($vsInstall in $vsInstallations) {
+            $candidatePath = Join-Path $vsInstall "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+            if (Test-Path -LiteralPath $candidatePath) {
+                return $candidatePath
+            }
         }
     }
 
@@ -54,6 +74,69 @@ function Resolve-CMakeExecutable {
             Select-Object -First 1
         if ($null -ne $candidate) {
             return $candidate.FullName
+        }
+    }
+
+    return $null
+}
+
+function Test-PythonExecutable {
+    param(
+        [string]$CandidatePath
+    )
+
+    if (-not $CandidatePath -or -not (Test-Path -LiteralPath $CandidatePath)) {
+        return $false
+    }
+
+    try {
+        $version = & $CandidatePath -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        return $LASTEXITCODE -eq 0 -and $version -eq "3.11"
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-PythonExecutable {
+    param(
+        [string]$RequestedPath
+    )
+
+    if ($RequestedPath) {
+        if (Test-PythonExecutable -CandidatePath $RequestedPath) {
+            return (Resolve-Path -LiteralPath $RequestedPath).Path
+        }
+        throw "Requested Python executable is missing or is not Python 3.11: $RequestedPath"
+    }
+
+    if ($env:HOCLOTH_PYTHON_EXECUTABLE -and (Test-PythonExecutable -CandidatePath $env:HOCLOTH_PYTHON_EXECUTABLE)) {
+        return (Resolve-Path -LiteralPath $env:HOCLOTH_PYTHON_EXECUTABLE).Path
+    }
+
+    foreach ($commandName in @("python.exe", "python3.exe")) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($null -ne $command -and $command.Source -and (Test-PythonExecutable -CandidatePath $command.Source)) {
+            return $command.Source
+        }
+    }
+
+    $candidatePaths = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:ProgramFiles\Python311\python.exe",
+        "${env:ProgramFiles(x86)}\Python311\python.exe",
+        "$env:ProgramFiles\Blender Foundation\Blender 4.5\4.5\python\bin\python.exe",
+        "$env:ProgramFiles\Blender Foundation\Blender 4.4\4.4\python\bin\python.exe",
+        "$env:ProgramFiles\Blender Foundation\Blender 4.3\4.3\python\bin\python.exe",
+        "D:\Blender\Blender 4.5\4.5\python\bin\python.exe",
+        "D:\Blender\Blender 4.4\4.4\python\bin\python.exe",
+        "D:\Blender\Blender 4.3\4.3\python\bin\python.exe",
+        "D:\Blender Foundation\Blender 4.5\4.5\python\bin\python.exe",
+        "E:\Blender Foundation\Blender 4.5\4.5\python\bin\python.exe",
+        "E:\Blender\Blender 4.5\4.5\python\bin\python.exe"
+    )
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-PythonExecutable -CandidatePath $candidatePath) {
+            return (Resolve-Path -LiteralPath $candidatePath).Path
         }
     }
 
@@ -110,8 +193,26 @@ if ($IncludeNativeBuild) {
         throw "CMakePresets.json not found: $presetFile"
     }
 
+    $resolvedPython = Resolve-PythonExecutable -RequestedPath $PythonExecutable
+    $configureArgs = @("-S", $RepoRoot, "--preset", $ConfigurePreset)
+    if ($FreshConfigure) {
+        $configureArgs = @("--fresh") + $configureArgs
+    }
+    if ($resolvedPython) {
+        $pythonRoot = Split-Path -Parent $resolvedPython
+        Write-Host "Using Python 3.11 executable: $resolvedPython"
+        $configureArgs += @(
+            "-DHOCLOTH_PYTHON_EXECUTABLE=$resolvedPython",
+            "-DPython_EXECUTABLE=$resolvedPython",
+            "-DPython_ROOT_DIR=$pythonRoot"
+        )
+    } else {
+        Write-Warning "Python 3.11 executable was not found by the package script; CMake will try its own Python discovery."
+    }
+
+    Write-Host "Using CMake executable: $resolvedCMake"
     Write-Host "Configuring native build with preset: $ConfigurePreset"
-    & $resolvedCMake -S $RepoRoot --preset $ConfigurePreset
+    & $resolvedCMake @configureArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Native configure failed with exit code $LASTEXITCODE"
     }
@@ -120,6 +221,18 @@ if ($IncludeNativeBuild) {
     & $resolvedCMake --build --preset $BuildPreset --config $BuildConfiguration
     if ($LASTEXITCODE -ne 0) {
         throw "Native build failed with exit code $LASTEXITCODE"
+    }
+
+    if ($RunNativeSmoke) {
+        $smokeExe = Join-Path $RepoRoot "_bin\hocloth_mc2_core_smoke.exe"
+        if (-not (Test-Path -LiteralPath $smokeExe)) {
+            throw "Native smoke executable was not found after build: $smokeExe"
+        }
+        Write-Host "Running native smoke test: $smokeExe"
+        & $smokeExe
+        if ($LASTEXITCODE -ne 0) {
+            throw "Native smoke test failed with exit code $LASTEXITCODE"
+        }
     }
 }
 

@@ -17,9 +17,7 @@
       "toolset": "v143",
       "binaryDir": "${sourceDir}/_native/build/vs2022-release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "HOCLOTH_PYTHON_EXECUTABLE": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311/python.exe",
-        "Python_ROOT_DIR": "C:/Users/Hollow/AppData/Local/Programs/Python/Python311"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
