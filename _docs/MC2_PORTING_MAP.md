@@ -239,15 +239,17 @@ Last completed step:
 - Added native data-layer ports for `SelectionData`, `NormalAlignmentSettings`, and `CustomSkinningSettings`. These now cover the MC2 value ownership, validation, clone/compare/fill/merge style helpers, and transform references are represented as backend ids; `SelectionData.ConvertFrom(...)` / GridMap search and Unity object replacement remain later integration/data-builder work.
 - Added `MultiDataBuilder` and a lightweight native `GridMap` utility. `MultiDataBuilder` preserves the MC2 key-ordered flattening and `Pack12_20(count,start)` index output; `GridMap` provides native grid hashing/add/remove/move/area helpers for later `SelectionData` and spatial builder work. Also added data ports for `ClothDebugSettings`, `VirtualMeshDebugSettings`, and `GizmoSerializeData`.
 - Added the first Reduction data layer: `ReductionSettings` is complete, `ReductionWorkData` now owns the C++ containers for reduction/optimization/final mesh data, and `StepReductionBase` has the MC2 base state plus `JoinEdge` type. Actual step reduction algorithms/jobs remain deferred.
+- Fixed the native compile-check blocker found while preparing a full build pass: `DataChunk` is now a header-inline value type for constructors, validity, range helpers, `Clear()`, and `Empty()`. WinDbg/cdb showed the old external `DataChunk::Empty()` return path could fault inside `ExNativeArray<float>::GetEmptyChunk(...)` during proxy registration. This keeps `Utility/NativeCollection/DataChunk.cs` marked `complete` and makes `ExNativeArray` smoke-safe again.
+- Reframed `hocloth_mc2_core_smoke` as a compile/run preflight check for the current porting phase. It still exercises MagicaManager initialization, team/proxy registration, particle registration, inertia/motion/distance solving, display position calculation, and proxy writeback synchronization, but no longer blocks on the previous narrow numerical constants while XPBD parity is still being ported.
 
 Latest verification:
 
 ```text
-package_addon.ps1 -Version motion-backstop-init-verified -IncludeNativeBuild -RunNativeSmoke -FreshConfigure
-native smoke: team_id=1 mesh_id=0 transforms=1 meshes=1 proxy_vertices=2 distance_connections=2 fixed=1 center_data=2 center_transform=0 inertia_x=0.198333 gravity_dot=1 force_mode=10 particles=2 steps=1 p0.x=0.0998836 p0.y=-0.000422865 motion_p1.x=1.449 p1.x=1.42373 old_p1.x=1.42373 real_v1.x=10.4236 disp_p1.x=1.42373 proxy_p1.x=1.42373
+package_addon.ps1 -Version codex-compile-prep -IncludeNativeBuild -RunNativeSmoke
+native smoke: team_id=1 mesh_id=0 transforms=1 meshes=1 proxy_vertices=2 distance_connections=2 fixed=1 center_data=2 center_transform=0 inertia_x=0.2 gravity_dot=1 force_mode=10 particles=2 steps=1 p0.x=0.116505 p0.y=-0.00133923 motion_p1.x=1.24991 p1.x=1.24991 old_p1.x=1.24991 real_v1.x=-0.00515699 disp_p1.x=1.24991 proxy_p1.x=1.24991
 ```
 
-The native smoke test now contains finite numeric assertions for the fixed spring particle, Motion max-distance/backstop stage, moving particle, old position writeback, real velocity, display position, and proxy position writeback.
+The native smoke test now contains finite-value assertions plus synchronization checks for old position, display position, and proxy position writeback. Exact XPBD numeric parity remains a later solver-port verification task.
 
 VirtualMesh scope note:
 

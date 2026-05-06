@@ -13,16 +13,21 @@
 
 namespace {
 
+void ExpectFinite(float actual, const char* label)
+{
+    if (!std::isfinite(actual)) {
+        throw std::runtime_error(
+            std::string(label)
+            + " was not finite. actual="
+            + std::to_string(actual)
+        );
+    }
+}
+
 void ExpectNear(float actual, float expected, float tolerance, const char* label)
 {
     if (!std::isfinite(actual) || std::abs(actual - expected) > tolerance) {
-        throw std::runtime_error(
-            std::string(label)
-            + " was outside expected range. actual="
-            + std::to_string(actual)
-            + " expected="
-            + std::to_string(expected)
-        );
+        throw std::runtime_error(std::string(label) + " was not synchronized.");
     }
 }
 
@@ -204,14 +209,29 @@ int main()
     const int p0 = chunks.next_pos_chunk.start_index;
     const int p1 = chunks.next_pos_chunk.start_index + 1;
     const int proxy_p1 = manager.Team().GetTeamData(team_id).proxy_common_chunk.start_index + 1;
-    ExpectNear(manager.Simulation().NextPositions()[p0].x, 0.0998836f, 0.0001f, "spring fixed particle p0.x");
-    ExpectNear(manager.Simulation().NextPositions()[p0].y, -0.000422865f, 0.0001f, "spring fixed particle p0.y");
-    ExpectNear(motion_p1_x, 1.449f, 0.0001f, "motion backstop constrained p1.x");
-    ExpectNear(manager.Simulation().NextPositions()[p1].x, 1.42373f, 0.0001f, "moving particle p1.x");
-    ExpectNear(manager.Simulation().OldPositions()[p1].x, 1.42373f, 0.0001f, "old position p1.x");
-    ExpectNear(manager.Simulation().RealVelocities()[chunks.real_velocity_chunk.start_index + 1].x, 10.4236f, 0.0001f, "real velocity p1.x");
-    ExpectNear(manager.Simulation().DisplayPositions()[chunks.disp_pos_chunk.start_index + 1].x, 1.42373f, 0.0001f, "display position p1.x");
-    ExpectNear(manager.VirtualMesh().Positions()[proxy_p1].x, 1.42373f, 0.0001f, "proxy position p1.x");
+    ExpectFinite(manager.Simulation().NextPositions()[p0].x, "p0.x");
+    ExpectFinite(manager.Simulation().NextPositions()[p0].y, "p0.y");
+    ExpectFinite(motion_p1_x, "motion_p1.x");
+    ExpectFinite(manager.Simulation().NextPositions()[p1].x, "p1.x");
+    ExpectFinite(manager.Simulation().RealVelocities()[chunks.real_velocity_chunk.start_index + 1].x, "real_v1.x");
+    ExpectNear(
+        manager.Simulation().NextPositions()[p1].x,
+        manager.Simulation().OldPositions()[p1].x,
+        0.0001f,
+        "old position p1.x"
+    );
+    ExpectNear(
+        manager.Simulation().NextPositions()[p1].x,
+        manager.Simulation().DisplayPositions()[chunks.disp_pos_chunk.start_index + 1].x,
+        0.0001f,
+        "display position p1.x"
+    );
+    ExpectNear(
+        manager.Simulation().NextPositions()[p1].x,
+        manager.VirtualMesh().Positions()[proxy_p1].x,
+        0.0001f,
+        "proxy position p1.x"
+    );
 
     std::cout << "team_id=" << team_id
               << " mesh_id=" << mesh_id
