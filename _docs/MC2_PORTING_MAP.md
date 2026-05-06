@@ -38,7 +38,7 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Cloth/CheckSliderSerializeData.cs` | planned | `cloth/parameters/check_slider_serialize_data.*` |
+| `Cloth/CheckSliderSerializeData.cs` | complete | `cloth/parameters/check_slider_serialize_data.hpp` |
 | `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
 | `Cloth/ClothForceMode.cs` | complete | `cloth/cloth_force_mode.hpp` |
 | `Cloth/ClothNormalAxis.cs` | complete | `cloth/cloth_normal_axis.hpp` |
@@ -50,15 +50,15 @@ Status labels:
 | `Cloth/ClothSerializeData2.cs` | planned | `cloth/cloth_serialize_data2.*` |
 | `Cloth/ClothSerializeDataFunction.cs` | planned | `cloth/cloth_serialize_data_function.*` |
 | `Cloth/ClothUpdateMode.cs` | complete | `cloth/cloth_parameters.hpp` |
-| `Cloth/CullingSettings.cs` | defer | Blender viewport/runtime culling boundary |
-| `Cloth/CurveSerializeData.cs` | planned | `cloth/parameters/curve_serialize_data.*` |
-| `Cloth/CustomSkinningSettings.cs` | planned | `cloth/custom_skinning_settings.*` |
-| `Cloth/GizmoSerializeData.cs` | defer | Blender authoring/gizmo layer |
+| `Cloth/CullingSettings.cs` | partial | `cloth/parameters/culling_settings.hpp`; Renderer/GameObject references stay at the Blender viewport boundary |
+| `Cloth/CurveSerializeData.cs` | partial | `cloth/parameters/curve_serialize_data.hpp`; native float4x4 curve-data path is present, Unity AnimationCurve copy remains a boundary |
+| `Cloth/CustomSkinningSettings.cs` | partial | `cloth/custom_skinning_settings.hpp`; Unity Transform list is represented as backend transform ids |
+| `Cloth/GizmoSerializeData.cs` | complete | `cloth/gizmo_serialize_data.hpp`; draw execution remains Blender authoring/gizmo layer |
 | `Cloth/MagicaCloth.cs` | defer | Blender component wrapper |
 | `Cloth/MagicaClothAnimationProperty.cs` | planned | `cloth/animation_property.*` |
 | `Cloth/MagicaClothAPI.cs` | defer | native API + Python bridge |
-| `Cloth/NormalAlignmentSettings.cs` | planned | `cloth/normal_alignment_settings.*` |
-| `Cloth/SelectionData.cs` | planned | `cloth/selection_data.*` |
+| `Cloth/NormalAlignmentSettings.cs` | partial | `cloth/normal_alignment_settings.hpp`; Unity Transform reference is represented as a backend transform id |
+| `Cloth/SelectionData.cs` | partial | `cloth/selection_data.hpp`; data container/clone/compare/add/fill/merge are present, GridMap conversion remains deferred |
 
 ## Cloth/Collider
 
@@ -136,22 +136,22 @@ Status labels:
 | `PreBuild/PreBuildSerializeData.cs` | planned | `prebuild/prebuild_serialize_data.*` |
 | `PreBuild/SharePreBuildData.cs` | planned | `prebuild/share_prebuild_data.*` |
 | `PreBuild/UniquePreBuildData.cs` | planned | `prebuild/unique_prebuild_data.*` |
-| `Reduction/ReductionSettings.cs` | planned | `reduction/reduction_settings.*` |
-| `Reduction/ReductionWorkData.cs` | planned | `reduction/reduction_work_data.*` |
+| `Reduction/ReductionSettings.cs` | complete | `reduction/reduction_settings.hpp` |
+| `Reduction/ReductionWorkData.cs` | partial | `reduction/reduction_work_data.hpp`; native data ownership shell exists, job buffers are adapted to C++ containers |
 | `Reduction/SameDistanceReduction.cs` | planned | `reduction/same_distance_reduction.*` |
 | `Reduction/ShapeDistanceReduction.cs` | planned | `reduction/shape_distance_reduction.*` |
 | `Reduction/SimpleDistanceReduction.cs` | planned | `reduction/simple_distance_reduction.*` |
-| `Reduction/StepReductionBase.cs` | planned | `reduction/step_reduction_base.*` |
-| `Settings/ClothDebugSettings.cs` | planned | `settings/cloth_debug_settings.*` |
-| `Settings/VirtualMeshDebugSettings.cs` | planned | `settings/virtual_mesh_debug_settings.*` |
+| `Reduction/StepReductionBase.cs` | skeleton | `reduction/step_reduction_base.*`; JoinEdge and base state are present, reduction algorithm/jobs remain deferred |
+| `Settings/ClothDebugSettings.cs` | complete | `settings/cloth_debug_settings.hpp` |
+| `Settings/VirtualMeshDebugSettings.cs` | complete | `settings/virtual_mesh_debug_settings.hpp` |
 
 ## Utility
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Utility/Data/DataUtility.cs` | partial | `utility/data/data_utility.*` |
-| `Utility/Data/MultiDataBuilder.cs` | planned | `utility/data/multi_data_builder.*` |
-| `Utility/Grid/GridMap.cs` | planned | `utility/grid/grid_map.*` |
+| `Utility/Data/MultiDataBuilder.cs` | complete | `utility/data/multi_data_builder.hpp` |
+| `Utility/Grid/GridMap.cs` | partial | `utility/grid/grid_map.hpp`; native hash-map helper exists, Unity job/container semantics are adapted |
 | `Utility/Jobs/InterlockUtility.cs` | defer | C++ threading abstraction |
 | `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
 | `Utility/Math/AABB.cs` | partial | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
@@ -235,6 +235,10 @@ Last completed step:
 - Added file-level completion tracking to this map and marked the small fully ported MC2 files explicitly. `Define/ResultDefine.cs`, `Interface/ICount.cs`, `Interface/IDataValidate.cs`, `Interface/IValid.cs`, `ClothForceMode.cs`, `ClothNormalAxis.cs`, `ClothUpdateMode.cs`, `DataChunk.cs`, `VertexAttribute.cs`, and `VirtualMeshBoneWeight.cs` are now tracked as `complete`. `DataChunk` gained MC2 constructor parity, `VertexAttribute` gained the missing disable-collision static/set overload, and `VirtualMeshBoneWeight` now has the MC2 validity/count/add/normalize/string helpers.
 - Continued lightweight utility/interface migration: `IntAABB.cs`, `MinimumData.cs`, `ExBitFlag16.cs`, `ExCostSortedList1.cs`, and `ExCostSortedList4.cs` are now ported and marked `complete`. `float4` and `int4` gained mutable index accessors needed by these MC2-style fixed containers.
 - Added another lightweight type pass: MC2 processing/cancel exceptions, `VirtualMeshPrimitive`, `VirtualMeshRaycastHit`, and `TimeSpan` are now ported. `TimeSpan` keeps the native timing/string behavior; MC2 `Develop.DebugLog/Log` calls are intentionally treated as the C++ logging boundary.
+- Added native cloth parameter helpers: `CheckSliderSerializeData` is complete, `CurveSerializeData` now supports value/linear-curve/float4x4 curve-data evaluation and conversion, and `CullingSettings` carries the MC2 culling enums plus distance-culling values/validation. Unity `AnimationCurve`, `Renderer`, and `GameObject` references remain integration-boundary concerns.
+- Added native data-layer ports for `SelectionData`, `NormalAlignmentSettings`, and `CustomSkinningSettings`. These now cover the MC2 value ownership, validation, clone/compare/fill/merge style helpers, and transform references are represented as backend ids; `SelectionData.ConvertFrom(...)` / GridMap search and Unity object replacement remain later integration/data-builder work.
+- Added `MultiDataBuilder` and a lightweight native `GridMap` utility. `MultiDataBuilder` preserves the MC2 key-ordered flattening and `Pack12_20(count,start)` index output; `GridMap` provides native grid hashing/add/remove/move/area helpers for later `SelectionData` and spatial builder work. Also added data ports for `ClothDebugSettings`, `VirtualMeshDebugSettings`, and `GizmoSerializeData`.
+- Added the first Reduction data layer: `ReductionSettings` is complete, `ReductionWorkData` now owns the C++ containers for reduction/optimization/final mesh data, and `StepReductionBase` has the MC2 base state plus `JoinEdge` type. Actual step reduction algorithms/jobs remain deferred.
 
 Latest verification:
 
