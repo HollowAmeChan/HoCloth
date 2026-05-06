@@ -20,6 +20,7 @@ namespace hocloth::mc2 {
 [[nodiscard]] float3 Project(const float3& value, const float3& normal);
 [[nodiscard]] float3 ProjectOnPlane(const float3& value, const float3& normal);
 [[nodiscard]] float3 ClampVector(const float3& value, float max_length);
+[[nodiscard]] float3 ClampDistance(const float3& from, const float3& to, float max_length);
 [[nodiscard]] float Distance(const float3& a, const float3& b);
 [[nodiscard]] float Abs(float value);
 [[nodiscard]] float CalcMass(float depth);
@@ -38,6 +39,16 @@ namespace hocloth::mc2 {
 void ToAngleAxis(const quaternion& value, float& angle, float3& axis);
 [[nodiscard]] float3 Rotate(const quaternion& rotation, const float3& vector);
 [[nodiscard]] float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale);
+[[nodiscard]] bool Overlaps(const AABB& a, const AABB& b);
+void Expand(AABB& bounds, float signed_distance);
 void Encapsulate(AABB& bounds, const float3& point);
+void Encapsulate(AABB& bounds, const AABB& other);
+[[nodiscard]] float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const float3& b);
+[[nodiscard]] float IntersectPointPlaneDist(
+    const float3& plane_position,
+    const float3& plane_direction,
+    const float3& position,
+    float3& out_position
+);
 
 }  // namespace hocloth::mc2

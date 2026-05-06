@@ -102,6 +102,15 @@ float3 ClampVector(const float3& value, float max_length)
     return Scale(value, max_length / length);
 }
 
+float3 ClampDistance(const float3& from, const float3& to, float max_length)
+{
+    const float length = Distance(from, to);
+    if (length <= max_length || length <= define::system::Epsilon) {
+        return to;
+    }
+    return Lerp(from, to, max_length / length);
+}
+
 float Distance(const float3& a, const float3& b)
 {
     return Length(Subtract(a, b));
@@ -367,6 +376,23 @@ float4x4 TRS(const float3& position, const quaternion& rotation, const float3& s
     return matrix;
 }
 
+bool Overlaps(const AABB& a, const AABB& b)
+{
+    return a.max.x >= b.min.x && a.min.x <= b.max.x
+        && a.max.y >= b.min.y && a.min.y <= b.max.y
+        && a.max.z >= b.min.z && a.min.z <= b.max.z;
+}
+
+void Expand(AABB& bounds, float signed_distance)
+{
+    bounds.min.x -= signed_distance;
+    bounds.min.y -= signed_distance;
+    bounds.min.z -= signed_distance;
+    bounds.max.x += signed_distance;
+    bounds.max.y += signed_distance;
+    bounds.max.z += signed_distance;
+}
+
 void Encapsulate(AABB& bounds, const float3& point)
 {
     bounds.min.x = std::min(bounds.min.x, point.x);
@@ -375,6 +401,41 @@ void Encapsulate(AABB& bounds, const float3& point)
     bounds.max.x = std::max(bounds.max.x, point.x);
     bounds.max.y = std::max(bounds.max.y, point.y);
     bounds.max.z = std::max(bounds.max.z, point.z);
+}
+
+void Encapsulate(AABB& bounds, const AABB& other)
+{
+    Encapsulate(bounds, other.min);
+    Encapsulate(bounds, other.max);
+}
+
+float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const float3& b)
+{
+    const float3 ab = Subtract(b, a);
+    const float denominator = Dot(ab, ab);
+    if (denominator <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return Clamp01(Dot(Subtract(point, a), ab) / denominator);
+}
+
+float IntersectPointPlaneDist(
+    const float3& plane_position,
+    const float3& plane_direction,
+    const float3& position,
+    float3& out_position
+)
+{
+    const float3 v = Subtract(position, plane_position);
+    const float3 projected = Project(v, plane_direction);
+    const float length = Length(projected);
+    if (Dot(plane_direction, v) < 0.0f) {
+        out_position = Subtract(position, projected);
+        return -length;
+    }
+
+    out_position = position;
+    return length;
 }
 
 }  // namespace hocloth::mc2

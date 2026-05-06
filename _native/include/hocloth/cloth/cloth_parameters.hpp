@@ -3,7 +3,6 @@
 #include "hocloth/cloth/cloth_force_mode.hpp"
 #include "hocloth/cloth/cloth_normal_axis.hpp"
 #include "hocloth/core/define/system_define.hpp"
-#include "hocloth/manager/simulation/collider_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 
 namespace hocloth::mc2 {
@@ -104,8 +103,14 @@ struct AngleConstraintParams {
     float limit_stiffness = 1.0f;
 };
 
+enum class ColliderCollisionMode {
+    None = 0,
+    Point = 1,
+    Edge = 2,
+};
+
 struct ColliderCollisionConstraintParams {
-    ColliderManager::ColliderType mode = ColliderManager::ColliderType::Point;
+    ColliderCollisionMode mode = ColliderCollisionMode::Point;
     float dynamic_friction = define::system::BoneSpringCollisionFriction;
     float static_friction = define::system::BoneSpringCollisionFriction;
     float4x4 limit_distance = ConstantCurve(0.05f);
