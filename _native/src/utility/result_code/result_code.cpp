@@ -27,14 +27,20 @@ Result Result::Error(ResultCode code, std::string message)
 const char* ToString(ResultCode code)
 {
     switch (code) {
-    case ResultCode::Success:
-        return "Success";
+    case ResultCode::None:
+        return "None";
     case ResultCode::Empty:
         return "Empty";
-    case ResultCode::InvalidArgument:
-        return "InvalidArgument";
-    case ResultCode::NotImplemented:
-        return "NotImplemented";
+    case ResultCode::Success:
+        return "Success";
+    case ResultCode::Cancel:
+        return "Cancel";
+    case ResultCode::Process:
+        return "Process";
+    case ResultCode::Warning:
+        return "Warning";
+    case ResultCode::Error:
+        return "Error";
     }
     return "Unknown";
 }

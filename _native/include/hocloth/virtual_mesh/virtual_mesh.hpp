@@ -58,6 +58,9 @@ public:
     float average_vertex_distance = 0.0f;
     float max_vertex_distance = 0.0f;
     DataChunk merge_chunk;
+    float4x4 to_proxy_matrix{};
+    quaternion to_proxy_rotation{};
+    int mapping_id = -1;
 
     ExSimpleNativeArray<std::uint32_t> vertex_child_index_array;
     ExSimpleNativeArray<std::uint16_t> vertex_child_data_array;

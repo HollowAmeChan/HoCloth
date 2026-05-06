@@ -55,6 +55,34 @@ struct float4 {
     float y = 0.0f;
     float z = 0.0f;
     float w = 0.0f;
+
+    [[nodiscard]] float operator[](int index) const
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        default:
+            return w;
+        }
+    }
+
+    [[nodiscard]] float& operator[](int index)
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        default:
+            return w;
+        }
+    }
 };
 
 struct quaternion {
@@ -123,6 +151,20 @@ struct int4 {
     int w = 0;
 
     [[nodiscard]] int operator[](int index) const
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        default:
+            return w;
+        }
+    }
+
+    [[nodiscard]] int& operator[](int index)
     {
         switch (index) {
         case 0:

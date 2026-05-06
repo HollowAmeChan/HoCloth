@@ -8,6 +8,7 @@ _ReferenceProject/MagicaCloth2/Scripts/Core
 
 Status labels:
 
+- `complete`: MC2 file is ported at the file/API level for the native backend; Unity/editor-only decoration may be omitted when it has no C++ equivalent.
 - `planned`: not ported yet.
 - `skeleton`: C++ target files or manager shell exist, but behavior is not ported.
 - `partial`: some behavior or data ownership exists in the new MC2-style backend.
@@ -19,12 +20,12 @@ Status labels:
 | MC2 module | Status | HoCloth target |
 | --- | --- | --- |
 | Define | partial | `_native/include/hocloth/core/define/` |
-| Interface | skeleton | `_native/include/hocloth/manager/`, `_native/include/hocloth/core/` |
-| Utility/ResultCode | skeleton | `_native/include/hocloth/utility/result_code/` |
+| Interface | partial | `_native/include/hocloth/manager/`, `_native/include/hocloth/core/interface/` |
+| Utility/ResultCode | partial | `_native/include/hocloth/utility/result_code/` |
 | Utility/Math | partial | `_native/include/hocloth/utility/math/` |
 | Utility/Data | partial | `_native/include/hocloth/utility/data/` |
 | Utility/NativeCollection | partial | `_native/include/hocloth/utility/native_collection/` |
-| Utility/Time | skeleton | `_native/include/hocloth/manager/simulation/time_manager.hpp` |
+| Utility/Time | partial | `_native/include/hocloth/utility/time/`, `_native/include/hocloth/manager/simulation/time_manager.hpp` |
 | Manager | partial | `_native/include/hocloth/manager/` |
 | Cloth/Constraints | partial | `_native/include/hocloth/cloth/constraints/` |
 | Cloth/Collider | planned | `_native/include/hocloth/cloth/collider/` |
@@ -39,8 +40,8 @@ Status labels:
 | --- | --- | --- |
 | `Cloth/CheckSliderSerializeData.cs` | planned | `cloth/parameters/check_slider_serialize_data.*` |
 | `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
-| `Cloth/ClothForceMode.cs` | partial | `cloth/cloth_force_mode.hpp` |
-| `Cloth/ClothNormalAxis.cs` | partial | `cloth/cloth_normal_axis.hpp` |
+| `Cloth/ClothForceMode.cs` | complete | `cloth/cloth_force_mode.hpp` |
+| `Cloth/ClothNormalAxis.cs` | complete | `cloth/cloth_normal_axis.hpp` |
 | `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp` |
 | `Cloth/ClothProcess.cs` | planned | `cloth/cloth_process.*` |
 | `Cloth/ClothProcessData.cs` | planned | `cloth/cloth_process_data.*` |
@@ -48,7 +49,7 @@ Status labels:
 | `Cloth/ClothSerializeData.cs` | planned | `cloth/cloth_serialize_data.*` |
 | `Cloth/ClothSerializeData2.cs` | planned | `cloth/cloth_serialize_data2.*` |
 | `Cloth/ClothSerializeDataFunction.cs` | planned | `cloth/cloth_serialize_data_function.*` |
-| `Cloth/ClothUpdateMode.cs` | partial | `cloth/cloth_parameters.hpp` |
+| `Cloth/ClothUpdateMode.cs` | complete | `cloth/cloth_parameters.hpp` |
 | `Cloth/CullingSettings.cs` | defer | Blender viewport/runtime culling boundary |
 | `Cloth/CurveSerializeData.cs` | planned | `cloth/parameters/curve_serialize_data.*` |
 | `Cloth/CustomSkinningSettings.cs` | planned | `cloth/custom_skinning_settings.*` |
@@ -94,12 +95,12 @@ Status labels:
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `Define/ResultDefine.cs` | skeleton | `utility/result_code/result_code.*` |
+| `Define/ResultDefine.cs` | complete | `utility/result_code/result_code.hpp` |
 | `Define/SystemDefine.cs` | partial | `core/define/system_define.hpp`, `manager/simulation/time_manager.*` |
-| `Interface/ICount.cs` | planned | `core/interface/i_count.hpp` |
-| `Interface/IDataValidate.cs` | planned | `core/interface/i_data_validate.hpp` |
-| `Interface/ITransform.cs` | planned | `core/interface/i_transform.hpp` |
-| `Interface/IValid.cs` | planned | `core/interface/i_valid.hpp` |
+| `Interface/ICount.cs` | complete | `core/interface/i_count.hpp` |
+| `Interface/IDataValidate.cs` | complete | `core/interface/i_data_validate.hpp` |
+| `Interface/ITransform.cs` | defer | Unity `Transform` collection/replacement boundary; reinterpret through Blender object ids later |
+| `Interface/IValid.cs` | complete | `core/interface/i_valid.hpp` |
 
 ## Manager
 
@@ -154,18 +155,18 @@ Status labels:
 | `Utility/Jobs/InterlockUtility.cs` | defer | C++ threading abstraction |
 | `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
 | `Utility/Math/AABB.cs` | partial | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
-| `Utility/Math/IntAABB.cs` | planned | `utility/math/int_aabb.*` |
+| `Utility/Math/IntAABB.cs` | complete | `utility/math/int_aabb.hpp` |
 | `Utility/Math/MathExtensions.cs` | partial | `utility/math/math_extensions.*` |
 | `Utility/Math/MathUtility.cs` | partial | `utility/math/math_utility.*` |
-| `Utility/Math/MinimumData.cs` | planned | `utility/math/minimum_data.*` |
+| `Utility/Math/MinimumData.cs` | complete | `utility/math/minimum_data.hpp` |
 | `Utility/Mesh/MeshUtility.cs` | planned | `utility/mesh/mesh_utility.*` |
 | `Utility/Misc/Develop.cs` | planned | `utility/misc/develop.*` |
 | `Utility/Misc/StaticStringBuilder.cs` | defer | C++ logging/dump utilities |
-| `Utility/NativeCollection/DataChunk.cs` | partial | `utility/native_collection/data_chunk.*` |
-| `Utility/NativeCollection/ExBitFlag16.cs` | planned | `utility/native_collection/ex_bit_flag16.*` |
+| `Utility/NativeCollection/DataChunk.cs` | complete | `utility/native_collection/data_chunk.*` |
+| `Utility/NativeCollection/ExBitFlag16.cs` | complete | `utility/native_collection/bit_flag.hpp` |
 | `Utility/NativeCollection/ExBitFlag8.cs` | partial | `utility/native_collection/bit_flag.hpp` |
-| `Utility/NativeCollection/ExCostSortedList1.cs` | planned | `utility/native_collection/ex_cost_sorted_list1.*` |
-| `Utility/NativeCollection/ExCostSortedList4.cs` | planned | `utility/native_collection/ex_cost_sorted_list4.*` |
+| `Utility/NativeCollection/ExCostSortedList1.cs` | complete | `utility/native_collection/ex_cost_sorted_list1.hpp` |
+| `Utility/NativeCollection/ExCostSortedList4.cs` | complete | `utility/native_collection/ex_cost_sorted_list4.hpp` |
 | `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp` |
 | `Utility/NativeCollection/ExProcessingList.cs` | partial | `utility/native_collection/ex_processing_list.*` |
 | `Utility/NativeCollection/ExSimpleNativeArray.cs` | partial | `utility/native_collection/ex_simple_native_array.hpp` |
@@ -178,21 +179,21 @@ Status labels:
 | `Utility/NativeCollection/NativeArrayExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/NativeMultiHashMapExtensions.cs` | defer | C++ container compatibility |
 | `Utility/NativeCollection/NativeReferenceExtensions.cs` | defer | C++ container compatibility |
-| `Utility/ResultCode/Exception.cs` | planned | `utility/result_code/exception.*` |
-| `Utility/ResultCode/ResultCode.cs` | skeleton | `utility/result_code/result_code.*` |
-| `Utility/Time/TimeSpan.cs` | planned | `utility/time/time_span.*` |
+| `Utility/ResultCode/Exception.cs` | complete | `utility/result_code/exception.*` |
+| `Utility/ResultCode/ResultCode.cs` | partial | `utility/result_code/result_code.*`; core enum/status wrapper exists, warning/info/debug APIs remain simplified |
+| `Utility/Time/TimeSpan.cs` | complete | `utility/time/time_span.*`; DebugLog/Log are omitted at the C++ logging boundary |
 | `Utility/Time/UnityTimeSpan.cs` | defer | Blender/native profiling abstraction |
 
 ## VirtualMesh
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
-| `VirtualMesh/VertexAttribute.cs` | partial | `virtual_mesh/vertex_attribute.hpp` |
+| `VirtualMesh/VertexAttribute.cs` | complete | `virtual_mesh/vertex_attribute.hpp` |
 | `VirtualMesh/VirtualMesh.cs` | partial | `virtual_mesh/virtual_mesh.*` |
-| `VirtualMesh/VirtualMeshBoneWeight.cs` | partial | `virtual_mesh/virtual_mesh_bone_weight.hpp` |
+| `VirtualMesh/VirtualMeshBoneWeight.cs` | complete | `virtual_mesh/virtual_mesh_bone_weight.*` |
 | `VirtualMesh/VirtualMeshContainer.cs` | partial | `virtual_mesh/virtual_mesh_container.*` |
-| `VirtualMesh/VirtualMeshPrimitive.cs` | planned | `virtual_mesh/virtual_mesh_primitive.*` |
-| `VirtualMesh/VirtualMeshRaycastHit.cs` | planned | `virtual_mesh/virtual_mesh_raycast_hit.*` |
+| `VirtualMesh/VirtualMeshPrimitive.cs` | complete | `virtual_mesh/virtual_mesh_primitive.hpp` |
+| `VirtualMesh/VirtualMeshRaycastHit.cs` | complete | `virtual_mesh/virtual_mesh_raycast_hit.hpp` |
 | `VirtualMesh/VirtualMeshTransform.cs` | partial | `virtual_mesh/virtual_mesh_transform.*` |
 | `VirtualMesh/Function/VirtualMeshInputOutput.cs` | planned | `virtual_mesh/function/virtual_mesh_input_output.*` |
 | `VirtualMesh/Function/VirtualMeshMapping.cs` | planned | `virtual_mesh/function/virtual_mesh_mapping.*` |
@@ -230,6 +231,10 @@ Last completed step:
 - Added the first bottom-layer `SelfCollisionConstraint` C++ module from `Cloth/Constraints/SelfCollisionConstraint.cs`: `SelfCollisionMode`, `SelfCollisionConstraintParams`, primitive/sort/contact data structures, primitive counters, intersect flag ownership, work-buffer lifecycle, primitive registration/removal, primitive initialization, per-step primitive update, intersect primitive next-position update, per-team sort-and-sweep sorting, Self/Sync/ParentSync sort-and-sweep broad-phase contact generation, broad-phase contact refresh, EdgeEdge / PointTriangle XPBD solve, aggregate writeback/clear, Self/Sync/ParentSync edge-triangle intersect/tangle-release flagging, `SolveRuntimeSelfCollision(...)`, `ClothManager::SelfCollision()`, and CMake registration are now present.
 - Extended step-list infrastructure for SelfCollision: `SimulationManager` now exposes/marks self particle, point-triangle, edge-edge, and triangle-point processing lists and can populate those lists from team self-collision flags. `BitFlag64::TestAny(...)` was added to mirror MC2 flag range checks.
 - Started the fuller `TeamManager.TeamData` C++ port: `ClothUpdateMode`, proxy mesh type, negative-scale triangle/quaternion helper fields, MC2-style status query helpers, fixed-size sync parent team list, `ContainsTeamData(...)`, `SetSyncTeam(...)`, sync parent add/remove maintenance, `MappingData`, fixed-size team mapping index lists, mapping data registration/removal, and sync time/inertia-parameter copy helpers are now present. The broader MC2 team lifecycle jobs, culling updates, team wind data, and full process-driven parameter synchronization remain deferred.
+- Extended `VirtualMeshManager` with the MC2 mapping buffer ownership layer from `Manager/VirtualMesh/VirtualMeshManager.cs`: mapping id/reference/attribute/local position/local normal/bone weight/position/normal arrays, mapping vertex count/accessors, `RegisterMappingMesh(...)`, `ExitMappingMesh(...)`, center-transform ownership, `mappingIndex + 1` id storage, `TeamManager::MappingData`回写, and mapping mesh `mapping_id` assignment are now present. This is only the low-level registration/release substrate; `VirtualMesh/Function/VirtualMeshMapping.cs` mapping solve/generation behavior remains deferred.
+- Added file-level completion tracking to this map and marked the small fully ported MC2 files explicitly. `Define/ResultDefine.cs`, `Interface/ICount.cs`, `Interface/IDataValidate.cs`, `Interface/IValid.cs`, `ClothForceMode.cs`, `ClothNormalAxis.cs`, `ClothUpdateMode.cs`, `DataChunk.cs`, `VertexAttribute.cs`, and `VirtualMeshBoneWeight.cs` are now tracked as `complete`. `DataChunk` gained MC2 constructor parity, `VertexAttribute` gained the missing disable-collision static/set overload, and `VirtualMeshBoneWeight` now has the MC2 validity/count/add/normalize/string helpers.
+- Continued lightweight utility/interface migration: `IntAABB.cs`, `MinimumData.cs`, `ExBitFlag16.cs`, `ExCostSortedList1.cs`, and `ExCostSortedList4.cs` are now ported and marked `complete`. `float4` and `int4` gained mutable index accessors needed by these MC2-style fixed containers.
+- Added another lightweight type pass: MC2 processing/cancel exceptions, `VirtualMeshPrimitive`, `VirtualMeshRaycastHit`, and `TimeSpan` are now ported. `TimeSpan` keeps the native timing/string behavior; MC2 `Develop.DebugLog/Log` calls are intentionally treated as the C++ logging boundary.
 
 Latest verification:
 
@@ -242,7 +247,7 @@ The native smoke test now contains finite numeric assertions for the fixed sprin
 
 VirtualMesh scope note:
 
-- `VirtualMesh` / `VirtualMeshManager` are intentionally partial for now. Full proxy generation, mapping mesh, optimization/reduction/work functions, normal/tangent update jobs, transform/skinning update jobs, and serialization/prebuild restore are not current XPBD-core blockers.
+- `VirtualMesh` / `VirtualMeshManager` are intentionally partial for now. Simple proxy ownership and mapping buffer registration/release are present; full proxy generation, mapping solve/generation behavior, optimization/reduction/work functions, normal/tangent update jobs, transform/skinning update jobs, and serialization/prebuild restore are not current XPBD-core blockers.
 - Do not spend deep test effort on VirtualMesh-specific behavior yet. Current tests only need to cover the lower-level infrastructure it depends on: `ExNativeArray` / `ExSimpleNativeArray`, `DataChunk`, packed index helpers, `VertexAttribute`, transform chunk registration, and simple proxy array ownership needed by the solver smoke path.
 - When the core XPBD flow is stable, return to VirtualMesh as a separate integration/prebuild phase.
 

@@ -45,6 +45,48 @@ private:
     std::uint8_t value_ = 0;
 };
 
+// Port target for Magica Cloth 2: Scripts/Core/Utility/NativeCollection/ExBitFlag16.cs
+class BitFlag16 {
+public:
+    BitFlag16() = default;
+    explicit BitFlag16(std::uint16_t value)
+        : value_(value)
+    {
+    }
+
+    explicit BitFlag16(int value)
+        : value_(static_cast<std::uint16_t>(value))
+    {
+    }
+
+    [[nodiscard]] bool IsSet(std::uint16_t flag) const
+    {
+        return (value_ & flag) != 0;
+    }
+
+    void SetFlag(std::uint16_t flag, bool enabled)
+    {
+        if (enabled) {
+            value_ = static_cast<std::uint16_t>(value_ | flag);
+        } else {
+            value_ = static_cast<std::uint16_t>(value_ & ~flag);
+        }
+    }
+
+    void Clear()
+    {
+        value_ = 0;
+    }
+
+    [[nodiscard]] std::uint16_t Value() const
+    {
+        return value_;
+    }
+
+private:
+    std::uint16_t value_ = 0;
+};
+
 // Port target for Magica Cloth 2: Unity.Collections.BitField64 usage in TeamManager.cs
 class BitFlag64 {
 public:

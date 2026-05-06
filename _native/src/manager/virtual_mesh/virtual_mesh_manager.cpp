@@ -53,6 +53,14 @@ void VirtualMeshManager::Dispose()
     vertex_to_transform_rotations_.Dispose();
     positions_.Dispose();
     rotations_.Dispose();
+    mapping_id_array_.Dispose();
+    mapping_reference_indices_.Dispose();
+    mapping_attributes_.Dispose();
+    mapping_local_positions_.Dispose();
+    mapping_local_normals_.Dispose();
+    mapping_bone_weights_.Dispose();
+    mapping_positions_.Dispose();
+    mapping_normals_.Dispose();
     initialized_ = false;
 }
 
@@ -62,7 +70,8 @@ ManagerStatus VirtualMeshManager::Status() const
     detail << "proxy_vertices=" << ProxyVertexCount()
            << " proxy_triangles=" << ProxyTriangleCount()
            << " proxy_edges=" << ProxyEdgeCount()
-           << " local_positions=" << ProxyLocalPositionCount();
+           << " local_positions=" << ProxyLocalPositionCount()
+           << " mapping_vertices=" << MappingVertexCount();
     return ManagerStatus{
         "VirtualMeshManager",
         initialized_,
@@ -230,6 +239,97 @@ void VirtualMeshManager::RegisterProxyMesh(
     }
 }
 
+DataChunk VirtualMeshManager::RegisterMappingMesh(
+    int team_id,
+    VirtualMeshContainer& mapping_mesh_container,
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    if (!initialized_ || !team_manager.IsValidTeam(team_id)) {
+        return DataChunk::Empty();
+    }
+
+    VirtualMesh* mapping_mesh = mapping_mesh_container.SharedVirtualMesh();
+    if (mapping_mesh == nullptr || !mapping_mesh->IsMapping()) {
+        return DataChunk::Empty();
+    }
+
+    TeamManager::MappingData mapping_data;
+    mapping_data.team_id = team_id;
+
+    BitFlag8 transform_flag{TransformManager::FlagRead};
+    transform_flag.SetFlag(TransformManager::FlagEnable, true);
+    const DataChunk center_transform_chunk = transform_manager.AddTransform(
+        mapping_mesh_container.GetCenterTransformRecord(),
+        transform_flag,
+        team_id
+    );
+    mapping_data.center_transform_index =
+        center_transform_chunk.IsValid() ? center_transform_chunk.start_index : -1;
+
+    mapping_data.to_proxy_matrix = mapping_mesh->to_proxy_matrix;
+    mapping_data.to_proxy_rotation = mapping_mesh->to_proxy_rotation;
+
+    const int mapping_index = team_manager.RegisterMappingData(team_id, mapping_data);
+    if (mapping_index < 0) {
+        if (center_transform_chunk.IsValid()) {
+            transform_manager.RemoveTransform(center_transform_chunk);
+        }
+        return DataChunk::Empty();
+    }
+
+    const int vertex_count = mapping_mesh->VertexCount();
+    if (vertex_count > 0) {
+        mapping_data.mapping_common_chunk =
+            mapping_id_array_.AddRange(vertex_count, static_cast<short>(mapping_index + 1));
+        mapping_reference_indices_.AddRange(mapping_mesh->reference_indices);
+        mapping_attributes_.AddRange(mapping_mesh->attributes);
+        mapping_local_positions_.AddRange(mapping_mesh->local_positions);
+        mapping_local_normals_.AddRange(mapping_mesh->local_normals);
+        mapping_bone_weights_.AddRange(mapping_mesh->bone_weights);
+        mapping_positions_.AddRange(vertex_count);
+        mapping_normals_.AddRange(vertex_count);
+    }
+
+    team_manager.MappingDataArray()[mapping_index] = mapping_data;
+    mapping_mesh->mapping_id = mapping_index;
+    return mapping_data.mapping_common_chunk;
+}
+
+void VirtualMeshManager::ExitMappingMesh(
+    int team_id,
+    int mapping_index,
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    if (!initialized_ || !team_manager.IsValidTeam(team_id) || mapping_index < 0
+        || mapping_index >= team_manager.MappingDataArray().Length()) {
+        return;
+    }
+
+    const TeamManager::MappingData mapping_data = team_manager.MappingDataArray()[mapping_index];
+    if (!mapping_data.IsValid() || mapping_data.team_id != team_id) {
+        return;
+    }
+
+    if (mapping_data.center_transform_index >= 0) {
+        transform_manager.RemoveTransform(DataChunk{mapping_data.center_transform_index, 1});
+    }
+
+    mapping_id_array_.RemoveAndFill(mapping_data.mapping_common_chunk, 0);
+    mapping_reference_indices_.Remove(mapping_data.mapping_common_chunk);
+    mapping_attributes_.Remove(mapping_data.mapping_common_chunk);
+    mapping_local_positions_.Remove(mapping_data.mapping_common_chunk);
+    mapping_local_normals_.Remove(mapping_data.mapping_common_chunk);
+    mapping_bone_weights_.Remove(mapping_data.mapping_common_chunk);
+    mapping_positions_.Remove(mapping_data.mapping_common_chunk);
+    mapping_normals_.Remove(mapping_data.mapping_common_chunk);
+
+    team_manager.RemoveMappingData(team_id, mapping_index);
+}
+
 int VirtualMeshManager::ProxyVertexCount() const
 {
     return team_ids_.Count();
@@ -248,6 +348,11 @@ int VirtualMeshManager::ProxyEdgeCount() const
 int VirtualMeshManager::ProxyLocalPositionCount() const
 {
     return local_positions_.Count();
+}
+
+int VirtualMeshManager::MappingVertexCount() const
+{
+    return mapping_id_array_.Count();
 }
 
 const ExNativeArray<VertexAttribute>& VirtualMeshManager::Attributes() const
@@ -328,6 +433,56 @@ ExNativeArray<float3>& VirtualMeshManager::Positions()
 ExNativeArray<quaternion>& VirtualMeshManager::Rotations()
 {
     return rotations_;
+}
+
+const ExNativeArray<short>& VirtualMeshManager::MappingIds() const
+{
+    return mapping_id_array_;
+}
+
+const ExNativeArray<int>& VirtualMeshManager::MappingReferenceIndices() const
+{
+    return mapping_reference_indices_;
+}
+
+const ExNativeArray<VertexAttribute>& VirtualMeshManager::MappingAttributes() const
+{
+    return mapping_attributes_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::MappingLocalPositions() const
+{
+    return mapping_local_positions_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::MappingLocalNormals() const
+{
+    return mapping_local_normals_;
+}
+
+const ExNativeArray<VirtualMeshBoneWeight>& VirtualMeshManager::MappingBoneWeights() const
+{
+    return mapping_bone_weights_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::MappingPositions() const
+{
+    return mapping_positions_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::MappingNormals() const
+{
+    return mapping_normals_;
+}
+
+ExNativeArray<float3>& VirtualMeshManager::MappingPositions()
+{
+    return mapping_positions_;
+}
+
+ExNativeArray<float3>& VirtualMeshManager::MappingNormals()
+{
+    return mapping_normals_;
 }
 
 }  // namespace hocloth::mc2

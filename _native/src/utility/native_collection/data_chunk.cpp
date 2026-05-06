@@ -4,6 +4,18 @@
 
 namespace hocloth::mc2 {
 
+DataChunk::DataChunk(int start_index_, int data_length_)
+    : start_index(start_index_)
+    , data_length(data_length_)
+{
+}
+
+DataChunk::DataChunk(int start_index_)
+    : start_index(start_index_)
+    , data_length(1)
+{
+}
+
 bool DataChunk::IsValid() const
 {
     return data_length > 0;

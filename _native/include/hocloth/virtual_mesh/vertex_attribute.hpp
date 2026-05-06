@@ -28,6 +28,11 @@ public:
         return VertexAttribute{FlagMove};
     }
 
+    static constexpr VertexAttribute DisableCollision()
+    {
+        return VertexAttribute{FlagDisableCollision};
+    }
+
     VertexAttribute() = default;
     constexpr explicit VertexAttribute(std::uint8_t value)
         : value_(value)
@@ -51,6 +56,11 @@ public:
         } else {
             value_ = static_cast<std::uint8_t>(value_ & ~flag);
         }
+    }
+
+    void Set(VertexAttribute attribute, bool enabled)
+    {
+        Set(attribute.Value(), enabled);
     }
 
     [[nodiscard]] constexpr bool IsInvalid() const

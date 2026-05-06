@@ -9,6 +9,10 @@ struct DataChunk {
     int start_index = 0;
     int data_length = 0;
 
+    DataChunk() = default;
+    DataChunk(int start_index, int data_length);
+    explicit DataChunk(int start_index);
+
     [[nodiscard]] bool IsValid() const;
     void Clear();
     [[nodiscard]] int EndIndex() const;
