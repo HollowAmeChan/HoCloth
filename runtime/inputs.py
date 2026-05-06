@@ -1,6 +1,7 @@
 from mathutils import Matrix, Vector
 
 from ..compile.compiler import resolve_armature_object
+from .exchange import empty_frame_inputs, wrap_frame_inputs
 
 
 _INPUT_STATE = {
@@ -86,7 +87,7 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
     bone_chains = []
     collision_objects = []
     if compiled_scene is None:
-        return {"bone_chains": bone_chains, "collision_objects": collision_objects}
+        return wrap_frame_inputs(empty_frame_inputs())
 
     current_frame = int(scene.frame_current)
     previous_frame = _INPUT_STATE["last_scene_frame"]
@@ -223,4 +224,4 @@ def build_runtime_inputs(scene, compiled_scene) -> dict:
     _INPUT_STATE["last_scene_frame"] = current_frame
     _INPUT_STATE["chain_states"] = next_chain_states
     _INPUT_STATE["collision_object_states"] = next_collision_object_states
-    return {"bone_chains": bone_chains, "collision_objects": collision_objects}
+    return wrap_frame_inputs({"bone_chains": bone_chains, "collision_objects": collision_objects})

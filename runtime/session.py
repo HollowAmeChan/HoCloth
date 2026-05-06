@@ -2,6 +2,13 @@ import json
 import os
 
 from .bridge import load_bridge
+from .exchange import (
+    empty_frame_inputs,
+    frame_inputs_payload,
+    schema_metadata,
+    wrap_runtime_debug,
+    wrap_step_output,
+)
 
 
 _runtime_state = {
@@ -30,12 +37,7 @@ def _debug_dump_path() -> str:
 
 
 def _write_runtime_debug_dump(runtime_inputs: dict | None, transforms: list[dict]):
-    debug_payload = {
-        "runtime_state": dict(_runtime_state),
-        "compiled_scene": _compiled_scene.to_dict() if _compiled_scene is not None else None,
-        "runtime_inputs": runtime_inputs or {"bone_chains": []},
-        "transforms": transforms,
-    }
+    debug_payload = wrap_runtime_debug(_runtime_state, _compiled_scene, runtime_inputs, transforms)
     with open(_debug_dump_path(), "w", encoding="utf-8") as handle:
         json.dump(debug_payload, handle, indent=2, ensure_ascii=False)
 
@@ -93,7 +95,7 @@ def set_runtime_inputs_only(runtime_inputs: dict | None = None):
     if not _runtime_state["handle"]:
         raise RuntimeError("Runtime has not been built yet.")
 
-    _current_bridge().set_runtime_inputs(_runtime_state["handle"], runtime_inputs or {"bone_chains": []})
+    _current_bridge().set_runtime_inputs(_runtime_state["handle"], runtime_inputs or empty_frame_inputs())
     return dict(_runtime_state)
 
 
@@ -129,10 +131,13 @@ def step_runtime(
         0.0,
         _runtime_state["accumulated_time"] - (fixed_step_dt * _runtime_state["last_executed_steps"]),
     )
+    frame_inputs = frame_inputs_payload(runtime_inputs) if runtime_inputs is not None else empty_frame_inputs()
     _write_runtime_debug_dump(runtime_inputs, transforms)
     return {
         "runtime_state": dict(_runtime_state),
         "transforms": transforms,
+        "frame_inputs": frame_inputs,
+        "exchange": wrap_step_output(_runtime_state, transforms),
     }
 
 
@@ -168,3 +173,9 @@ def set_pose_baseline(baseline: dict):
 
 def get_pose_baseline():
     return dict(_pose_baseline)
+
+
+def get_exchange_info():
+    info = schema_metadata()
+    info["debug_dump_path"] = _debug_dump_path()
+    return info

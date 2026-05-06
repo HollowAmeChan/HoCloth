@@ -11,7 +11,8 @@ param(
     [string]$PythonExecutable = "",
     [string]$ConfigurePreset = "vs2022-release-native",
     [string]$BuildPreset = "build-vs2022-release-native",
-    [string]$BuildConfiguration = "Release"
+    [string]$BuildConfiguration = "Release",
+    [int]$NativeSmokeTimeoutSeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,6 +144,105 @@ function Resolve-PythonExecutable {
     return $null
 }
 
+function Test-ExclusiveFileAccess {
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $true
+    }
+
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
+    }
+}
+
+function Assert-NativeOutputUnlocked {
+    param(
+        [string]$RepoRoot
+    )
+
+    $nativeOutputs = @(
+        (Join-Path $RepoRoot "_bin\hocloth_native.cp311-win_amd64.pyd"),
+        (Join-Path $RepoRoot "_bin\hocloth_mc2_core_smoke.exe")
+    )
+
+    $lockedOutputs = @()
+    foreach ($outputPath in $nativeOutputs) {
+        if (-not (Test-ExclusiveFileAccess -Path $outputPath)) {
+            $lockedOutputs += $outputPath
+        }
+    }
+
+    if ($lockedOutputs.Count -gt 0) {
+        $lockedMessage = "Native output is locked and cannot be overwritten:`n"
+        $lockedMessage += ($lockedOutputs -join "`n")
+        $lockedMessage += "`nClose Blender or any running hocloth_mc2_core_smoke.exe process, then retry."
+        throw $lockedMessage
+    }
+}
+
+function Invoke-NativeSmoke {
+    param(
+        [string]$SmokeExe,
+        [int]$TimeoutSeconds
+    )
+
+    $processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processStartInfo.FileName = $SmokeExe
+    $processStartInfo.WorkingDirectory = Split-Path -Parent $SmokeExe
+    $processStartInfo.UseShellExecute = $false
+    $processStartInfo.RedirectStandardOutput = $true
+    $processStartInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::Start($processStartInfo)
+    $timeoutMilliseconds = [Math]::Max(1, $TimeoutSeconds) * 1000
+    if (-not $process.WaitForExit($timeoutMilliseconds)) {
+        try {
+            $process.Kill()
+        } catch {
+            Write-Warning "Failed to kill timed-out native smoke process: $($_.Exception.Message)"
+        }
+        try {
+            $process.WaitForExit(5000) | Out-Null
+        } catch {
+        }
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        if ($stdout) {
+            Write-Host $stdout.TrimEnd()
+        }
+        if ($stderr) {
+            Write-Host $stderr.TrimEnd()
+        }
+        throw "Native smoke test timed out after $TimeoutSeconds seconds: $SmokeExe"
+    }
+
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    if ($stdout) {
+        Write-Host $stdout.TrimEnd()
+    }
+    if ($stderr) {
+        Write-Host $stderr.TrimEnd()
+    }
+    return $process.ExitCode
+}
+
 $RepoRoot = $PSScriptRoot
 $BuildDir = Join-Path $RepoRoot "_build"
 $DistDir = Join-Path $RepoRoot "_dist"
@@ -217,6 +317,8 @@ if ($IncludeNativeBuild) {
         throw "Native configure failed with exit code $LASTEXITCODE"
     }
 
+    Assert-NativeOutputUnlocked -RepoRoot $RepoRoot
+
     Write-Host "Building native module with preset: $BuildPreset"
     & $resolvedCMake --build --preset $BuildPreset --config $BuildConfiguration
     if ($LASTEXITCODE -ne 0) {
@@ -229,9 +331,9 @@ if ($IncludeNativeBuild) {
             throw "Native smoke executable was not found after build: $smokeExe"
         }
         Write-Host "Running native smoke test: $smokeExe"
-        & $smokeExe
-        if ($LASTEXITCODE -ne 0) {
-            throw "Native smoke test failed with exit code $LASTEXITCODE"
+        $smokeExitCode = Invoke-NativeSmoke -SmokeExe $smokeExe -TimeoutSeconds $NativeSmokeTimeoutSeconds
+        if ($smokeExitCode -ne 0) {
+            throw "Native smoke test failed with exit code $smokeExitCode"
         }
     }
 }

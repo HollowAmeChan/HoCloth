@@ -1,6 +1,8 @@
 from importlib import import_module
 import math
 
+from .exchange import empty_frame_inputs, frame_inputs_payload, wrap_compiled_scene, wrap_frame_inputs
+
 
 _TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
 
@@ -124,7 +126,7 @@ class NativeBridgeStub:
         self._scenes[handle] = {
             "compiled_scene": compiled_scene,
             "steps": 0,
-            "runtime_inputs": {"bone_chains": []},
+            "runtime_inputs": empty_frame_inputs(),
             "chain_states": self._make_chain_states(compiled_scene),
             "collision_object_lookup": self._build_collision_object_lookup(compiled_scene),
             "collision_binding_lookup": self._build_collision_binding_lookup(compiled_scene),
@@ -144,7 +146,7 @@ class NativeBridgeStub:
         scene = self._scenes.get(handle)
         if scene is not None:
             scene["steps"] = 0
-            scene["runtime_inputs"] = {"bone_chains": []}
+            scene["runtime_inputs"] = empty_frame_inputs()
             scene["chain_states"] = self._make_chain_states(scene["compiled_scene"])
             scene["collision_object_lookup"] = self._build_collision_object_lookup(scene["compiled_scene"])
             scene["collision_binding_lookup"] = self._build_collision_binding_lookup(scene["compiled_scene"])
@@ -154,7 +156,7 @@ class NativeBridgeStub:
         scene = self._scenes.get(handle)
         if scene is None:
             raise RuntimeError(f"Unknown runtime handle: {handle}")
-        scene["runtime_inputs"] = runtime_inputs or {"bone_chains": []}
+        scene["runtime_inputs"] = frame_inputs_payload(runtime_inputs)
         self._apply_collision_object_inputs(scene, scene["runtime_inputs"])
         return True
 
@@ -447,7 +449,7 @@ class NativeModuleBridge:
         self._module = module
 
     def build_scene(self, compiled_scene):
-        return self._module.build_scene(compiled_scene.to_native_dict())
+        return self._module.build_scene(wrap_compiled_scene(compiled_scene))
 
     def destroy_scene(self, handle):
         return self._module.destroy_scene(handle)
@@ -459,7 +461,7 @@ class NativeModuleBridge:
         return self._module.step_scene(handle, dt, simulation_frequency)
 
     def set_runtime_inputs(self, handle, runtime_inputs):
-        return self._module.set_runtime_inputs(handle, runtime_inputs)
+        return self._module.set_runtime_inputs(handle, wrap_frame_inputs(runtime_inputs))
 
     def get_bone_transforms(self, handle):
         return self._module.get_bone_transforms(handle)

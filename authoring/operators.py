@@ -20,6 +20,7 @@ from ..runtime.pose_apply import (
     restore_pose_state,
 )
 from ..runtime.inputs import build_runtime_inputs
+from ..runtime.exchange import wrap_compiled_scene
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.session import (
     build_runtime,
@@ -544,7 +545,7 @@ class HOCLOTH_OT_export_compiled_scene(bpy.types.Operator):
         export_path = os.path.join(export_dir, "compiled_scene_preview.json")
 
         with open(export_path, "w", encoding="utf-8") as handle:
-            json.dump(compiled.to_dict(), handle, indent=2, ensure_ascii=False)
+            json.dump(wrap_compiled_scene(compiled), handle, indent=2, ensure_ascii=False)
 
         context.scene.hocloth_runtime_status = f"Compiled scene exported: {export_path}"
         self.report({"INFO"}, f"Compiled scene exported to {export_path}")

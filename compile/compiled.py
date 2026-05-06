@@ -314,6 +314,3 @@ class CompiledScene:
         if self.cache_descriptors:
             data["cache_descriptors"] = [descriptor.to_dict() for descriptor in self.cache_descriptors]
         return data
-
-    def to_native_dict(self) -> dict:
-        return self.to_dict()

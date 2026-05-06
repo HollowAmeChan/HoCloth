@@ -151,13 +151,46 @@ std::vector<Quat> ReadQuatArray(const nb::dict& dict, const char* key)
     return result;
 }
 
+bool IsExchangeEnvelope(const nb::dict& root)
+{
+    if (!root.contains("schema") || !root.contains("payload") || !root.contains("payload_type")) {
+        return false;
+    }
+    return nb::cast<std::string>(root["schema"]) == "hocloth.exchange";
+}
+
+nb::dict ResolveExchangePayload(const nb::dict& root, const char* expected_payload_type)
+{
+    if (!IsExchangeEnvelope(root)) {
+        return root;
+    }
+
+    const std::string payload_type = nb::cast<std::string>(root["payload_type"]);
+    if (payload_type != expected_payload_type) {
+        throw std::runtime_error(
+            std::string("Expected hocloth.exchange payload '")
+            + expected_payload_type
+            + "', got '"
+            + payload_type
+            + "'."
+        );
+    }
+
+    nb::dict payload = nb::cast<nb::dict>(root["payload"]);
+    if (payload_type == "compiled_scene" && payload.contains("scene")) {
+        return nb::cast<nb::dict>(payload["scene"]);
+    }
+    return payload;
+}
+
 CompiledScene ParseCompiledScene(const nb::dict& root)
 {
+    nb::dict data = ResolveExchangePayload(root, "compiled_scene");
     CompiledScene scene;
 
-    nb::sequence chains = ReadSequence(root, "spring_bones");
+    nb::sequence chains = ReadSequence(data, "spring_bones");
     if (nb::len(chains) == 0) {
-        chains = ReadSequence(root, "bone_chains");
+        chains = ReadSequence(data, "bone_chains");
     }
 
     for (nb::handle item : chains) {
@@ -288,7 +321,7 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         scene.spring_bones.push_back(std::move(chain));
     }
 
-    for (nb::handle item : ReadSequence(root, "collision_objects")) {
+    for (nb::handle item : ReadSequence(data, "collision_objects")) {
         nb::dict object_dict = nb::cast<nb::dict>(item);
         CompiledCollisionObject collision_object;
         collision_object.collision_object_id = ReadString(object_dict, "collision_object_id");
@@ -314,7 +347,7 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         scene.collision_objects.push_back(std::move(collision_object));
     }
 
-    for (nb::handle item : ReadSequence(root, "collision_bindings")) {
+    for (nb::handle item : ReadSequence(data, "collision_bindings")) {
         nb::dict binding_dict = nb::cast<nb::dict>(item);
         CompiledCollisionBinding binding;
         binding.binding_id = ReadString(binding_dict, "binding_id");
@@ -329,9 +362,10 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
 
 RuntimeInputs ParseRuntimeInputs(const nb::dict& root)
 {
+    nb::dict data = ResolveExchangePayload(root, "frame_inputs");
     RuntimeInputs inputs;
 
-    for (nb::handle item : ReadSequence(root, "bone_chains")) {
+    for (nb::handle item : ReadSequence(data, "bone_chains")) {
         nb::dict chain_dict = nb::cast<nb::dict>(item);
         RuntimeChainInput chain;
         chain.component_id = ReadString(chain_dict, "component_id");
@@ -369,7 +403,7 @@ RuntimeInputs ParseRuntimeInputs(const nb::dict& root)
         inputs.bone_chains.push_back(std::move(chain));
     }
 
-    for (nb::handle item : ReadSequence(root, "collision_objects")) {
+    for (nb::handle item : ReadSequence(data, "collision_objects")) {
         nb::dict object_dict = nb::cast<nb::dict>(item);
         RuntimeCollisionObjectInput collision_object;
         collision_object.collision_object_id = ReadString(object_dict, "collision_object_id");

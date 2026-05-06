@@ -2,6 +2,7 @@ import bpy
 
 from ..compile.compiler import resolve_bone_chain_branching_names, resolve_bone_chain_names
 from ..components.properties import _parse_component_id_list, find_component_by_id, list_component_display_names
+from ..runtime.session import get_exchange_info
 
 
 def _resolve_component(scene, item, container_name):
@@ -410,6 +411,10 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         runtime_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
         runtime_box.label(text=f"Live: {'Running' if scene.hocloth_runtime_live_running else 'Stopped'}")
         runtime_box.label(text=f"Status: {scene.hocloth_runtime_status}")
+        exchange_info = get_exchange_info()
+        runtime_box.label(text=f"Exchange: {exchange_info['schema']} v{exchange_info['schema_version']}")
+        if scene.hocloth_ui_debug_expanded:
+            runtime_box.label(text=f"Debug Dump: {exchange_info['debug_dump_path']}", icon="FILE_TEXT")
 
         overlay_box = layout.box()
         overlay_box.label(text="Viewport Overlay")
