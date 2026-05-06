@@ -245,4 +245,24 @@ const ExNativeArray<float>& VirtualMeshManager::VertexDepths() const
     return vertex_depths_;
 }
 
+const ExNativeArray<float3>& VirtualMeshManager::Positions() const
+{
+    return positions_;
+}
+
+const ExNativeArray<quaternion>& VirtualMeshManager::Rotations() const
+{
+    return rotations_;
+}
+
+ExNativeArray<float3>& VirtualMeshManager::Positions()
+{
+    return positions_;
+}
+
+ExNativeArray<quaternion>& VirtualMeshManager::Rotations()
+{
+    return rotations_;
+}
+
 }  // namespace hocloth::mc2

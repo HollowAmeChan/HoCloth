@@ -40,6 +40,7 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/distance_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/inertia_constraint.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/cloth/constraints/motion_constraint.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/cloth_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/magica_manager.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/collider_manager.cpp"

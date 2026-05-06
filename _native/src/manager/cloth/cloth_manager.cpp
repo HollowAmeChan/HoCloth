@@ -15,6 +15,7 @@ void ClothManager::Dispose()
 {
     distance_constraint_.Dispose();
     inertia_constraint_.Dispose();
+    motion_constraint_.Dispose();
     initialized_ = false;
 }
 
@@ -44,6 +45,16 @@ InertiaConstraint& ClothManager::Inertia()
 const InertiaConstraint& ClothManager::Inertia() const
 {
     return inertia_constraint_;
+}
+
+MotionConstraint& ClothManager::Motion()
+{
+    return motion_constraint_;
+}
+
+const MotionConstraint& ClothManager::Motion() const
+{
+    return motion_constraint_;
 }
 
 }  // namespace hocloth::mc2

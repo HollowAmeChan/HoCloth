@@ -8,6 +8,9 @@
 
 namespace hocloth::mc2 {
 
+class TeamManager;
+class VirtualMeshManager;
+
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Simulation/SimulationManager.cs
 class SimulationManager final : public IManager {
 public:
@@ -42,18 +45,50 @@ public:
     [[nodiscard]] ExNativeArray<float3>& NextPositions();
     [[nodiscard]] const ExNativeArray<float3>& BasePositions() const;
     [[nodiscard]] ExNativeArray<float3>& BasePositions();
+    [[nodiscard]] const ExNativeArray<quaternion>& BaseRotations() const;
+    [[nodiscard]] ExNativeArray<quaternion>& BaseRotations();
+    [[nodiscard]] const ExNativeArray<float3>& OldPositions() const;
+    [[nodiscard]] ExNativeArray<float3>& OldPositions();
+    [[nodiscard]] const ExNativeArray<float3>& OldFramePositions() const;
+    [[nodiscard]] ExNativeArray<float3>& OldFramePositions();
+    [[nodiscard]] const ExNativeArray<quaternion>& OldFrameRotations() const;
+    [[nodiscard]] ExNativeArray<quaternion>& OldFrameRotations();
     [[nodiscard]] const ExNativeArray<float3>& VelocityPositions() const;
     [[nodiscard]] ExNativeArray<float3>& VelocityPositions();
+    [[nodiscard]] const ExNativeArray<float3>& DisplayPositions() const;
+    [[nodiscard]] ExNativeArray<float3>& DisplayPositions();
+    [[nodiscard]] const ExNativeArray<float3>& Velocities() const;
+    [[nodiscard]] ExNativeArray<float3>& Velocities();
+    [[nodiscard]] const ExNativeArray<float3>& RealVelocities() const;
+    [[nodiscard]] ExNativeArray<float3>& RealVelocities();
     [[nodiscard]] const ExNativeArray<float>& Frictions() const;
     [[nodiscard]] ExNativeArray<float>& Frictions();
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingStepMotionParticles() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
     void RemoveParticleRange(const ParticleChunkSet& chunks);
 
     void PrepareProcessingBuffers(int particle_capacity);
     void BeginSimulationStep();
+    void StartSimulationStep(
+        const float4& simulation_power,
+        float simulation_delta_time,
+        const TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
+    void EndSimulationStepSolve(
+        float simulation_delta_time,
+        const TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
+    void CalcDisplayPosition(
+        float simulation_delta_time,
+        const TeamManager& team_manager,
+        VirtualMeshManager& virtual_mesh_manager
+    );
     void MarkStepParticle(int particle_index);
+    void MarkStepMotionParticle(int particle_index);
     void EndSimulationStep();
 
 private:

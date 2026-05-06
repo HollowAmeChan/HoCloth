@@ -39,8 +39,8 @@ Status labels:
 | --- | --- | --- |
 | `Cloth/CheckSliderSerializeData.cs` | planned | `cloth/parameters/check_slider_serialize_data.*` |
 | `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
-| `Cloth/ClothForceMode.cs` | planned | `cloth/cloth_force_mode.hpp` |
-| `Cloth/ClothNormalAxis.cs` | planned | `cloth/cloth_normal_axis.hpp` |
+| `Cloth/ClothForceMode.cs` | partial | `cloth/cloth_force_mode.hpp` |
+| `Cloth/ClothNormalAxis.cs` | partial | `cloth/cloth_normal_axis.hpp` |
 | `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp` |
 | `Cloth/ClothProcess.cs` | planned | `cloth/cloth_process.*` |
 | `Cloth/ClothProcessData.cs` | planned | `cloth/cloth_process_data.*` |
@@ -76,9 +76,9 @@ Status labels:
 | `Cloth/Constraints/ColliderCollisionConstraint.cs` | legacy-partial | `cloth/constraints/collider_collision_constraint.*` |
 | `Cloth/Constraints/DistanceConstraint.cs` | partial | `cloth/constraints/distance_constraint.*` |
 | `Cloth/Constraints/InertiaConstraint.cs` | partial | `cloth/constraints/inertia_constraint.*` |
-| `Cloth/Constraints/MotionConstraint.cs` | planned | `cloth/constraints/motion_constraint.*` |
+| `Cloth/Constraints/MotionConstraint.cs` | partial | `cloth/constraints/motion_constraint.*` |
 | `Cloth/Constraints/SelfCollisionConstraint.cs` | planned | `cloth/constraints/self_collision_constraint.*` |
-| `Cloth/Constraints/SpringConstraint.cs` | legacy-partial | `cloth/constraints/spring_constraint.*` |
+| `Cloth/Constraints/SpringConstraint.cs` | partial | `cloth/cloth_parameters.hpp`, fixed-particle branch in `manager/simulation/simulation_manager.*` |
 | `Cloth/Constraints/TetherConstraint.cs` | legacy-partial | `cloth/constraints/tether_constraint.*` |
 | `Cloth/Constraints/TriangleBendingConstraint.cs` | planned | `cloth/constraints/triangle_bending_constraint.*` |
 
@@ -208,5 +208,30 @@ Last completed step:
 
 - Added MC2-style `DataUtility` packing helpers, `MathExtensions` curve sampling helpers, corrected `VertexAttribute` flag semantics, exposed solver arrays from `SimulationManager` / `VirtualMeshManager`, and added the first single-threaded `DistanceConstraint::Solve(...)` port against the new manager pipeline.
 - Moved `InertiaConstraint.CenterData` ownership into `TeamManager`, kept `InertiaConstraint` responsible for fixed-point data, added quaternion/math helpers, and ported the first single-threaded `SimulationStepTeamUpdate(...)` stage for center interpolation, local inertia ratios, gravity dot, scale ratio, and blend weight.
+- Ported the first single-threaded particle simulation stages from `SimulationManager.cs`: `StartSimulationStepJob` now computes interpolated base pose, local inertia shift, gravity integration, and predicted positions; `EndSimulationStepJob` now writes velocity, real velocity, and `oldPos` back after constraints. The native smoke path now runs `SimulationStepTeamUpdate -> StartSimulationStep -> DistanceConstraint::Solve -> EndSimulationStepSolve`.
+- Added `ClothForceMode`, `ClothParameters.damping_curve_data`, and `TeamData.force_mode/impact_force`; `StartSimulationStep` now applies MC2-style damping curve evaluation and external force modes before prediction.
+- Ported the first single-threaded `CalcDisplayPositionJob` path: `SimulationManager::CalcDisplayPosition(...)` now computes display prediction from `oldPos` / `realVelocity`, stores `dispPos`, and writes blended positions back into `VirtualMeshManager::positions`.
+- Added `ClothNormalAxis` and the fixed-particle spring branch from `SimulationManager.StartSimulationStepJob`: `SpringConstraintParams` live in `ClothParameters`, and fixed BoneSpring particles now clamp toward their base position using the MC2 spring math. This is the runtime particle branch only; the full MC2 `SpringConstraint` class remains mostly a parameter/serialization boundary in this backend.
+- Added the first single-threaded `MotionConstraint` runtime path. The current port covers the MC2 max-distance branch, `MotionConstraintParams` ownership in `ClothParameters`, `ClothManager::Motion()`, and a separate motion-processing list in `SimulationManager`; backstop remains planned.
 
-Next priority: port the particle-side Inertia constraint stage that consumes `TeamManager` center data and writes particle position/velocity arrays, then wire it into the smoke path after `SimulationStepTeamUpdate(...)`.
+Latest verification:
+
+```text
+package_addon.ps1 -Version motion-final-check -IncludeNativeBuild -RunNativeSmoke -FreshConfigure
+native smoke: team_id=1 mesh_id=0 transforms=1 meshes=1 proxy_vertices=2 distance_connections=2 fixed=1 center_data=2 center_transform=0 inertia_x=0.2 gravity_dot=1 force_mode=10 particles=2 steps=1 p0.x=0.0992764 p0.y=-0.000416909 motion_p1.x=1.25 p1.x=1.16816 old_p1.x=1.16816 real_v1.x=-4.91048 disp_p1.x=1.16816 proxy_p1.x=1.16816
+```
+
+The native smoke test now contains numeric assertions for the fixed spring particle, Motion max-distance stage, moving particle, old position writeback, real velocity, display position, and proxy position writeback.
+
+VirtualMesh scope note:
+
+- `VirtualMesh` / `VirtualMeshManager` are intentionally partial for now. Full proxy generation, mapping mesh, optimization/reduction/work functions, normal/tangent update jobs, transform/skinning update jobs, and serialization/prebuild restore are not current XPBD-core blockers.
+- Do not spend deep test effort on VirtualMesh-specific behavior yet. Current tests only need to cover the lower-level infrastructure it depends on: `ExNativeArray` / `ExSimpleNativeArray`, `DataChunk`, packed index helpers, `VertexAttribute`, transform chunk registration, and simple proxy array ownership needed by the solver smoke path.
+- When the core XPBD flow is stable, return to VirtualMesh as a separate integration/prebuild phase.
+
+Wind / VirtualMesh test boundary:
+
+- Do not route current smoke coverage through `WindManager`, `TeamWindData`, or full `VirtualMesh` behavior. These modules should stay as low-level construction/ownership targets until the main XPBD solver chain is stable.
+- For now, wind and virtual mesh work should be limited to compile-safe data structures and manager skeletons. Avoid behavior assertions that depend on wind zone scanning, moving wind, proxy generation, mapping, reduction, or skinning.
+
+Next priority: continue the XPBD core flow, but keep tests focused on reusable low-level infrastructure rather than full VirtualMesh or Wind features. The next core-side targets are the remaining constraint solvers that sit after prediction: Motion backstop, Tether, and TriangleBending.

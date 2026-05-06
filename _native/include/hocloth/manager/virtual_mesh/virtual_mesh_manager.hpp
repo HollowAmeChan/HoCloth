@@ -43,6 +43,10 @@ public:
     [[nodiscard]] int ProxyLocalPositionCount() const;
     [[nodiscard]] const ExNativeArray<VertexAttribute>& Attributes() const;
     [[nodiscard]] const ExNativeArray<float>& VertexDepths() const;
+    [[nodiscard]] const ExNativeArray<float3>& Positions() const;
+    [[nodiscard]] const ExNativeArray<quaternion>& Rotations() const;
+    [[nodiscard]] ExNativeArray<float3>& Positions();
+    [[nodiscard]] ExNativeArray<quaternion>& Rotations();
 
 private:
     bool initialized_ = false;

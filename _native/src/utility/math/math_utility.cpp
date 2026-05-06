@@ -65,6 +65,29 @@ float3 Normalize(const float3& value, const float3& fallback)
     return Scale(value, 1.0f / length);
 }
 
+float3 Project(const float3& value, const float3& normal)
+{
+    const float normal_length_squared = LengthSquared(normal);
+    if (normal_length_squared <= define::system::Epsilon) {
+        return float3{};
+    }
+    return Scale(normal, Dot(value, normal) / normal_length_squared);
+}
+
+float3 ProjectOnPlane(const float3& value, const float3& normal)
+{
+    return Subtract(value, Project(value, normal));
+}
+
+float3 ClampVector(const float3& value, float max_length)
+{
+    const float length = Length(value);
+    if (length <= max_length || length <= define::system::Epsilon) {
+        return value;
+    }
+    return Scale(value, max_length / length);
+}
+
 float Distance(const float3& a, const float3& b)
 {
     return Length(Subtract(a, b));

@@ -2,6 +2,7 @@
 
 #include "hocloth/cloth/constraints/distance_constraint.hpp"
 #include "hocloth/cloth/constraints/inertia_constraint.hpp"
+#include "hocloth/cloth/constraints/motion_constraint.hpp"
 #include "hocloth/manager/i_manager.hpp"
 
 namespace hocloth::mc2 {
@@ -17,11 +18,14 @@ public:
     [[nodiscard]] const DistanceConstraint& Distance() const;
     [[nodiscard]] InertiaConstraint& Inertia();
     [[nodiscard]] const InertiaConstraint& Inertia() const;
+    [[nodiscard]] MotionConstraint& Motion();
+    [[nodiscard]] const MotionConstraint& Motion() const;
 
 private:
     bool initialized_ = false;
     DistanceConstraint distance_constraint_;
     InertiaConstraint inertia_constraint_;
+    MotionConstraint motion_constraint_;
 };
 
 }  // namespace hocloth::mc2

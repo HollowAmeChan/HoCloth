@@ -15,6 +15,9 @@ namespace hocloth::mc2 {
 [[nodiscard]] float3 Scale(const float3& value, float scalar);
 [[nodiscard]] float3 Lerp(const float3& a, const float3& b, float t);
 [[nodiscard]] float3 Normalize(const float3& value, const float3& fallback = float3{});
+[[nodiscard]] float3 Project(const float3& value, const float3& normal);
+[[nodiscard]] float3 ProjectOnPlane(const float3& value, const float3& normal);
+[[nodiscard]] float3 ClampVector(const float3& value, float max_length);
 [[nodiscard]] float Distance(const float3& a, const float3& b);
 [[nodiscard]] float Abs(float value);
 [[nodiscard]] float CalcMass(float depth);

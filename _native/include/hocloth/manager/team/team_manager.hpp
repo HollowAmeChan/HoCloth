@@ -90,6 +90,8 @@ public:
         float velocity_weight = 1.0f;
         float distance_weight = 1.0f;
         float blend_weight = 1.0f;
+        ClothForceMode force_mode = ClothForceMode::None;
+        float3 impact_force{};
 
         DataChunk proxy_transform_chunk;
         DataChunk proxy_common_chunk;
@@ -119,6 +121,8 @@ public:
         [[nodiscard]] bool IsEnabled() const;
         [[nodiscard]] bool IsProcess() const;
         [[nodiscard]] bool IsCullingInvisible() const;
+        [[nodiscard]] bool IsRunning() const;
+        [[nodiscard]] bool IsNegativeScale() const;
         [[nodiscard]] bool IsSpring() const;
         [[nodiscard]] int ParticleCount() const;
         [[nodiscard]] int ColliderCount() const;

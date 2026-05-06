@@ -41,6 +41,16 @@ bool TeamManager::TeamData::IsProcess() const
     return IsEnabled() && !flag.IsSet(TeamManager::FlagSyncSuspend) && !IsCullingInvisible();
 }
 
+bool TeamManager::TeamData::IsRunning() const
+{
+    return flag.IsSet(TeamManager::FlagRunning) || flag.IsSet(TeamManager::FlagStepRunning);
+}
+
+bool TeamManager::TeamData::IsNegativeScale() const
+{
+    return flag.IsSet(TeamManager::FlagNegativeScale);
+}
+
 bool TeamManager::TeamData::IsSpring() const
 {
     return flag.IsSet(TeamManager::FlagSpring);
@@ -380,6 +390,7 @@ void TeamManager::SimulationStepTeamUpdate(int update_index, float simulation_de
         team_data.blend_weight = Clamp01(
             team_data.velocity_weight * parameters.blend_weight * team_data.distance_weight
         );
+
     }
 }
 
