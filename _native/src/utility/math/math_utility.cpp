@@ -27,6 +27,11 @@ float Length(const float3& value)
     return std::sqrt(Dot(value, value));
 }
 
+float LengthSquared(const float3& value)
+{
+    return Dot(value, value);
+}
+
 float3 Add(const float3& a, const float3& b)
 {
     return float3{a.x + b.x, a.y + b.y, a.z + b.z};
@@ -40,6 +45,15 @@ float3 Subtract(const float3& a, const float3& b)
 float3 Scale(const float3& value, float scalar)
 {
     return float3{value.x * scalar, value.y * scalar, value.z * scalar};
+}
+
+float3 Lerp(const float3& a, const float3& b, float t)
+{
+    return float3{
+        a.x + (b.x - a.x) * t,
+        a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t,
+    };
 }
 
 float3 Normalize(const float3& value, const float3& fallback)
@@ -96,6 +110,22 @@ float CalcInverseMass(float friction, float depth, bool fixed, float fixed_mass)
     return CalcInverseMass(friction, depth);
 }
 
+quaternion Normalize(const quaternion& value)
+{
+    const float length =
+        std::sqrt(value.w * value.w + value.x * value.x + value.y * value.y + value.z * value.z);
+    if (length <= define::system::Epsilon) {
+        return quaternion{};
+    }
+    const float inv_length = 1.0f / length;
+    return quaternion{
+        value.w * inv_length,
+        value.x * inv_length,
+        value.y * inv_length,
+        value.z * inv_length,
+    };
+}
+
 quaternion Inverse(const quaternion& value)
 {
     const float length_squared =
@@ -110,6 +140,86 @@ quaternion Inverse(const quaternion& value)
         -value.y * inv_length_squared,
         -value.z * inv_length_squared,
     };
+}
+
+quaternion Multiply(const quaternion& a, const quaternion& b)
+{
+    return quaternion{
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    };
+}
+
+quaternion Slerp(const quaternion& a, const quaternion& b, float t)
+{
+    t = Clamp01(t);
+    quaternion end = b;
+    float dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    if (dot < 0.0f) {
+        dot = -dot;
+        end = quaternion{-b.w, -b.x, -b.y, -b.z};
+    }
+    if (dot > 0.9995f) {
+        return Normalize(quaternion{
+            a.w + (end.w - a.w) * t,
+            a.x + (end.x - a.x) * t,
+            a.y + (end.y - a.y) * t,
+            a.z + (end.z - a.z) * t,
+        });
+    }
+
+    const float theta_0 = std::acos(Clamp(dot, -1.0f, 1.0f));
+    const float theta = theta_0 * t;
+    const float sin_theta = std::sin(theta);
+    const float sin_theta_0 = std::sin(theta_0);
+    const float s0 = std::cos(theta) - dot * sin_theta / sin_theta_0;
+    const float s1 = sin_theta / sin_theta_0;
+    return Normalize(quaternion{
+        a.w * s0 + end.w * s1,
+        a.x * s0 + end.x * s1,
+        a.y * s0 + end.y * s1,
+        a.z * s0 + end.z * s1,
+    });
+}
+
+quaternion FromToRotation(const quaternion& from, const quaternion& to)
+{
+    return Multiply(to, Inverse(from));
+}
+
+float Angle(const quaternion& a, const quaternion& b)
+{
+    constexpr float pi = 3.14159265358979323846f;
+    constexpr float two_pi = pi * 2.0f;
+    const float dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    if (std::abs(dot) >= 0.9999f) {
+        return 0.0f;
+    }
+    const float angle = std::acos(Clamp(dot, -1.0f, 1.0f)) * 2.0f;
+    return angle > pi ? two_pi - angle : angle;
+}
+
+void ToAngleAxis(const quaternion& value, float& angle, float3& axis)
+{
+    const quaternion q = Normalize(value);
+    const float half_angle = std::abs(q.w) < 0.9999f ? std::acos(q.w) : 0.0f;
+    angle = half_angle * 2.0f;
+    const float sin_half_angle = std::sin(half_angle);
+    if (std::abs(sin_half_angle) < 1.0e-6f) {
+        axis = float3{};
+        return;
+    }
+    axis = float3{q.x / sin_half_angle, q.y / sin_half_angle, q.z / sin_half_angle};
+}
+
+float3 Rotate(const quaternion& rotation, const float3& vector)
+{
+    const quaternion q = Normalize(rotation);
+    const quaternion v{0.0f, vector.x, vector.y, vector.z};
+    const quaternion result = Multiply(Multiply(q, v), Inverse(q));
+    return float3{result.x, result.y, result.z};
 }
 
 float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale)

@@ -119,7 +119,7 @@ Status labels:
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*` |
 | `Manager/Simulation/TimeManager.cs` | skeleton | `manager/simulation/time_manager.*` |
 | `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
-| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter ownership |
+| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership |
 | `Manager/Team/TeamWindData.cs` | planned | `manager/team/team_wind_data.*` |
 | `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*` |
 | `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
@@ -207,5 +207,6 @@ Status labels:
 Last completed step:
 
 - Added MC2-style `DataUtility` packing helpers, `MathExtensions` curve sampling helpers, corrected `VertexAttribute` flag semantics, exposed solver arrays from `SimulationManager` / `VirtualMeshManager`, and added the first single-threaded `DistanceConstraint::Solve(...)` port against the new manager pipeline.
+- Moved `InertiaConstraint.CenterData` ownership into `TeamManager`, kept `InertiaConstraint` responsible for fixed-point data, added quaternion/math helpers, and ported the first single-threaded `SimulationStepTeamUpdate(...)` stage for center interpolation, local inertia ratios, gravity dot, scale ratio, and blend weight.
 
-Next priority: move Inertia center data ownership into `TeamManager` and port the first Inertia solver stage using the same MC2 manager/job data flow.
+Next priority: port the particle-side Inertia constraint stage that consumes `TeamManager` center data and writes particle position/velocity arrays, then wire it into the smoke path after `SimulationStepTeamUpdate(...)`.

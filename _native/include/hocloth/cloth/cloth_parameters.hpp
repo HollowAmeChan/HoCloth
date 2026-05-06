@@ -41,7 +41,11 @@ struct InertiaConstraintParams {
 
 struct ClothParameters {
     int simulation_frequency = define::system::DefaultSimulationFrequency;
+    float gravity = 5.0f;
     float3 world_gravity_direction{0.0f, -1.0f, 0.0f};
+    float gravity_falloff = 0.0f;
+    float stabilization_time_after_reset = 0.1f;
+    float blend_weight = 1.0f;
     InertiaConstraintParams inertia_constraint;
     DistanceConstraintParams distance_constraint = DistanceConstraintParams::BoneSpringDefaults();
 };

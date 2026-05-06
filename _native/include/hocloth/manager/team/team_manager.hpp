@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/cloth/cloth_parameters.hpp"
+#include "hocloth/cloth/constraints/inertia_constraint_data.hpp"
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/manager/i_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
@@ -137,16 +138,22 @@ public:
     [[nodiscard]] const ClothParameters& GetParameters(int team_id) const;
     [[nodiscard]] ClothParameters& GetParameters(int team_id);
     void SetParameters(int team_id, const ClothParameters& parameters);
+    [[nodiscard]] const InertiaCenterData& GetCenterData(int team_id) const;
+    [[nodiscard]] InertiaCenterData& GetCenterData(int team_id);
+    void SetCenterData(int team_id, const InertiaCenterData& center_data);
+    [[nodiscard]] int CenterDataCount() const;
 
     [[nodiscard]] int CreateTeam(bool enabled = true, bool spring = false);
     [[nodiscard]] int CreateTeam(const ClothParameters& parameters, bool enabled = true, bool spring = false);
     void ReleaseTeam(int team_id);
     void ClearTeams();
+    void SimulationStepTeamUpdate(int update_index, float simulation_delta_time);
 
 private:
     bool initialized_ = false;
     ExSimpleNativeArray<TeamData> team_data_array_;
     ExSimpleNativeArray<ClothParameters> parameter_array_;
+    ExSimpleNativeArray<InertiaCenterData> center_data_array_;
     std::vector<int> free_team_ids_;
 };
 

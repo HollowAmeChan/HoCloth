@@ -77,9 +77,19 @@ int main()
 
     hocloth::mc2::InertiaConstraint::ConstraintData inertia_data;
     inertia_data.fixed_array = {0u};
+    inertia_data.center_data.frame_local_position = hocloth::mc2::float3{0.5f, 0.0f, 0.0f};
+    inertia_data.center_data.old_frame_world_position = hocloth::mc2::float3{0.0f, 0.0f, 0.0f};
+    inertia_data.center_data.frame_world_position = hocloth::mc2::float3{0.2f, 0.0f, 0.0f};
+    inertia_data.center_data.old_world_position = hocloth::mc2::float3{0.0f, 0.0f, 0.0f};
+    inertia_data.center_data.now_world_position = hocloth::mc2::float3{0.0f, 0.0f, 0.0f};
     manager.Cloth().Inertia().Register(team_id, inertia_data, manager.Team());
+    manager.Team().GetTeamData(team_id).time = 1.0f / 60.0f;
+    manager.Team().GetTeamData(team_id).frame_old_time = 0.0f;
+    manager.Team().GetTeamData(team_id).now_update_time = 0.0f;
+    manager.Team().GetTeamData(team_id).update_count = 1;
 
     manager.Simulation().BeginSimulationStep();
+    manager.Team().SimulationStepTeamUpdate(0, 1.0f / 60.0f);
     for (int index = 0; index < chunks.ParticleCount(); ++index) {
         manager.Simulation().MarkStepParticle(chunks.next_pos_chunk.start_index + index);
     }
@@ -98,6 +108,10 @@ int main()
               << " proxy_vertices=" << manager.VirtualMesh().ProxyVertexCount()
               << " distance_connections=" << manager.Cloth().Distance().ConnectionCount()
               << " fixed=" << manager.Cloth().Inertia().FixedCount()
+              << " center_data=" << manager.Team().CenterDataCount()
+              << " center_transform=" << manager.Team().GetCenterData(team_id).center_transform_index
+              << " inertia_x=" << manager.Team().GetCenterData(team_id).inertia_vector.x
+              << " gravity_dot=" << manager.Team().GetTeamData(team_id).gravity_dot
               << " particles=" << manager.Simulation().ParticleCount()
               << " steps=" << manager.Simulation().SimulationStepCount()
               << " p0.x=" << manager.Simulation().NextPositions()[chunks.next_pos_chunk.start_index].x
