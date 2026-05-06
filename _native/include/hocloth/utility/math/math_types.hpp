@@ -9,11 +9,45 @@ struct float3 {
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
+
+    [[nodiscard]] float operator[](int index) const
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        default:
+            return z;
+        }
+    }
+
+    [[nodiscard]] float& operator[](int index)
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        default:
+            return z;
+        }
+    }
 };
 
 struct float2 {
     float x = 0.0f;
     float y = 0.0f;
+
+    [[nodiscard]] float operator[](int index) const
+    {
+        return index == 0 ? x : y;
+    }
+
+    [[nodiscard]] float& operator[](int index)
+    {
+        return index == 0 ? x : y;
+    }
 };
 
 struct float4 {
@@ -40,12 +74,46 @@ struct float4x4 {
 struct int2 {
     int x = 0;
     int y = 0;
+
+    [[nodiscard]] int operator[](int index) const
+    {
+        return index == 0 ? x : y;
+    }
+
+    [[nodiscard]] int& operator[](int index)
+    {
+        return index == 0 ? x : y;
+    }
 };
 
 struct int3 {
     int x = 0;
     int y = 0;
     int z = 0;
+
+    [[nodiscard]] int operator[](int index) const
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        default:
+            return z;
+        }
+    }
+
+    [[nodiscard]] int& operator[](int index)
+    {
+        switch (index) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        default:
+            return z;
+        }
+    }
 };
 
 struct int4 {

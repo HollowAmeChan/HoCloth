@@ -7,6 +7,13 @@
 
 namespace hocloth::mc2 {
 
+enum class ClothUpdateMode {
+    Normal = 0,
+    UnityPhysics = 1,
+    Unscaled = 2,
+    AnimatorLinkage = 10,
+};
+
 constexpr float4x4 ConstantCurve(float value)
 {
     return float4x4{
@@ -116,6 +123,18 @@ struct ColliderCollisionConstraintParams {
     float4x4 limit_distance = ConstantCurve(0.05f);
 };
 
+enum class SelfCollisionMode {
+    None = 0,
+    FullMesh = 2,
+};
+
+struct SelfCollisionConstraintParams {
+    SelfCollisionMode self_mode = SelfCollisionMode::None;
+    float4x4 surface_thickness_curve_data = ConstantCurve(0.005f);
+    SelfCollisionMode sync_mode = SelfCollisionMode::None;
+    float cloth_mass = 0.0f;
+};
+
 struct ClothParameters {
     int simulation_frequency = define::system::DefaultSimulationFrequency;
     float gravity = 5.0f;
@@ -133,6 +152,7 @@ struct ClothParameters {
     TriangleBendingConstraintParams triangle_bending_constraint;
     AngleConstraintParams angle_constraint;
     ColliderCollisionConstraintParams collider_collision_constraint;
+    SelfCollisionConstraintParams self_collision_constraint;
     DistanceConstraintParams distance_constraint = DistanceConstraintParams::BoneSpringDefaults();
 };
 

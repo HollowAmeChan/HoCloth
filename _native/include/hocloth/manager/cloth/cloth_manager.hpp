@@ -5,6 +5,7 @@
 #include "hocloth/cloth/constraints/distance_constraint.hpp"
 #include "hocloth/cloth/constraints/inertia_constraint.hpp"
 #include "hocloth/cloth/constraints/motion_constraint.hpp"
+#include "hocloth/cloth/constraints/self_collision_constraint.hpp"
 #include "hocloth/cloth/constraints/tether_constraint.hpp"
 #include "hocloth/cloth/constraints/triangle_bending_constraint.hpp"
 #include "hocloth/manager/i_manager.hpp"
@@ -28,6 +29,8 @@ public:
     [[nodiscard]] const InertiaConstraint& Inertia() const;
     [[nodiscard]] MotionConstraint& Motion();
     [[nodiscard]] const MotionConstraint& Motion() const;
+    [[nodiscard]] SelfCollisionConstraint& SelfCollision();
+    [[nodiscard]] const SelfCollisionConstraint& SelfCollision() const;
     [[nodiscard]] TetherConstraint& Tether();
     [[nodiscard]] const TetherConstraint& Tether() const;
     [[nodiscard]] TriangleBendingConstraint& TriangleBending();
@@ -40,6 +43,7 @@ private:
     DistanceConstraint distance_constraint_;
     InertiaConstraint inertia_constraint_;
     MotionConstraint motion_constraint_;
+    SelfCollisionConstraint self_collision_constraint_;
     TetherConstraint tether_constraint_;
     TriangleBendingConstraint triangle_bending_constraint_;
 };

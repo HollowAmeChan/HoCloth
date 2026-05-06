@@ -18,6 +18,7 @@ void ClothManager::Dispose()
     distance_constraint_.Dispose();
     inertia_constraint_.Dispose();
     motion_constraint_.Dispose();
+    self_collision_constraint_.Dispose();
     tether_constraint_.Dispose();
     triangle_bending_constraint_.Dispose();
     initialized_ = false;
@@ -80,6 +81,16 @@ MotionConstraint& ClothManager::Motion()
 const MotionConstraint& ClothManager::Motion() const
 {
     return motion_constraint_;
+}
+
+SelfCollisionConstraint& ClothManager::SelfCollision()
+{
+    return self_collision_constraint_;
+}
+
+const SelfCollisionConstraint& ClothManager::SelfCollision() const
+{
+    return self_collision_constraint_;
 }
 
 TetherConstraint& ClothManager::Tether()

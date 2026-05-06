@@ -205,6 +205,11 @@ public:
         return storage_;
     }
 
+    [[nodiscard]] std::vector<T>& Data()
+    {
+        return storage_;
+    }
+
     [[nodiscard]] std::string ToSummary() const
     {
         std::ostringstream stream;

@@ -7,8 +7,12 @@
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/utility/native_collection/bit_flag.hpp"
 #include "hocloth/utility/native_collection/data_chunk.hpp"
+#include "hocloth/utility/native_collection/ex_native_array.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
+#include <array>
+#include <cstddef>
 #include <vector>
 
 namespace hocloth::mc2 {
@@ -57,9 +61,53 @@ public:
     static constexpr int FlagSyncTriangleEdgeIntersect = 48;
     static constexpr int FlagPSyncTriangleEdgeIntersect = 49;
 
+    struct TeamSyncParentList {
+        static constexpr int Capacity = 7;
+        std::array<int, Capacity> values{};
+        int length = 0;
+
+        [[nodiscard]] int Length() const;
+        [[nodiscard]] bool IsFull() const;
+        [[nodiscard]] bool Contains(int team_id) const;
+        [[nodiscard]] int operator[](int index) const;
+        bool Add(int team_id);
+        bool RemoveSwapBack(int team_id);
+        void Clear();
+    };
+
+    struct TeamMappingList {
+        static constexpr int Capacity = 31;
+        std::array<short, Capacity> values{};
+        int length = 0;
+
+        [[nodiscard]] int Length() const;
+        [[nodiscard]] bool IsFull() const;
+        [[nodiscard]] bool Contains(short mapping_index) const;
+        [[nodiscard]] short operator[](int index) const;
+        bool Add(short mapping_index);
+        bool RemoveSwapBack(short mapping_index);
+        void Clear();
+    };
+
+    struct MappingData {
+        int team_id = 0;
+        int center_transform_index = -1;
+        DataChunk mapping_common_chunk;
+        float4x4 to_proxy_matrix{};
+        quaternion to_proxy_rotation{};
+        bool same_space = false;
+        float4x4 to_mapping_matrix{};
+        quaternion to_mapping_rotation{};
+        float scale_ratio = 1.0f;
+
+        [[nodiscard]] bool IsValid() const;
+        [[nodiscard]] int VertexCount() const;
+    };
+
     struct TeamData {
         BitFlag64 flag;
 
+        ClothUpdateMode update_mode = ClothUpdateMode::Normal;
         float frame_delta_time = 0.0f;
         float time = 0.0f;
         float old_time = 0.0f;
@@ -83,8 +131,11 @@ public:
         float negative_scale_sign = 1.0f;
         float3 negative_scale_direction{1.0f, 1.0f, 1.0f};
         float3 negative_scale_change{1.0f, 1.0f, 1.0f};
+        float2 negative_scale_triangle_sign{1.0f, 1.0f};
+        float4 negative_scale_quaternion_value{1.0f, 1.0f, 1.0f, 1.0f};
 
         int sync_team_id = 0;
+        TeamSyncParentList sync_parent_team_ids;
         int sync_center_transform_index = -1;
         float animation_pose_ratio = 1.0f;
         float velocity_weight = 1.0f;
@@ -93,6 +144,7 @@ public:
         ClothForceMode force_mode = ClothForceMode::None;
         float3 impact_force{};
 
+        VirtualMesh::MeshType proxy_mesh_type = VirtualMesh::MeshType::NormalMesh;
         DataChunk proxy_transform_chunk;
         DataChunk proxy_common_chunk;
         DataChunk proxy_vertex_child_data_chunk;
@@ -120,15 +172,26 @@ public:
         [[nodiscard]] bool IsValid() const;
         [[nodiscard]] bool IsEnabled() const;
         [[nodiscard]] bool IsProcess() const;
+        [[nodiscard]] bool IsFixedUpdate() const;
+        [[nodiscard]] bool IsUnscaled() const;
+        [[nodiscard]] bool IsReset() const;
+        [[nodiscard]] bool IsKeepReset() const;
+        [[nodiscard]] bool IsInertiaShift() const;
+        [[nodiscard]] bool IsStepRunning() const;
+        [[nodiscard]] bool IsCameraCullingInvisible() const;
+        [[nodiscard]] bool IsCameraCullingKeep() const;
+        [[nodiscard]] bool IsDistanceCullingInvisible() const;
         [[nodiscard]] bool IsCullingInvisible() const;
         [[nodiscard]] bool IsRunning() const;
         [[nodiscard]] bool IsNegativeScale() const;
+        [[nodiscard]] bool IsNegativeScaleTeleport() const;
         [[nodiscard]] bool IsSpring() const;
         [[nodiscard]] int ParticleCount() const;
         [[nodiscard]] int ColliderCount() const;
         [[nodiscard]] int BaseLineCount() const;
         [[nodiscard]] int TriangleCount() const;
         [[nodiscard]] int EdgeCount() const;
+        [[nodiscard]] float InitScale() const;
     };
 
     Result Initialize() override;
@@ -136,6 +199,7 @@ public:
     [[nodiscard]] ManagerStatus Status() const override;
 
     [[nodiscard]] int TeamCount() const;
+    [[nodiscard]] bool ContainsTeamData(int team_id) const;
     [[nodiscard]] bool IsValidTeam(int team_id) const;
     [[nodiscard]] const TeamData& GetTeamData(int team_id) const;
     [[nodiscard]] TeamData& GetTeamData(int team_id);
@@ -146,16 +210,30 @@ public:
     [[nodiscard]] InertiaCenterData& GetCenterData(int team_id);
     void SetCenterData(int team_id, const InertiaCenterData& center_data);
     [[nodiscard]] int CenterDataCount() const;
+    [[nodiscard]] int MappingCount() const;
+    [[nodiscard]] const ExNativeArray<MappingData>& MappingDataArray() const;
+    [[nodiscard]] ExNativeArray<MappingData>& MappingDataArray();
+    [[nodiscard]] const TeamMappingList& GetTeamMapping(int team_id) const;
+    [[nodiscard]] TeamMappingList& GetTeamMapping(int team_id);
 
     [[nodiscard]] int CreateTeam(bool enabled = true, bool spring = false);
     [[nodiscard]] int CreateTeam(const ClothParameters& parameters, bool enabled = true, bool spring = false);
     void ReleaseTeam(int team_id);
     void ClearTeams();
     void SimulationStepTeamUpdate(int update_index, float simulation_delta_time);
+    bool SetSyncTeam(int team_id, int sync_team_id);
+    bool AddSyncParent(int sync_team_id, int parent_team_id);
+    bool RemoveSyncParent(int sync_team_id, int parent_team_id);
+    [[nodiscard]] int RegisterMappingData(int team_id, const MappingData& mapping_data);
+    void RemoveMappingData(int team_id, int mapping_index);
+    void ClearTeamMappings(int team_id);
+    void SyncTeamTimeAndParameters(int team_id, int sync_team_id);
 
 private:
     bool initialized_ = false;
     ExSimpleNativeArray<TeamData> team_data_array_;
+    ExSimpleNativeArray<TeamMappingList> team_mapping_index_array_;
+    ExNativeArray<MappingData> mapping_data_array_;
     ExSimpleNativeArray<ClothParameters> parameter_array_;
     ExSimpleNativeArray<InertiaCenterData> center_data_array_;
     std::vector<int> free_team_ids_;

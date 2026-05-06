@@ -48,7 +48,7 @@ Status labels:
 | `Cloth/ClothSerializeData.cs` | planned | `cloth/cloth_serialize_data.*` |
 | `Cloth/ClothSerializeData2.cs` | planned | `cloth/cloth_serialize_data2.*` |
 | `Cloth/ClothSerializeDataFunction.cs` | planned | `cloth/cloth_serialize_data_function.*` |
-| `Cloth/ClothUpdateMode.cs` | planned | `cloth/cloth_update_mode.hpp` |
+| `Cloth/ClothUpdateMode.cs` | partial | `cloth/cloth_parameters.hpp` |
 | `Cloth/CullingSettings.cs` | defer | Blender viewport/runtime culling boundary |
 | `Cloth/CurveSerializeData.cs` | planned | `cloth/parameters/curve_serialize_data.*` |
 | `Cloth/CustomSkinningSettings.cs` | planned | `cloth/custom_skinning_settings.*` |
@@ -77,7 +77,7 @@ Status labels:
 | `Cloth/Constraints/DistanceConstraint.cs` | partial | `cloth/constraints/distance_constraint.*` |
 | `Cloth/Constraints/InertiaConstraint.cs` | partial | `cloth/constraints/inertia_constraint.*` |
 | `Cloth/Constraints/MotionConstraint.cs` | partial | `cloth/constraints/motion_constraint.*` |
-| `Cloth/Constraints/SelfCollisionConstraint.cs` | planned | `cloth/constraints/self_collision_constraint.*` |
+| `Cloth/Constraints/SelfCollisionConstraint.cs` | partial | `cloth/constraints/self_collision_constraint.*` |
 | `Cloth/Constraints/SpringConstraint.cs` | partial | `cloth/cloth_parameters.hpp`, fixed-particle branch in `manager/simulation/simulation_manager.*` |
 | `Cloth/Constraints/TetherConstraint.cs` | partial | `cloth/constraints/tether_constraint.*` |
 | `Cloth/Constraints/TriangleBendingConstraint.cs` | partial | `cloth/constraints/triangle_bending_constraint.*` |
@@ -226,6 +226,10 @@ Last completed step:
 - Extended low-level `MathUtility` with MC2 `ShiftPosition(...)` for inertia shift reuse.
 - Extended low-level `MathUtility` matrix/rotation helpers from `Utility/Math/MathUtility.cs`: `ToNormalTangent(...)`, `LookRotation(...)`, `TransformPoint(...)`, `TransformVector(...)`, `TransformDirection(...)`, `TransformDistance(...)`, `TransformLength(...)`, `TransformRotation(...)`, and `InverseTransformPoint(...)`.
 - Extended low-level `MathUtility` segment helpers from `Utility/Math/MathUtility.cs`: `ClosestPtSegmentSegment(...)` and `ClosestPtSegmentSegment2(...)`, used by edge-capsule collider collision and later self-collision work.
+- Extended low-level `MathUtility` triangle/intersection helpers from `Utility/Math/MathUtility.cs`: point-triangle closest point/UVW, triangle center/normal/area/tangent/rotation, triangle-pair index/angle helpers, segment-triangle intersection, and ray-sphere intersection. These are prerequisite utilities for SelfCollision, VirtualMeshWork, and later topology builders.
+- Added the first bottom-layer `SelfCollisionConstraint` C++ module from `Cloth/Constraints/SelfCollisionConstraint.cs`: `SelfCollisionMode`, `SelfCollisionConstraintParams`, primitive/sort/contact data structures, primitive counters, intersect flag ownership, work-buffer lifecycle, primitive registration/removal, primitive initialization, per-step primitive update, intersect primitive next-position update, per-team sort-and-sweep sorting, Self/Sync/ParentSync sort-and-sweep broad-phase contact generation, broad-phase contact refresh, EdgeEdge / PointTriangle XPBD solve, aggregate writeback/clear, Self/Sync/ParentSync edge-triangle intersect/tangle-release flagging, `SolveRuntimeSelfCollision(...)`, `ClothManager::SelfCollision()`, and CMake registration are now present.
+- Extended step-list infrastructure for SelfCollision: `SimulationManager` now exposes/marks self particle, point-triangle, edge-edge, and triangle-point processing lists and can populate those lists from team self-collision flags. `BitFlag64::TestAny(...)` was added to mirror MC2 flag range checks.
+- Started the fuller `TeamManager.TeamData` C++ port: `ClothUpdateMode`, proxy mesh type, negative-scale triangle/quaternion helper fields, MC2-style status query helpers, fixed-size sync parent team list, `ContainsTeamData(...)`, `SetSyncTeam(...)`, sync parent add/remove maintenance, `MappingData`, fixed-size team mapping index lists, mapping data registration/removal, and sync time/inertia-parameter copy helpers are now present. The broader MC2 team lifecycle jobs, culling updates, team wind data, and full process-driven parameter synchronization remain deferred.
 
 Latest verification:
 
@@ -247,4 +251,4 @@ Wind / VirtualMesh test boundary:
 - Do not route current smoke coverage through `WindManager`, `TeamWindData`, or full `VirtualMesh` behavior. These modules should stay as low-level construction/ownership targets until the main XPBD solver chain is stable.
 - For now, wind and virtual mesh work should be limited to compile-safe data structures and manager skeletons. Avoid behavior assertions that depend on wind zone scanning, moving wind, proxy generation, mapping, reduction, or skinning.
 
-Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtime-side `TriangleBendingConstraint`, runtime-side `AngleConstraint`, and the collider manager/constraint ownership layer are now present; next targets are the remaining data builders/update-list population needed to feed these constraints, plus the low-level self-collision math and primitive buffers.
+Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtime-side `TriangleBendingConstraint`, runtime-side `AngleConstraint`, collider collision, SelfCollision Self/Sync/ParentSync runtime paths, and the first TeamData/mapping ownership layer are now present; next targets are the remaining data builders/update-list population needed to feed these constraints, plus more TeamManager lifecycle/culling/parameter synchronization pieces.

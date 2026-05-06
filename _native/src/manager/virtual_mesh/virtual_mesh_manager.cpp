@@ -270,6 +270,16 @@ const ExNativeArray<int>& VirtualMeshManager::VertexParentIndices() const
     return vertex_parent_indices_;
 }
 
+const ExNativeArray<std::int16_t>& VirtualMeshManager::TriangleTeamIds() const
+{
+    return triangle_team_ids_;
+}
+
+const ExNativeArray<int3>& VirtualMeshManager::Triangles() const
+{
+    return triangles_;
+}
+
 const ExNativeArray<std::int16_t>& VirtualMeshManager::EdgeTeamIds() const
 {
     return edge_team_ids_;

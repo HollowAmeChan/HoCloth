@@ -2,6 +2,7 @@
 
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/utility/data/data_utility.hpp"
 #include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 
@@ -383,6 +384,26 @@ const ExProcessingList<int>& SimulationManager::ProcessingStepMotionParticles() 
     return processing_step_motion_particle_;
 }
 
+const ExProcessingList<int>& SimulationManager::ProcessingSelfParticles() const
+{
+    return processing_self_particle_;
+}
+
+const ExProcessingList<unsigned int>& SimulationManager::ProcessingSelfPointTriangles() const
+{
+    return processing_self_point_triangle_;
+}
+
+const ExProcessingList<unsigned int>& SimulationManager::ProcessingSelfEdgeEdges() const
+{
+    return processing_self_edge_edge_;
+}
+
+const ExProcessingList<unsigned int>& SimulationManager::ProcessingSelfTrianglePoints() const
+{
+    return processing_self_triangle_point_;
+}
+
 SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int team_id, int particle_count)
 {
     if (!initialized_) {
@@ -466,6 +487,49 @@ void SimulationManager::BeginSimulationStep()
     processing_self_point_triangle_.Clear();
     processing_self_edge_edge_.Clear();
     processing_self_triangle_point_.Clear();
+}
+
+void SimulationManager::CreateSelfProcessingLists(const TeamManager& team_manager)
+{
+    for (int team_id = 1; team_id < team_manager.TeamCount(); ++team_id) {
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess() || !team_data.IsRunning()) {
+            continue;
+        }
+
+        const bool use_self_edge_edge =
+            team_data.flag.TestAny(TeamManager::FlagSelfEdgeEdge, 3);
+        const bool use_self_point_triangle =
+            team_data.flag.TestAny(TeamManager::FlagSelfPointTriangle, 3);
+        const bool use_self_triangle_point =
+            team_data.flag.TestAny(TeamManager::FlagSelfTrianglePoint, 3);
+
+        if (use_self_edge_edge) {
+            for (int index = 0; index < team_data.EdgeCount(); ++index) {
+                MarkSelfEdgeEdge(data::Pack32(team_id, index));
+            }
+        }
+        if (use_self_point_triangle) {
+            for (int index = 0; index < team_data.ParticleCount(); ++index) {
+                MarkSelfPointTriangle(data::Pack32(team_id, index));
+            }
+        }
+        if (use_self_triangle_point) {
+            for (int index = 0; index < team_data.TriangleCount(); ++index) {
+                MarkSelfTrianglePoint(data::Pack32(team_id, index));
+            }
+        }
+        if (use_self_edge_edge || use_self_point_triangle || use_self_triangle_point) {
+            const int particle_start = team_data.particle_chunk.start_index;
+            for (int index = 0; index < team_data.ParticleCount(); ++index) {
+                MarkSelfParticle(particle_start + index);
+            }
+        }
+    }
 }
 
 void SimulationManager::StartSimulationStep(
@@ -773,6 +837,26 @@ void SimulationManager::MarkStepCollider(int collider_index)
 void SimulationManager::MarkStepMotionParticle(int particle_index)
 {
     processing_step_motion_particle_.Add(particle_index);
+}
+
+void SimulationManager::MarkSelfParticle(int particle_index)
+{
+    processing_self_particle_.Add(particle_index);
+}
+
+void SimulationManager::MarkSelfPointTriangle(std::uint32_t packed_team_and_local_index)
+{
+    processing_self_point_triangle_.Add(packed_team_and_local_index);
+}
+
+void SimulationManager::MarkSelfEdgeEdge(std::uint32_t packed_team_and_local_index)
+{
+    processing_self_edge_edge_.Add(packed_team_and_local_index);
+}
+
+void SimulationManager::MarkSelfTrianglePoint(std::uint32_t packed_team_and_local_index)
+{
+    processing_self_triangle_point_.Add(packed_team_and_local_index);
 }
 
 void SimulationManager::EndSimulationStep()

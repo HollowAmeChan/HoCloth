@@ -121,6 +121,17 @@ float Abs(float value)
     return std::abs(value);
 }
 
+float Angle(const float3& a, const float3& b)
+{
+    const float length_a = Length(a);
+    const float length_b = Length(b);
+    const float denominator = length_a * length_b;
+    if (denominator <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return std::acos(Clamp1(Dot(a, b) / denominator));
+}
+
 float CalcMass(float depth)
 {
     const float a = 1.0f - depth;
@@ -154,6 +165,18 @@ float CalcInverseMass(float friction, float depth, bool fixed, float fixed_mass)
         return fixed_mass > define::system::Epsilon ? 1.0f / fixed_mass : 0.0f;
     }
     return CalcInverseMass(friction, depth);
+}
+
+float CalcSelfCollisionInverseMass(float friction, bool fixed, float cloth_mass)
+{
+    float mass = fixed
+        ? define::system::SelfCollisionFixedMass
+        : 1.0f + friction * define::system::SelfCollisionFrictionMass;
+    mass += cloth_mass * define::system::SelfCollisionClothMass;
+    if (mass <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return 1.0f / mass;
 }
 
 quaternion Normalize(const quaternion& value)
@@ -667,6 +690,429 @@ void ClosestPtSegmentSegment2(
             }
         }
     }
+}
+
+float3 ClosestPtPointTriangle(
+    const float3& point,
+    const float3& a,
+    const float3& b,
+    const float3& c,
+    float3& uvw
+)
+{
+    uvw = float3{};
+    float v = 0.0f;
+    float w = 0.0f;
+
+    const float3 ab = Subtract(b, a);
+    const float3 ac = Subtract(c, a);
+    const float3 ap = Subtract(point, a);
+    const float d1 = Dot(ab, ap);
+    const float d2 = Dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) {
+        uvw.x = 1.0f;
+        return a;
+    }
+
+    const float3 bp = Subtract(point, b);
+    const float d3 = Dot(ab, bp);
+    const float d4 = Dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) {
+        uvw.y = 1.0f;
+        return b;
+    }
+
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        const float denominator = d1 - d3;
+        v = std::abs(denominator) > define::system::Epsilon ? d1 / denominator : 0.0f;
+        uvw = float3{1.0f - v, v, 0.0f};
+        return Add(a, Scale(ab, v));
+    }
+
+    const float3 cp = Subtract(point, c);
+    const float d5 = Dot(ab, cp);
+    const float d6 = Dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) {
+        uvw.z = 1.0f;
+        return c;
+    }
+
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        const float denominator = d2 - d6;
+        w = std::abs(denominator) > define::system::Epsilon ? d2 / denominator : 0.0f;
+        uvw = float3{1.0f - w, 0.0f, w};
+        return Add(a, Scale(ac, w));
+    }
+
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+        const float denominator = (d4 - d3) + (d5 - d6);
+        w = std::abs(denominator) > define::system::Epsilon
+            ? (d4 - d3) / denominator
+            : 0.0f;
+        uvw = float3{0.0f, 1.0f - w, w};
+        return Add(b, Scale(Subtract(c, b), w));
+    }
+
+    const float h = va + vb + vc;
+    const float denominator = std::abs(h) > define::system::Epsilon ? 1.0f / h : 0.0f;
+    v = vb * denominator;
+    w = vc * denominator;
+    uvw = float3{1.0f - v - w, v, w};
+    return Add(Add(a, Scale(ab, v)), Scale(ac, w));
+}
+
+bool PointInTriangleUVW(const float3& uvw)
+{
+    return uvw.x != 0.0f && uvw.y != 0.0f && uvw.z != 0.0f;
+}
+
+float3 TriangleCenter(const float3& p0, const float3& p1, const float3& p2)
+{
+    return Scale(Add(Add(p0, p1), p2), 1.0f / 3.0f);
+}
+
+float3 TriangleNormal(const float3& p0, const float3& p1, const float3& p2)
+{
+    return Normalize(Cross(Subtract(p1, p0), Subtract(p2, p0)));
+}
+
+float TriangleArea(const float3& p0, const float3& p1, const float3& p2)
+{
+    return Length(Cross(Subtract(p1, p0), Subtract(p2, p0)));
+}
+
+bool IsSafeTriangle(const float3& p0, const float3& p1, const float3& p2)
+{
+    return TriangleArea(p0, p1, p2) > 1.0e-6f;
+}
+
+float3 TriangleTangent(
+    const float3& p0,
+    const float3& p1,
+    const float3& p2,
+    const float2& uv0,
+    const float2& uv1,
+    const float2& uv2
+)
+{
+    const float3 dist_ba = Subtract(p1, p0);
+    const float3 dist_ca = Subtract(p2, p0);
+    const float2 tdist_ba{uv1.x - uv0.x, uv1.y - uv0.y};
+    const float2 tdist_ca{uv2.x - uv0.x, uv2.y - uv0.y};
+    float area = tdist_ba.x * tdist_ca.y - tdist_ba.y * tdist_ca.x;
+    if (area == 0.0f) {
+        area = 1.0f;
+    }
+
+    const float delta = 1.0f / area;
+    const float3 tangent{
+        -((dist_ba.x * tdist_ca.y) + (dist_ca.x * -tdist_ba.y)) * delta,
+        -((dist_ba.y * tdist_ca.y) + (dist_ca.y * -tdist_ba.y)) * delta,
+        -((dist_ba.z * tdist_ca.y) + (dist_ca.z * -tdist_ba.y)) * delta,
+    };
+    return Normalize(tangent);
+}
+
+quaternion TriangleRotation(const float3& p0, const float3& p1, const float3& p2)
+{
+    const float3 normal = TriangleNormal(p0, p1, p2);
+    const float3 center = TriangleCenter(p0, p1, p2);
+    const float3 tangent = Normalize(Subtract(p0, center), float3{0.0f, 0.0f, 1.0f});
+    return LookRotation(tangent, normal);
+}
+
+quaternion TriangleCenterRotation(
+    const float3& p0,
+    const float3& p1,
+    const float3& p2,
+    const float3& p3
+)
+{
+    const float3 n0 = TriangleNormal(p0, p2, p3);
+    const float3 n1 = TriangleNormal(p1, p3, p2);
+    const float3 normal = Scale(Add(n0, n1), 0.5f);
+    const float3 tangent = Normalize(Subtract(p3, p2), float3{0.0f, 0.0f, 1.0f});
+    return LookRotation(tangent, normal);
+}
+
+float TriangleAngle(
+    const float3& v0,
+    const float3& v1,
+    const float3& v2,
+    const float3& v3
+)
+{
+    const float3 edge = Subtract(v1, v0);
+    const float3 va = Subtract(v2, v0);
+    const float3 vb = Subtract(v3, v0);
+    const float3 na = Cross(va, edge);
+    const float3 nb = Cross(edge, vb);
+    return Angle(na, nb);
+}
+
+float DistanceTriangleCenter(
+    const float3& point,
+    const float3& p0,
+    const float3& p1,
+    const float3& p2
+)
+{
+    return Distance(point, TriangleCenter(p0, p1, p2));
+}
+
+float DirectionPointTriangle(
+    const float3& point,
+    const float3& a,
+    const float3& b,
+    const float3& c
+)
+{
+    const float3 ab = Subtract(b, a);
+    const float3 ac = Subtract(c, a);
+    const float3 ap = Subtract(point, a);
+    const float d = Dot(ap, Cross(ab, ac));
+    if (d > 0.0f) {
+        return 1.0f;
+    }
+    if (d < 0.0f) {
+        return -1.0f;
+    }
+    return 0.0f;
+}
+
+int2 GetRestTriangleVertex(const int3& tri1, const int3& tri2, const int2& edge)
+{
+    int2 result{-1, -1};
+    const int values1[3] = {tri1.x, tri1.y, tri1.z};
+    const int values2[3] = {tri2.x, tri2.y, tri2.z};
+    for (int value : values1) {
+        if (value != edge.x && value != edge.y) {
+            result.x = value;
+            break;
+        }
+    }
+    for (int value : values2) {
+        if (value != edge.x && value != edge.y) {
+            result.y = value;
+            break;
+        }
+    }
+    return result;
+}
+
+int2 GetCommonEdgeFromTrianglePair(const int3& tri1, const int3& tri2)
+{
+    int2 edge{};
+    int edge_index = 0;
+    const int values1[3] = {tri1.x, tri1.y, tri1.z};
+    const int values2[3] = {tri2.x, tri2.y, tri2.z};
+    for (int value1 : values1) {
+        for (int value2 : values2) {
+            if (value1 == value2 && edge_index < 2) {
+                if (edge_index == 0) {
+                    edge.x = value1;
+                } else {
+                    edge.y = value1;
+                }
+                ++edge_index;
+                break;
+            }
+        }
+    }
+    if (edge_index != 2) {
+        return int2{};
+    }
+    if (edge.x > edge.y) {
+        std::swap(edge.x, edge.y);
+    }
+    return edge;
+}
+
+int4 GetTrianglePairIndices(const int3& tri1, const int3& tri2)
+{
+    const int2 edge = GetCommonEdgeFromTrianglePair(tri1, tri2);
+    int4 result{0, 0, edge.x, edge.y};
+    const int values1[3] = {tri1.x, tri1.y, tri1.z};
+    const int values2[3] = {tri2.x, tri2.y, tri2.z};
+    for (int value : values1) {
+        if (value != edge.x && value != edge.y) {
+            result.x = value;
+        }
+    }
+    for (int value : values2) {
+        if (value != edge.x && value != edge.y) {
+            result.y = value;
+        }
+    }
+    return result;
+}
+
+int GetUnuseTriangleIndex(const int3& tri, const int2& edge)
+{
+    if (tri.x != edge.x && tri.x != edge.y) {
+        return tri.x;
+    }
+    if (tri.y != edge.x && tri.y != edge.y) {
+        return tri.y;
+    }
+    if (tri.z != edge.x && tri.z != edge.y) {
+        return tri.z;
+    }
+    return -1;
+}
+
+float GetTrianglePairAngle(
+    const float3& pos0,
+    const float3& pos1,
+    const float3& pos2,
+    const float3& pos3
+)
+{
+    const float3 va = Subtract(pos3, pos2);
+    const float3 vb = Subtract(pos0, pos2);
+    const float3 vc = Subtract(pos1, pos2);
+    const float3 n0 = Cross(va, vb);
+    const float3 n1 = Cross(vc, va);
+    return Angle(n0, n1);
+}
+
+int3 FlipTriangle(const int3& tri)
+{
+    return int3{tri.x, tri.z, tri.y};
+}
+
+void GetTriangleSphere(
+    const float3& pos0,
+    const float3& pos1,
+    const float3& pos2,
+    float3& sphere_center,
+    float& sphere_radius
+)
+{
+    const float3 max_value{
+        std::max({pos0.x, pos1.x, pos2.x}),
+        std::max({pos0.y, pos1.y, pos2.y}),
+        std::max({pos0.z, pos1.z, pos2.z}),
+    };
+    const float3 min_value{
+        std::min({pos0.x, pos1.x, pos2.x}),
+        std::min({pos0.y, pos1.y, pos2.y}),
+        std::min({pos0.z, pos1.z, pos2.z}),
+    };
+    sphere_center = Scale(Add(min_value, max_value), 0.5f);
+    sphere_radius = Distance(min_value, max_value) * 0.5f;
+}
+
+bool IntersectSegmentTriangle(
+    const float3& p,
+    const float3& q,
+    float3 a,
+    float3 b,
+    float3 c,
+    bool double_side,
+    float& u,
+    float& v,
+    float& w,
+    float& t
+)
+{
+    t = 0.0f;
+    u = 0.0f;
+    v = 0.0f;
+    w = 0.0f;
+
+    float3 ab = Subtract(b, a);
+    float3 ac = Subtract(c, a);
+    const float3 qp = Subtract(p, q);
+    float3 n = Cross(ab, ac);
+    float d = Dot(qp, n);
+
+    if (std::abs(d) < 1.0e-9f) {
+        return false;
+    }
+    if (!double_side) {
+        if (d <= 0.0f) {
+            return false;
+        }
+    } else if (d < 0.0f) {
+        n = Scale(n, -1.0f);
+        const float3 swap = b;
+        b = c;
+        c = swap;
+        ab = Subtract(b, a);
+        ac = Subtract(c, a);
+        d = Dot(qp, n);
+    }
+
+    const float3 ap = Subtract(p, a);
+    t = Dot(ap, n);
+    if (t < 0.0f || t > d) {
+        return false;
+    }
+
+    const float3 e = Cross(qp, ap);
+    v = Dot(ac, e);
+    if (v < 0.0f || v > d) {
+        return false;
+    }
+    w = -Dot(ab, e);
+    if (w < 0.0f || v + w > d) {
+        return false;
+    }
+
+    const float inv_d = 1.0f / d;
+    t *= inv_d;
+    v *= inv_d;
+    w *= inv_d;
+    u = 1.0f - v - w;
+    return true;
+}
+
+bool IntersectSegmentTriangle(
+    const float3& p,
+    const float3& q,
+    float3 a,
+    float3 b,
+    float3 c
+)
+{
+    float u = 0.0f;
+    float v = 0.0f;
+    float w = 0.0f;
+    float t = 0.0f;
+    return IntersectSegmentTriangle(p, q, a, b, c, true, u, v, w, t);
+}
+
+bool IntersectRaySphere(
+    const float3& position,
+    const float3& direction,
+    const float3& sphere_center,
+    float sphere_radius,
+    float& t,
+    float3& q
+)
+{
+    const float3 m = Subtract(position, sphere_center);
+    const float b = Dot(m, direction);
+    const float c = Dot(m, m) - sphere_radius * sphere_radius;
+    if (c > 0.0f && b > 0.0f) {
+        return false;
+    }
+
+    const float discriminant = b * b - c;
+    if (discriminant < 0.0f) {
+        return false;
+    }
+
+    t = -b - std::sqrt(discriminant);
+    if (t < 0.0f) {
+        t = 0.0f;
+    }
+    q = Add(position, Scale(direction, t));
+    return true;
 }
 
 float IntersectPointPlaneDist(

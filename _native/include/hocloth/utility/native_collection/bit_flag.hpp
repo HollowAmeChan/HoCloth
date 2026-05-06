@@ -53,6 +53,17 @@ public:
         return (value_ & (std::uint64_t{1} << bit)) != 0;
     }
 
+    [[nodiscard]] bool TestAny(int start_bit, int count) const
+    {
+        if (count <= 0) {
+            return false;
+        }
+        const std::uint64_t mask = count >= 64
+            ? ~std::uint64_t{0}
+            : ((std::uint64_t{1} << count) - 1) << start_bit;
+        return (value_ & mask) != 0;
+    }
+
     void Set(int bit, bool enabled)
     {
         const std::uint64_t mask = std::uint64_t{1} << bit;

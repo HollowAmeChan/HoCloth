@@ -45,6 +45,8 @@ public:
     [[nodiscard]] const ExNativeArray<float>& VertexDepths() const;
     [[nodiscard]] const ExNativeArray<int>& VertexRootIndices() const;
     [[nodiscard]] const ExNativeArray<int>& VertexParentIndices() const;
+    [[nodiscard]] const ExNativeArray<std::int16_t>& TriangleTeamIds() const;
+    [[nodiscard]] const ExNativeArray<int3>& Triangles() const;
     [[nodiscard]] const ExNativeArray<std::int16_t>& EdgeTeamIds() const;
     [[nodiscard]] const ExNativeArray<int2>& Edges() const;
     [[nodiscard]] const ExNativeArray<BitFlag8>& EdgeFlags() const;

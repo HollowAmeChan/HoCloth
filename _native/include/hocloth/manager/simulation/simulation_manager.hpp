@@ -83,12 +83,17 @@ public:
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepBaseLines() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepColliders() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepMotionParticles() const;
+    [[nodiscard]] const ExProcessingList<int>& ProcessingSelfParticles() const;
+    [[nodiscard]] const ExProcessingList<unsigned int>& ProcessingSelfPointTriangles() const;
+    [[nodiscard]] const ExProcessingList<unsigned int>& ProcessingSelfEdgeEdges() const;
+    [[nodiscard]] const ExProcessingList<unsigned int>& ProcessingSelfTrianglePoints() const;
 
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
     void RemoveParticleRange(const ParticleChunkSet& chunks);
 
     void PrepareProcessingBuffers(int particle_capacity);
     void BeginSimulationStep();
+    void CreateSelfProcessingLists(const TeamManager& team_manager);
     void StartSimulationStep(
         const float4& simulation_power,
         float simulation_delta_time,
@@ -111,6 +116,10 @@ public:
     void MarkStepBaseLine(std::uint32_t packed_team_and_baseline_index);
     void MarkStepCollider(int collider_index);
     void MarkStepMotionParticle(int particle_index);
+    void MarkSelfParticle(int particle_index);
+    void MarkSelfPointTriangle(std::uint32_t packed_team_and_local_index);
+    void MarkSelfEdgeEdge(std::uint32_t packed_team_and_local_index);
+    void MarkSelfTrianglePoint(std::uint32_t packed_team_and_local_index);
     void EndSimulationStep();
 
 private:

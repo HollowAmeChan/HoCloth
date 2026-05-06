@@ -70,6 +70,7 @@ inline constexpr float SelfCollisionFixedMass = 100.0f;
 inline constexpr float SelfCollisionFrictionMass = 10.0f;
 inline constexpr float SelfCollisionClothMass = 50.0f;
 inline constexpr float SelfCollisionSCR = 2.0f;
+inline constexpr float SelfCollisionPointTriangleAngleCos = 0.5f;
 inline constexpr int SelfCollisionIntersectDiv = 8;
 inline constexpr float SelfCollisionThicknessMin = 0.001f;
 inline constexpr float SelfCollisionThicknessMax = 0.05f;
