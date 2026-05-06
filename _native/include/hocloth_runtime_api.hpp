@@ -170,6 +170,7 @@ struct BuildSceneResult {
     std::string summary;
     std::string backend;
     std::string build_message;
+    std::string backend_status;
 };
 
 struct StepSceneResult {

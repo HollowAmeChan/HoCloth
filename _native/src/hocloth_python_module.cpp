@@ -405,6 +405,7 @@ nb::dict ToPython(const BuildSceneResult& result)
     dict["summary"] = result.summary;
     dict["backend"] = result.backend;
     dict["build_message"] = result.build_message;
+    dict["backend_status"] = result.backend_status;
     return dict;
 }
 

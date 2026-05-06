@@ -54,11 +54,35 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
 
     add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
 
+    add_library(hocloth_mc2_core STATIC
+        "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/cloth/cloth_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/magica_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/collider_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/simulation_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/time_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/simulation/wind_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/team/team_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/transform/transform_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/manager/virtual_mesh/virtual_mesh_manager.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/utility/math/math_utility.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/data_chunk.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/utility/native_collection/ex_processing_list.cpp"
+        "${HOCLOTH_NATIVE_ROOT}/src/utility/result_code/result_code.cpp"
+    )
+    target_include_directories(hocloth_mc2_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+
+    add_executable(hocloth_mc2_core_smoke
+        "${HOCLOTH_NATIVE_ROOT}/tests/native/mc2_core_smoke.cpp"
+    )
+    target_link_libraries(hocloth_mc2_core_smoke PRIVATE hocloth_mc2_core)
+
     add_library(hocloth_runtime_core STATIC
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_collision_world.cpp"
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_runtime_api.cpp"
     )
     target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+    target_link_libraries(hocloth_runtime_core PUBLIC hocloth_mc2_core)
 
     nanobind_add_module(hocloth_native
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_python_module.cpp"

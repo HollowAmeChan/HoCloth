@@ -1,4 +1,5 @@
 #include "hocloth_runtime_api.hpp"
+#include "hocloth/api/mc2_backend.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -857,6 +858,7 @@ BuildSceneResult RuntimeModule::BuildScene(CompiledScene compiled_scene)
     result.summary = scene->compiled_scene.Summary();
     result.backend = "native_mc2_bootstrap";
     result.build_message = "HoCloth native MC2 bootstrap active.";
+    result.backend_status = mc2::CreateBootstrapBackendStatus().Summary();
 
     scenes_[handle] = std::move(scene);
     return result;
