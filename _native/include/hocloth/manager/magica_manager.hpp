@@ -23,6 +23,13 @@ public:
 
     [[nodiscard]] bool Initialized() const;
     [[nodiscard]] std::vector<ManagerStatus> Statuses() const;
+    [[nodiscard]] int StepFrame(
+        float frame_delta_time,
+        float fixed_delta_time,
+        float unscaled_delta_time,
+        float global_time_scale,
+        int simulation_frequency
+    );
 
     [[nodiscard]] TimeManager& Time();
     [[nodiscard]] TeamManager& Team();

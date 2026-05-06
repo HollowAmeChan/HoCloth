@@ -13,9 +13,13 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace hocloth::mc2 {
+
+class TransformManager;
+class VirtualMeshManager;
 
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Team/TeamManager.cs
 class TeamManager final : public IManager {
@@ -201,6 +205,7 @@ public:
     [[nodiscard]] int TeamCount() const;
     [[nodiscard]] bool ContainsTeamData(int team_id) const;
     [[nodiscard]] bool IsValidTeam(int team_id) const;
+    [[nodiscard]] bool IsEnable(int team_id) const;
     [[nodiscard]] const TeamData& GetTeamData(int team_id) const;
     [[nodiscard]] TeamData& GetTeamData(int team_id);
     [[nodiscard]] const ClothParameters& GetParameters(int team_id) const;
@@ -220,7 +225,27 @@ public:
     [[nodiscard]] int CreateTeam(const ClothParameters& parameters, bool enabled = true, bool spring = false);
     void ReleaseTeam(int team_id);
     void ClearTeams();
+    void SetEnable(int team_id, bool enabled);
+    void SetSkipWriting(int team_id, bool skip_writing);
+    void SetReset(int team_id, bool reset);
+    void SetTimeReset(int team_id, bool reset);
+    void SetAnimationPoseRatio(int team_id, float ratio);
+    [[nodiscard]] int AlwaysTeamUpdate(
+        float frame_delta_time,
+        float fixed_delta_time,
+        float unscaled_delta_time,
+        float global_time_scale,
+        float simulation_delta_time,
+        int max_simulation_count_per_frame
+    );
     void SimulationStepTeamUpdate(int update_index, float simulation_delta_time);
+    void UpdateCenterAndInertia(
+        float simulation_delta_time,
+        const TransformManager& transform_manager,
+        const VirtualMeshManager& virtual_mesh_manager,
+        const ExNativeArray<std::uint16_t>& fixed_array
+    );
+    void PostTeamUpdate();
     bool SetSyncTeam(int team_id, int sync_team_id);
     bool AddSyncParent(int sync_team_id, int parent_team_id);
     bool RemoveSyncParent(int sync_team_id, int parent_team_id);

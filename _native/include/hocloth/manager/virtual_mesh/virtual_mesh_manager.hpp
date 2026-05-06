@@ -55,9 +55,12 @@ public:
     [[nodiscard]] int ProxyLocalPositionCount() const;
     [[nodiscard]] int MappingVertexCount() const;
     [[nodiscard]] const ExNativeArray<VertexAttribute>& Attributes() const;
+    [[nodiscard]] const ExNativeArray<quaternion>& VertexBindPoseRotations() const;
     [[nodiscard]] const ExNativeArray<float>& VertexDepths() const;
     [[nodiscard]] const ExNativeArray<int>& VertexRootIndices() const;
     [[nodiscard]] const ExNativeArray<int>& VertexParentIndices() const;
+    [[nodiscard]] const ExNativeArray<float3>& VertexLocalPositions() const;
+    [[nodiscard]] const ExNativeArray<quaternion>& VertexLocalRotations() const;
     [[nodiscard]] const ExNativeArray<std::int16_t>& TriangleTeamIds() const;
     [[nodiscard]] const ExNativeArray<int3>& Triangles() const;
     [[nodiscard]] const ExNativeArray<std::int16_t>& EdgeTeamIds() const;

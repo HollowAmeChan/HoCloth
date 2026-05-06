@@ -48,6 +48,85 @@ std::vector<ManagerStatus> MagicaManager::Statuses() const
     };
 }
 
+int MagicaManager::StepFrame(
+    float frame_delta_time,
+    float fixed_delta_time,
+    float unscaled_delta_time,
+    float global_time_scale,
+    int simulation_frequency
+)
+{
+    if (!initialized_) {
+        Initialize();
+    }
+
+    time_manager_.FrameUpdate(simulation_frequency);
+    const float simulation_delta_time = time_manager_.SimulationDeltaTime();
+    const float4 simulation_power = time_manager_.SimulationPower();
+    const int max_update_count = team_manager_.AlwaysTeamUpdate(
+        frame_delta_time,
+        fixed_delta_time,
+        unscaled_delta_time,
+        global_time_scale,
+        simulation_delta_time,
+        time_manager_.MaxSimulationCountPerFrame()
+    );
+
+    if (max_update_count <= 0) {
+        team_manager_.PostTeamUpdate();
+        collider_manager_.PostSimulationUpdate(team_manager_);
+        return 0;
+    }
+
+    team_manager_.UpdateCenterAndInertia(
+        simulation_delta_time,
+        transform_manager_,
+        virtual_mesh_manager_,
+        cloth_manager_.Inertia().FixedArray()
+    );
+    simulation_manager_.PreSimulationUpdate(team_manager_, virtual_mesh_manager_);
+    collider_manager_.PreSimulationUpdate(team_manager_, transform_manager_);
+    for (int update_index = 0; update_index < max_update_count; ++update_index) {
+        simulation_manager_.BeginSimulationStep();
+        team_manager_.SimulationStepTeamUpdate(update_index, simulation_delta_time);
+        simulation_manager_.CreateStepParticleList(team_manager_);
+        collider_manager_.CreateUpdateColliderList(update_index, team_manager_, simulation_manager_);
+        collider_manager_.StartSimulationStep(team_manager_, simulation_manager_);
+        cloth_manager_.PrepareStepWorkBuffers(simulation_manager_);
+        simulation_manager_.StartSimulationStep(
+            simulation_power,
+            simulation_delta_time,
+            team_manager_,
+            virtual_mesh_manager_
+        );
+        simulation_manager_.UpdateStepBasicPosture(team_manager_, virtual_mesh_manager_);
+        cloth_manager_.SolveStepConstraints(
+            update_index,
+            simulation_power,
+            team_manager_,
+            virtual_mesh_manager_,
+            collider_manager_,
+            simulation_manager_
+        );
+        simulation_manager_.EndSimulationStepSolve(
+            simulation_delta_time,
+            team_manager_,
+            virtual_mesh_manager_
+        );
+        collider_manager_.EndSimulationStep(simulation_manager_);
+        simulation_manager_.EndSimulationStep();
+    }
+
+    simulation_manager_.CalcDisplayPosition(
+        simulation_delta_time,
+        team_manager_,
+        virtual_mesh_manager_
+    );
+    collider_manager_.PostSimulationUpdate(team_manager_);
+    team_manager_.PostTeamUpdate();
+    return max_update_count;
+}
+
 TimeManager& MagicaManager::Time()
 {
     return time_manager_;

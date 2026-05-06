@@ -2,6 +2,7 @@
 
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/manager/i_manager.hpp"
+#include "hocloth/utility/math/math_types.hpp"
 
 namespace hocloth::mc2 {
 
@@ -15,8 +16,10 @@ public:
     void FrameUpdate(int requested_frequency);
 
     [[nodiscard]] int SimulationFrequency() const;
+    [[nodiscard]] int MaxSimulationCountPerFrame() const;
     [[nodiscard]] float SimulationDeltaTime() const;
     [[nodiscard]] float MaxDeltaTime() const;
+    [[nodiscard]] float4 SimulationPower() const;
 
 private:
     bool initialized_ = false;
@@ -26,6 +29,7 @@ private:
     float max_delta_time_ =
         (1.0f / static_cast<float>(define::system::DefaultSimulationFrequency))
         * static_cast<float>(define::system::DefaultMaxSimulationCountPerFrame);
+    float4 simulation_power_{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 }  // namespace hocloth::mc2

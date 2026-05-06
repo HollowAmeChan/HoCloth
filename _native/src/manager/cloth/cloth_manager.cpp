@@ -1,5 +1,7 @@
 #include "hocloth/manager/cloth/cloth_manager.hpp"
 
+#include "hocloth/manager/simulation/simulation_manager.hpp"
+
 #include <sstream>
 
 namespace hocloth::mc2 {
@@ -111,6 +113,42 @@ TriangleBendingConstraint& ClothManager::TriangleBending()
 const TriangleBendingConstraint& ClothManager::TriangleBending() const
 {
     return triangle_bending_constraint_;
+}
+
+void ClothManager::PrepareStepWorkBuffers(const SimulationManager& simulation_manager)
+{
+    const int particle_count = simulation_manager.ParticleCount();
+    angle_constraint_.WorkBufferUpdate(particle_count);
+    collider_collision_constraint_.WorkBufferUpdate(
+        particle_count,
+        simulation_manager.ProcessingStepEdgeCollision().Count()
+    );
+    self_collision_constraint_.WorkBufferUpdate(particle_count);
+}
+
+void ClothManager::SolveStepConstraints(
+    int update_index,
+    const float4& simulation_power,
+    const TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager,
+    const ColliderManager& collider_manager,
+    SimulationManager& simulation_manager
+)
+{
+    // Ported from MC2 SimulationManager.SimulationStepUpdate constraint order.
+    tether_constraint_.Solve(team_manager, virtual_mesh_manager, simulation_manager);
+    distance_constraint_.Solve(simulation_power, team_manager, virtual_mesh_manager, simulation_manager);
+    angle_constraint_.Solve(simulation_power, team_manager, virtual_mesh_manager, simulation_manager);
+    triangle_bending_constraint_.Solve(simulation_power, team_manager, virtual_mesh_manager, simulation_manager);
+    collider_collision_constraint_.Solve(
+        team_manager,
+        virtual_mesh_manager,
+        collider_manager,
+        simulation_manager
+    );
+    distance_constraint_.Solve(simulation_power, team_manager, virtual_mesh_manager, simulation_manager);
+    motion_constraint_.Solve(team_manager, virtual_mesh_manager, simulation_manager);
+    self_collision_constraint_.SolveRuntimeSelfCollision(update_index, team_manager, simulation_manager);
 }
 
 }  // namespace hocloth::mc2

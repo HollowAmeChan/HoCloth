@@ -162,19 +162,23 @@ int main()
     inertia_data.center_data.old_world_position = hocloth::mc2::float3{0.0f, 0.0f, 0.0f};
     inertia_data.center_data.now_world_position = hocloth::mc2::float3{0.0f, 0.0f, 0.0f};
     manager.Cloth().Inertia().Register(team_id, inertia_data, manager.Team());
-    manager.Team().GetTeamData(team_id).time = 1.0f / 60.0f;
-    manager.Team().GetTeamData(team_id).frame_old_time = 0.0f;
-    manager.Team().GetTeamData(team_id).now_update_time = 0.0f;
-    manager.Team().GetTeamData(team_id).update_count = 1;
     manager.Team().GetTeamData(team_id).force_mode = hocloth::mc2::ClothForceMode::VelocityAddWithoutDepth;
     manager.Team().GetTeamData(team_id).impact_force = hocloth::mc2::float3{1.0f, 0.0f, 0.0f};
+    const int scheduled_update_count = manager.Team().AlwaysTeamUpdate(
+        1.0f / 60.0f,
+        1.0f / 60.0f,
+        1.0f / 60.0f,
+        1.0f,
+        1.0f / 60.0f,
+        1
+    );
+    if (scheduled_update_count != 1) {
+        throw std::runtime_error("AlwaysTeamUpdate did not schedule one simulation step.");
+    }
 
     manager.Simulation().BeginSimulationStep();
     manager.Team().SimulationStepTeamUpdate(0, 1.0f / 60.0f);
-    for (int index = 0; index < chunks.ParticleCount(); ++index) {
-        manager.Simulation().MarkStepParticle(chunks.next_pos_chunk.start_index + index);
-    }
-    manager.Simulation().MarkStepMotionParticle(chunks.next_pos_chunk.start_index + 1);
+    manager.Simulation().CreateStepParticleList(manager.Team());
     manager.Simulation().StartSimulationStep(
         hocloth::mc2::float4{1.0f, 1.0f, 1.0f, 1.0f},
         1.0f / 60.0f,
@@ -257,6 +261,7 @@ int main()
               << " proxy_p1.x=" << manager.VirtualMesh().Positions()[proxy_p1].x
               << "\n";
 
+    manager.Team().PostTeamUpdate();
     manager.Dispose();
     return 0;
     } catch (const std::exception& exception) {

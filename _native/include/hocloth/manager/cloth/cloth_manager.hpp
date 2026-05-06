@@ -12,6 +12,11 @@
 
 namespace hocloth::mc2 {
 
+class ColliderManager;
+class SimulationManager;
+class TeamManager;
+class VirtualMeshManager;
+
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Cloth/ClothManager.cs
 class ClothManager final : public IManager {
 public:
@@ -35,6 +40,16 @@ public:
     [[nodiscard]] const TetherConstraint& Tether() const;
     [[nodiscard]] TriangleBendingConstraint& TriangleBending();
     [[nodiscard]] const TriangleBendingConstraint& TriangleBending() const;
+
+    void PrepareStepWorkBuffers(const SimulationManager& simulation_manager);
+    void SolveStepConstraints(
+        int update_index,
+        const float4& simulation_power,
+        const TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager,
+        const ColliderManager& collider_manager,
+        SimulationManager& simulation_manager
+    );
 
 private:
     bool initialized_ = false;

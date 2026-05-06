@@ -40,9 +40,12 @@ namespace hocloth::mc2 {
 [[nodiscard]] bool ClampAngle(const float3& direction, const float3& base_direction, float max_angle, float3& out_direction);
 void ToAngleAxis(const quaternion& value, float& angle, float3& axis);
 void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent);
+[[nodiscard]] quaternion ToRotation(const float3& normal, const float3& tangent);
 [[nodiscard]] quaternion LookRotation(const float3& forward, const float3& up);
 [[nodiscard]] float3 Rotate(const quaternion& rotation, const float3& vector);
 [[nodiscard]] float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale);
+[[nodiscard]] float4x4 Multiply(const float4x4& a, const float4x4& b);
+[[nodiscard]] float4x4 InverseAffine(const float4x4& matrix);
 [[nodiscard]] float3 TransformPoint(const float3& position, const float4x4& matrix);
 [[nodiscard]] float3 TransformPoint(
     const float3& position,

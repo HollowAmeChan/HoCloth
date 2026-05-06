@@ -107,20 +107,20 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Manager/IManager.cs` | skeleton | `manager/i_manager.hpp` |
-| `Manager/MagicaManager.cs` | skeleton | `manager/magica_manager.*` |
+| `Manager/MagicaManager.cs` | partial | `manager/magica_manager.*`, native frame-step orchestration now exists |
 | `Manager/MagicaManagerAPI.cs` | planned | `api/magica_manager_api.*` |
 | `Manager/MagicaSettings.cs` | planned | `manager/magica_settings.*` |
-| `Manager/Cloth/ClothManager.cs` | skeleton | `manager/cloth/cloth_manager.*` |
+| `Manager/Cloth/ClothManager.cs` | partial | `manager/cloth/cloth_manager.*`, MC2 constraint solve order is centralized |
 | `Manager/Cloth/PreBuildManager.cs` | planned | `manager/cloth/prebuild_manager.*` |
 | `Manager/Render/RenderData.cs` | defer | `manager/render/render_data.*` |
 | `Manager/Render/RenderManager.cs` | defer | `manager/render/render_manager.*` |
 | `Manager/Render/RenderSetupData.cs` | defer | `manager/render/render_setup_data.*` |
 | `Manager/Render/RenderSetupDataSerialization.cs` | defer | `manager/render/render_setup_data_serialization.*` |
 | `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*` |
-| `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*` |
-| `Manager/Simulation/TimeManager.cs` | skeleton | `manager/simulation/time_manager.*` |
+| `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
+| `Manager/Simulation/TimeManager.cs` | partial | `manager/simulation/time_manager.*`, simulation delta/max-step/power calculation is present |
 | `Manager/Simulation/WindManager.cs` | skeleton | `manager/simulation/wind_manager.*` |
-| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership |
+| `Manager/Team/TeamManager.cs` | partial | `manager/team/team_manager.*`, parameter + inertia center ownership, timing/update-count lifecycle, sync lists, post-step flag cleanup |
 | `Manager/Team/TeamWindData.cs` | planned | `manager/team/team_wind_data.*` |
 | `Manager/TransformManager/TransformData.cs` | partial | `manager/transform/transform_data.*` |
 | `Manager/TransformManager/TransformDataSerialization.cs` | planned | `manager/transform/transform_data_serialization.*` |
@@ -241,10 +241,17 @@ Last completed step:
 - Added the first Reduction data layer: `ReductionSettings` is complete, `ReductionWorkData` now owns the C++ containers for reduction/optimization/final mesh data, and `StepReductionBase` has the MC2 base state plus `JoinEdge` type. Actual step reduction algorithms/jobs remain deferred.
 - Fixed the native compile-check blocker found while preparing a full build pass: `DataChunk` is now a header-inline value type for constructors, validity, range helpers, `Clear()`, and `Empty()`. WinDbg/cdb showed the old external `DataChunk::Empty()` return path could fault inside `ExNativeArray<float>::GetEmptyChunk(...)` during proxy registration. This keeps `Utility/NativeCollection/DataChunk.cs` marked `complete` and makes `ExNativeArray` smoke-safe again.
 - Reframed `hocloth_mc2_core_smoke` as a compile/run preflight check for the current porting phase. It still exercises MagicaManager initialization, team/proxy registration, particle registration, inertia/motion/distance solving, display position calculation, and proxy writeback synchronization, but no longer blocks on the previous narrow numerical constants while XPBD parity is still being ported.
+- Started the large-module closure pass for `TeamManager` and `SimulationManager`: `TeamManager` now has MC2-style enable/skip/reset/time-reset controls, create-time reset flags, `AlwaysTeamUpdate(...)` timing/update-count scheduling, and `PostTeamUpdate(...)` post-frame flag/force/time cleanup. `SimulationManager::CreateStepParticleList(...)` now ports the MC2 `CreateUpdateParticleList` population path for step particles, baselines, triangle bending pairs, edge collider collision, motion particles, and self-collision lists from team state and cloth parameters.
+- The native smoke path now enters the solver through the new lifecycle sequence: `AlwaysTeamUpdate -> BeginSimulationStep -> SimulationStepTeamUpdate -> CreateStepParticleList -> StartSimulationStep -> constraints -> EndSimulationStepSolve -> CalcDisplayPosition -> PostTeamUpdate`. This keeps Wind and full VirtualMesh behavior outside the current smoke boundary while exercising the manager orchestration needed for larger XPBD module integration.
+- Added the next manager-orchestration layer: `TimeManager` now computes MC2-style `SimulationPower` and exposes max substep count, `SimulationManager::PreSimulationUpdate(...)` ports the reset/inertia-shift/negative-scale particle preparation job, `ClothManager::SolveStepConstraints(...)` centralizes the MC2 constraint order (`Tether -> Distance -> Angle -> TriangleBending -> Collider -> Distance -> Motion -> SelfCollision`), and `MagicaManager::StepFrame(...)` provides a native frame-step skeleton for Blender-side driving.
+- Closed another Team/Simulation orchestration gap from `TeamManager.CalcCenterAndInertiaAndWindJob` and `SimulationManager.UpdateStepBasicPotureJob`: `TeamManager::UpdateCenterAndInertia(...)` now prepares component/center frame poses, fixed-point-derived center fallback, negative-scale flags/sign/quaternion/triangle helper values, negative-scale teleport matrices, teleport reset/keep decisions, smoothing, world-inertia shift, frame moving speed/direction, and stabilization weights before the step loop. `MagicaManager::StepFrame(...)` now calls this before `PreSimulationUpdate(...)`. Wind-zone collection remains intentionally outside the current runtime path.
+- Extended `MathUtility` with MC2-style `ToRotation(normal,tangent)`, affine matrix multiply, and affine inverse helpers. `SimulationManager::UpdateStepBasicPosture(...)` now applies negative-scale local rotation and fixed/baseline rotation rewrite, and `CalcDisplayPosition(...)` now applies the MC2 negative-scale display-rotation conversion instead of leaving that block deferred. `VirtualMeshManager` exposes `VertexBindPoseRotations()` plus the local position/rotation accessors needed by these paths.
 
 Latest verification:
 
 ```text
+cmake --build _native/build/vs2022-release --config Release --target hocloth_mc2_core_smoke
+_bin/hocloth_mc2_core_smoke.exe
 package_addon.ps1 -Version codex-compile-prep -IncludeNativeBuild -RunNativeSmoke
 native smoke: team_id=1 mesh_id=0 transforms=1 meshes=1 proxy_vertices=2 distance_connections=2 fixed=1 center_data=2 center_transform=0 inertia_x=0.2 gravity_dot=1 force_mode=10 particles=2 steps=1 p0.x=0.116505 p0.y=-0.00133923 motion_p1.x=1.24991 p1.x=1.24991 old_p1.x=1.24991 real_v1.x=-0.00515699 disp_p1.x=1.24991 proxy_p1.x=1.24991
 ```

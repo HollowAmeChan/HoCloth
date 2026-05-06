@@ -357,6 +357,11 @@ void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent
     tangent = Rotate(rotation, float3{0.0f, 0.0f, 1.0f});
 }
 
+quaternion ToRotation(const float3& normal, const float3& tangent)
+{
+    return LookRotation(tangent, normal);
+}
+
 quaternion LookRotation(const float3& forward, const float3& up)
 {
     const float3 f = Normalize(forward, float3{0.0f, 0.0f, 1.0f});
@@ -451,6 +456,77 @@ float4x4 TRS(const float3& position, const quaternion& rotation, const float3& s
     };
     matrix.c3 = float4{position.x, position.y, position.z, 1.0f};
     return matrix;
+}
+
+float4x4 Multiply(const float4x4& a, const float4x4& b)
+{
+    auto transform_column = [&a](const float4& c) {
+        return float4{
+            a.c0.x * c.x + a.c1.x * c.y + a.c2.x * c.z + a.c3.x * c.w,
+            a.c0.y * c.x + a.c1.y * c.y + a.c2.y * c.z + a.c3.y * c.w,
+            a.c0.z * c.x + a.c1.z * c.y + a.c2.z * c.z + a.c3.z * c.w,
+            a.c0.w * c.x + a.c1.w * c.y + a.c2.w * c.z + a.c3.w * c.w,
+        };
+    };
+
+    return float4x4{
+        transform_column(b.c0),
+        transform_column(b.c1),
+        transform_column(b.c2),
+        transform_column(b.c3),
+    };
+}
+
+float4x4 InverseAffine(const float4x4& matrix)
+{
+    const float a00 = matrix.c0.x;
+    const float a01 = matrix.c1.x;
+    const float a02 = matrix.c2.x;
+    const float a10 = matrix.c0.y;
+    const float a11 = matrix.c1.y;
+    const float a12 = matrix.c2.y;
+    const float a20 = matrix.c0.z;
+    const float a21 = matrix.c1.z;
+    const float a22 = matrix.c2.z;
+
+    const float b01 = a22 * a11 - a12 * a21;
+    const float b11 = -a22 * a10 + a12 * a20;
+    const float b21 = a21 * a10 - a11 * a20;
+    float det = a00 * b01 + a01 * b11 + a02 * b21;
+    if (std::abs(det) <= define::system::Epsilon) {
+        return float4x4{};
+    }
+    det = 1.0f / det;
+
+    float4x4 inverse;
+    inverse.c0 = float4{
+        b01 * det,
+        (-a22 * a01 + a02 * a21) * det,
+        (a12 * a01 - a02 * a11) * det,
+        0.0f,
+    };
+    inverse.c1 = float4{
+        b11 * det,
+        (a22 * a00 - a02 * a20) * det,
+        (-a12 * a00 + a02 * a10) * det,
+        0.0f,
+    };
+    inverse.c2 = float4{
+        b21 * det,
+        (-a21 * a00 + a01 * a20) * det,
+        (a11 * a00 - a01 * a10) * det,
+        0.0f,
+    };
+
+    const float3 translation{matrix.c3.x, matrix.c3.y, matrix.c3.z};
+    const float3 inverse_translation = TransformVector(Scale(translation, -1.0f), inverse);
+    inverse.c3 = float4{
+        inverse_translation.x,
+        inverse_translation.y,
+        inverse_translation.z,
+        1.0f,
+    };
+    return inverse;
 }
 
 float3 TransformPoint(const float3& position, const float4x4& matrix)

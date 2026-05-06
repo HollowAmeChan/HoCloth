@@ -360,6 +360,11 @@ const ExNativeArray<VertexAttribute>& VirtualMeshManager::Attributes() const
     return attributes_;
 }
 
+const ExNativeArray<quaternion>& VirtualMeshManager::VertexBindPoseRotations() const
+{
+    return vertex_bind_pose_rotations_;
+}
+
 const ExNativeArray<float>& VirtualMeshManager::VertexDepths() const
 {
     return vertex_depths_;
@@ -373,6 +378,16 @@ const ExNativeArray<int>& VirtualMeshManager::VertexRootIndices() const
 const ExNativeArray<int>& VirtualMeshManager::VertexParentIndices() const
 {
     return vertex_parent_indices_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::VertexLocalPositions() const
+{
+    return vertex_local_positions_;
+}
+
+const ExNativeArray<quaternion>& VirtualMeshManager::VertexLocalRotations() const
+{
+    return vertex_local_rotations_;
 }
 
 const ExNativeArray<std::int16_t>& VirtualMeshManager::TriangleTeamIds() const

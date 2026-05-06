@@ -92,11 +92,20 @@ public:
     void RemoveParticleRange(const ParticleChunkSet& chunks);
 
     void PrepareProcessingBuffers(int particle_capacity);
+    void PreSimulationUpdate(
+        const TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
     void BeginSimulationStep();
+    void CreateStepParticleList(const TeamManager& team_manager);
     void CreateSelfProcessingLists(const TeamManager& team_manager);
     void StartSimulationStep(
         const float4& simulation_power,
         float simulation_delta_time,
+        const TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
+    void UpdateStepBasicPosture(
         const TeamManager& team_manager,
         const VirtualMeshManager& virtual_mesh_manager
     );

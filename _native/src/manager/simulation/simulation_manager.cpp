@@ -92,6 +92,24 @@ float3 ApplySpring(
     return Add(base_position, offset);
 }
 
+quaternion ApplyNegativeScaleQuaternion(const quaternion& rotation, const float4& negative_scale_quaternion)
+{
+    return quaternion{
+        rotation.w * negative_scale_quaternion.w,
+        rotation.x * negative_scale_quaternion.x,
+        rotation.y * negative_scale_quaternion.y,
+        rotation.z * negative_scale_quaternion.z,
+    };
+}
+
+quaternion ApplyNegativeScaleRotation(const quaternion& rotation, const float3& negative_scale_direction)
+{
+    const float4x4 local_to_world = TRS(float3{}, rotation, negative_scale_direction);
+    const float3 normal{local_to_world.c1.x, local_to_world.c1.y, local_to_world.c1.z};
+    const float3 tangent{local_to_world.c2.x, local_to_world.c2.y, local_to_world.c2.z};
+    return ToRotation(normal, tangent);
+}
+
 }  // namespace
 
 int SimulationManager::ParticleChunkSet::ParticleCount() const
@@ -474,6 +492,124 @@ void SimulationManager::PrepareProcessingBuffers(int particle_capacity)
     processing_self_triangle_point_.UpdateBuffer(particle_capacity);
 }
 
+void SimulationManager::PreSimulationUpdate(
+    const TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager
+)
+{
+    // Ported from MC2 SimulationManager.PreSimulationUpdateJob.
+    const auto& proxy_positions = virtual_mesh_manager.Positions();
+    const auto& proxy_rotations = virtual_mesh_manager.Rotations();
+
+    for (int particle_index = 0; particle_index < team_id_array_.Count(); ++particle_index) {
+        const int team_id = team_id_array_[particle_index];
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess()) {
+            continue;
+        }
+
+        const int local_index = particle_index - team_data.particle_chunk.start_index;
+        const int vertex_index = team_data.proxy_common_chunk.start_index + local_index;
+        if (local_index < 0
+            || vertex_index < 0
+            || vertex_index >= proxy_positions.Length()
+            || vertex_index >= proxy_rotations.Length()) {
+            continue;
+        }
+
+        if (team_data.IsReset()) {
+            const float3 position = proxy_positions[vertex_index];
+            const quaternion rotation = proxy_rotations[vertex_index];
+
+            next_pos_array_[particle_index] = position;
+            old_pos_array_[particle_index] = position;
+            old_rot_array_[particle_index] = rotation;
+            base_pos_array_[particle_index] = position;
+            base_rot_array_[particle_index] = rotation;
+            old_position_array_[particle_index] = position;
+            old_rotation_array_[particle_index] = rotation;
+            velocity_pos_array_[particle_index] = position;
+            disp_pos_array_[particle_index] = position;
+            velocity_array_[particle_index] = float3{};
+            real_velocity_array_[particle_index] = float3{};
+            friction_array_[particle_index] = 0.0f;
+            static_friction_array_[particle_index] = 0.0f;
+            collision_normal_array_[particle_index] = float3{};
+            continue;
+        }
+
+        if (!team_data.IsInertiaShift() && !team_data.IsNegativeScaleTeleport()) {
+            continue;
+        }
+
+        const InertiaCenterData& center_data = team_manager.GetCenterData(team_id);
+        float3 old_position = old_pos_array_[particle_index];
+        quaternion old_rotation = old_rot_array_[particle_index];
+        float3 old_frame_position = old_position_array_[particle_index];
+        quaternion old_frame_rotation = old_rotation_array_[particle_index];
+        float3 display_position = disp_pos_array_[particle_index];
+        float3 velocity = velocity_array_[particle_index];
+        float3 real_velocity = real_velocity_array_[particle_index];
+
+        if (team_data.IsNegativeScaleTeleport()) {
+            const float4x4& negative_matrix = center_data.negative_scale_matrix;
+            old_position = TransformPoint(old_position, negative_matrix);
+            old_rotation = TransformRotation(
+                old_rotation,
+                negative_matrix,
+                team_data.negative_scale_change
+            );
+            old_frame_position = TransformPoint(old_frame_position, negative_matrix);
+            old_frame_rotation = TransformRotation(
+                old_frame_rotation,
+                negative_matrix,
+                team_data.negative_scale_change
+            );
+            display_position = TransformPoint(display_position, negative_matrix);
+            velocity = TransformVector(velocity, negative_matrix);
+            real_velocity = TransformVector(real_velocity, negative_matrix);
+        }
+
+        if (team_data.IsInertiaShift()) {
+            old_position = ShiftPosition(
+                old_position,
+                center_data.old_component_world_position,
+                center_data.frame_component_shift_vector,
+                center_data.frame_component_shift_rotation
+            );
+            old_rotation = Multiply(center_data.frame_component_shift_rotation, old_rotation);
+            old_frame_position = ShiftPosition(
+                old_frame_position,
+                center_data.old_component_world_position,
+                center_data.frame_component_shift_vector,
+                center_data.frame_component_shift_rotation
+            );
+            old_frame_rotation =
+                Multiply(center_data.frame_component_shift_rotation, old_frame_rotation);
+            display_position = ShiftPosition(
+                display_position,
+                center_data.old_component_world_position,
+                center_data.frame_component_shift_vector,
+                center_data.frame_component_shift_rotation
+            );
+            velocity = Rotate(center_data.frame_component_shift_rotation, velocity);
+            real_velocity = Rotate(center_data.frame_component_shift_rotation, real_velocity);
+        }
+
+        old_pos_array_[particle_index] = old_position;
+        old_rot_array_[particle_index] = old_rotation;
+        old_position_array_[particle_index] = old_frame_position;
+        old_rotation_array_[particle_index] = old_frame_rotation;
+        disp_pos_array_[particle_index] = display_position;
+        velocity_array_[particle_index] = velocity;
+        real_velocity_array_[particle_index] = real_velocity;
+    }
+}
+
 void SimulationManager::BeginSimulationStep()
 {
     PrepareProcessingBuffers(ParticleCount());
@@ -487,6 +623,61 @@ void SimulationManager::BeginSimulationStep()
     processing_self_point_triangle_.Clear();
     processing_self_edge_edge_.Clear();
     processing_self_triangle_point_.Clear();
+}
+
+void SimulationManager::CreateStepParticleList(const TeamManager& team_manager)
+{
+    for (int team_id = 1; team_id < team_manager.TeamCount(); ++team_id) {
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess() || !team_data.IsRunning() || !team_data.IsStepRunning()) {
+            continue;
+        }
+
+        const ClothParameters& parameters = team_manager.GetParameters(team_id);
+
+        const int particle_count = team_data.ParticleCount();
+        const int particle_start = team_data.particle_chunk.start_index;
+        for (int index = 0; index < particle_count; ++index) {
+            MarkStepParticle(particle_start + index);
+        }
+
+        const int baseline_count = team_data.BaseLineCount();
+        const int baseline_start = team_data.baseline_chunk.start_index;
+        for (int index = 0; index < baseline_count; ++index) {
+            MarkStepBaseLine(data::Pack32(team_id, baseline_start + index));
+        }
+
+        if (parameters.triangle_bending_constraint.method != TriangleBendingMethod::None) {
+            const int bending_count = team_data.bending_pair_chunk.data_length;
+            const int bending_start = team_data.bending_pair_chunk.start_index;
+            for (int index = 0; index < bending_count; ++index) {
+                MarkStepTriangleBending(data::Pack12_20(team_id, bending_start + index));
+            }
+        }
+
+        if (parameters.collider_collision_constraint.mode == ColliderCollisionMode::Edge
+            && team_data.proxy_edge_chunk.IsValid()
+            && team_data.ColliderCount() > 0) {
+            const int edge_count = team_data.proxy_edge_chunk.data_length;
+            const int edge_start = team_data.proxy_edge_chunk.start_index;
+            for (int index = 0; index < edge_count; ++index) {
+                MarkStepEdgeCollision(edge_start + index);
+            }
+        }
+
+        if (parameters.motion_constraint.use_max_distance != 0
+            || parameters.motion_constraint.use_backstop != 0) {
+            for (int index = 0; index < particle_count; ++index) {
+                MarkStepMotionParticle(particle_start + index);
+            }
+        }
+    }
+
+    CreateSelfProcessingLists(team_manager);
 }
 
 void SimulationManager::CreateSelfProcessingLists(const TeamManager& team_manager)
@@ -680,6 +871,137 @@ void SimulationManager::StartSimulationStep(
     }
 }
 
+void SimulationManager::UpdateStepBasicPosture(
+    const TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager
+)
+{
+    // Ported from MC2 SimulationManager.UpdateStepBasicPotureJob.
+    const auto& baseline_steps = processing_step_baseline_;
+    if (baseline_steps.Count() <= 0) {
+        return;
+    }
+
+    const auto& baseline_buffer = baseline_steps.Buffer();
+    const auto& attributes = virtual_mesh_manager.Attributes();
+    const auto& vertex_parent_indices = virtual_mesh_manager.VertexParentIndices();
+    const auto& vertex_local_positions = virtual_mesh_manager.VertexLocalPositions();
+    const auto& vertex_local_rotations = virtual_mesh_manager.VertexLocalRotations();
+    const auto& baseline_start_indices = virtual_mesh_manager.BaseLineStartDataIndices();
+    const auto& baseline_data_counts = virtual_mesh_manager.BaseLineDataCounts();
+    const auto& baseline_data = virtual_mesh_manager.BaseLineData();
+
+    for (int step_index = 0; step_index < baseline_steps.Count(); ++step_index) {
+        const std::uint32_t pack = static_cast<std::uint32_t>(
+            baseline_buffer[static_cast<std::size_t>(step_index)]
+        );
+        const int team_id = data::Unpack32Hi(pack);
+        const int baseline_index = data::Unpack32Low(pack);
+        if (!team_manager.IsValidTeam(team_id)
+            || baseline_index < 0
+            || baseline_index >= baseline_start_indices.Length()
+            || baseline_index >= baseline_data_counts.Length()) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        const float blend_ratio = team_data.animation_pose_ratio;
+        if (blend_ratio > 0.99f) {
+            continue;
+        }
+
+        const int baseline_data_start = team_data.baseline_data_chunk.start_index;
+        const int particle_start = team_data.particle_chunk.start_index;
+        const int vertex_start = team_data.proxy_common_chunk.start_index;
+        const float3 scale = Scale(team_data.init_scale, team_data.scale_ratio);
+        const int start = baseline_start_indices[baseline_index];
+        const int data_count = baseline_data_counts[baseline_index];
+
+        int data_index = start + baseline_data_start;
+        for (int index = 0; index < data_count; ++index, ++data_index) {
+            if (data_index < 0 || data_index >= baseline_data.Length()) {
+                continue;
+            }
+
+            const int local_index = baseline_data[data_index];
+            const int particle_index = particle_start + local_index;
+            const int vertex_index = vertex_start + local_index;
+            if (particle_index < 0
+                || particle_index >= step_basic_position_array_.Length()
+                || particle_index >= step_basic_rotation_array_.Length()
+                || vertex_index < 0
+                || vertex_index >= attributes.Length()
+                || vertex_index >= vertex_parent_indices.Length()) {
+                continue;
+            }
+
+            const int parent_local_index = vertex_parent_indices[vertex_index];
+            const int parent_particle_index = parent_local_index + particle_start;
+            const VertexAttribute attr = attributes[vertex_index];
+            if (attr.IsMove()
+                && parent_local_index >= 0
+                && parent_particle_index >= 0
+                && parent_particle_index < step_basic_position_array_.Length()
+                && parent_particle_index < step_basic_rotation_array_.Length()
+                && vertex_index < vertex_local_positions.Length()
+                && vertex_index < vertex_local_rotations.Length()) {
+                float3 local_position = vertex_local_positions[vertex_index];
+                local_position = float3{
+                    local_position.x * team_data.negative_scale_direction.x * scale.x,
+                    local_position.y * team_data.negative_scale_direction.y * scale.y,
+                    local_position.z * team_data.negative_scale_direction.z * scale.z,
+                };
+                const quaternion local_rotation = ApplyNegativeScaleQuaternion(
+                    vertex_local_rotations[vertex_index],
+                    team_data.negative_scale_quaternion_value
+                );
+                const float3 parent_position = step_basic_position_array_[parent_particle_index];
+                const quaternion parent_rotation = step_basic_rotation_array_[parent_particle_index];
+
+                step_basic_position_array_[particle_index] =
+                    Add(parent_position, Rotate(parent_rotation, local_position));
+                step_basic_rotation_array_[particle_index] =
+                    Normalize(Multiply(parent_rotation, local_rotation));
+            } else {
+                step_basic_rotation_array_[particle_index] = ApplyNegativeScaleRotation(
+                    step_basic_rotation_array_[particle_index],
+                    team_data.negative_scale_direction
+                );
+            }
+        }
+
+        if (blend_ratio > define::system::Epsilon) {
+            data_index = start + baseline_data_start;
+            for (int index = 0; index < data_count; ++index, ++data_index) {
+                if (data_index < 0 || data_index >= baseline_data.Length()) {
+                    continue;
+                }
+
+                const int local_index = baseline_data[data_index];
+                const int particle_index = particle_start + local_index;
+                if (particle_index < 0
+                    || particle_index >= step_basic_position_array_.Length()
+                    || particle_index >= step_basic_rotation_array_.Length()
+                    || particle_index >= base_pos_array_.Length()
+                    || particle_index >= base_rot_array_.Length()) {
+                    continue;
+                }
+
+                step_basic_position_array_[particle_index] = Lerp(
+                    step_basic_position_array_[particle_index],
+                    base_pos_array_[particle_index],
+                    blend_ratio
+                );
+                step_basic_rotation_array_[particle_index] = Normalize(Slerp(
+                    step_basic_rotation_array_[particle_index],
+                    base_rot_array_[particle_index],
+                    blend_ratio
+                ));
+            }
+        }
+    }
+}
+
 void SimulationManager::EndSimulationStepSolve(
     float simulation_delta_time,
     const TeamManager& team_manager,
@@ -804,8 +1126,12 @@ void SimulationManager::CalcDisplayPosition(
             old_rotation_array_[particle_index] = previous_proxy_rotation;
         }
 
-        // Negative-scale rotation rewrite is intentionally deferred until the math utility
-        // port includes MC2 ToRotation-equivalent helpers.
+        if (team_data.IsNegativeScale()) {
+            proxy_rotations[vertex_index] = ApplyNegativeScaleRotation(
+                previous_proxy_rotation,
+                team_data.negative_scale_direction
+            );
+        }
     }
 }
 
