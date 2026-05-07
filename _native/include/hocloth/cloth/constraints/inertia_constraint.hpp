@@ -15,11 +15,7 @@ class VirtualMesh;
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/Constraints/InertiaConstraint.cs
 class InertiaConstraint {
 public:
-    enum class TeleportMode {
-        None = 0,
-        Reset = 1,
-        Keep = 2,
-    };
+    using TeleportMode = InertiaTeleportMode;
 
     using CenterData = InertiaCenterData;
 

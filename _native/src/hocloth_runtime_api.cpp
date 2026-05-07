@@ -5,6 +5,7 @@
 #include "hocloth/manager/simulation/simulation_manager.hpp"
 #include "hocloth/manager/transform/transform_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/utility/math/math_utility.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_container.hpp"
 #include <algorithm>
 #include <cmath>
@@ -557,13 +558,20 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
         const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
         const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
         const bool is_root = joint.parent_index < 0;
+        const int transform_id = static_cast<int>(joint_index) + 1;
+        const int parent_transform_id = joint.parent_index >= 0 ? joint.parent_index + 1 : 0;
+        const mc2::float4x4 local_to_world =
+            mc2::TRS(position, rotation, mc2::float3{1.0f, 1.0f, 1.0f});
 
         mesh->attributes.Add(is_root ? mc2::VertexAttribute::Fixed() : mc2::VertexAttribute::Move());
         mesh->local_positions.Add(position);
         mesh->local_normals.Add(mc2::float3{0.0f, 1.0f, 0.0f});
         mesh->local_tangents.Add(mc2::float3{1.0f, 0.0f, 0.0f});
         mesh->uv.Add(mc2::float2{});
-        mesh->bone_weights.Add(mc2::VirtualMeshBoneWeight{});
+        mesh->bone_weights.Add(mc2::VirtualMeshBoneWeight{
+            mc2::int4{static_cast<int>(joint_index), -1, -1, -1},
+            mc2::float4{1.0f, 0.0f, 0.0f, 0.0f}
+        });
         mesh->vertex_bind_pose_positions.Add(position);
         mesh->vertex_bind_pose_rotations.Add(rotation);
         mesh->vertex_depths.Add(static_cast<float>(std::max(0, joint.depth)));
@@ -573,6 +581,30 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
         mesh->vertex_local_rotations.Add(rotation);
         mesh->normal_adjustment_rotations.Add(mc2::quaternion{});
         mesh->vertex_to_transform_rotations.Add(mc2::quaternion{});
+        mesh->skin_bone_transform_indices.Add(static_cast<int>(joint_index));
+        mesh->skin_bone_bind_poses.Add(mc2::InverseAffine(local_to_world));
+
+        mesh->transform_data.flag_array.Add(
+            mc2::BitFlag8{
+                mc2::TransformManager::FlagRead
+                | mc2::TransformManager::FlagLocalPosRotWrite
+                | mc2::TransformManager::FlagEnable
+            }
+        );
+        mesh->transform_data.init_local_position_array.Add(ToMc2Float3(joint.rest_local_translation));
+        mesh->transform_data.init_local_rotation_array.Add(rotation);
+        mesh->transform_data.position_array.Add(position);
+        mesh->transform_data.rotation_array.Add(rotation);
+        mesh->transform_data.inverse_rotation_array.Add(mc2::Inverse(rotation));
+        mesh->transform_data.scale_array.Add(mc2::float3{1.0f, 1.0f, 1.0f});
+        mesh->transform_data.local_position_array.Add(ToMc2Float3(joint.rest_local_translation));
+        mesh->transform_data.local_rotation_array.Add(rotation);
+        mesh->transform_data.local_to_world_matrix_array.Add(local_to_world);
+        mesh->transform_data.team_id_array.Add(0);
+        mesh->transform_data.EnsureRecordCapacity(static_cast<int>(joint_index) + 1);
+        mesh->transform_data.id_array[joint_index] = transform_id;
+        mesh->transform_data.parent_id_array[joint_index] = parent_transform_id;
+        mesh->transform_data.name_array[joint_index] = joint.name;
     }
 
     for (const CompiledSpringLine& line : chain.lines) {
@@ -581,6 +613,9 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
             mesh->edge_flags.Add(mc2::BitFlag8{});
         }
     }
+
+    mesh->BuildVertexToTriangles();
+    mesh->BuildBaseLinesFromParents();
 
     return mesh;
 }
@@ -695,6 +730,10 @@ void UpdateMc2ColliderWorkData(RuntimeModule::SceneState& scene)
         }
     }
 
+    scene.mc2_virtual_mesh_manager.PreProxyMeshUpdate(
+        scene.mc2_team_manager,
+        scene.mc2_transform_manager
+    );
     scene.mc2_collider_manager.PreSimulationUpdate(scene.mc2_team_manager, scene.mc2_transform_manager);
     scene.mc2_collider_manager.CreateUpdateColliderList(
         0,

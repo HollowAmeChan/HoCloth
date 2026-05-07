@@ -26,6 +26,12 @@ constexpr float4x4 ConstantCurve(float value)
 }
 
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/ClothParameters.cs
+enum class InertiaTeleportMode {
+    None = 0,
+    Reset = 1,
+    Keep = 2,
+};
+
 struct DistanceConstraintParams {
     float4x4 restoration_stiffness{};
     float velocity_attenuation = define::system::DistanceVelocityAttenuation;
@@ -54,7 +60,7 @@ struct InertiaConstraintParams {
     float depth_inertia = 0.0f;
     float centrifugal_acceleration = 0.0f;
     float particle_speed_limit = 4.0f;
-    int teleport_mode = 0;
+    InertiaTeleportMode teleport_mode = InertiaTeleportMode::None;
     float teleport_distance = 0.5f;
     float teleport_rotation = 90.0f;
 };
@@ -143,6 +149,8 @@ struct ClothParameters {
     float gravity_falloff = 0.0f;
     float stabilization_time_after_reset = 0.1f;
     float blend_weight = 1.0f;
+    float rotational_interpolation = 0.5f;
+    float root_rotation = 0.5f;
     float4x4 radius_curve_data = ConstantCurve(0.02f);
     float4x4 damping_curve_data = ConstantCurve(0.0f);
     ClothNormalAxis normal_axis = ClothNormalAxis::Up;

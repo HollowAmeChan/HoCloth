@@ -2,14 +2,33 @@
 
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/manager/transform/transform_manager.hpp"
+#include "hocloth/utility/data/data_utility.hpp"
+#include "hocloth/utility/math/math_utility.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_container.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <utility>
 
 namespace hocloth::mc2 {
+
+namespace {
+
+constexpr std::uint8_t BaseLineFlagIncludeLine = 0x01;
+
+quaternion ApplyNegativeScaleQuaternion(const quaternion& rotation, const float4& negative_scale_quaternion)
+{
+    return quaternion{
+        rotation.w * negative_scale_quaternion.w,
+        rotation.x * negative_scale_quaternion.x,
+        rotation.y * negative_scale_quaternion.y,
+        rotation.z * negative_scale_quaternion.z,
+    };
+}
+
+}  // namespace
 
 Result VirtualMeshManager::Initialize()
 {
@@ -31,6 +50,7 @@ void VirtualMeshManager::Dispose()
     vertex_local_positions_.Dispose();
     vertex_local_rotations_.Dispose();
     vertex_parent_indices_.Dispose();
+    vertex_to_triangles_.Dispose();
     vertex_child_index_array_.Dispose();
     vertex_child_data_array_.Dispose();
     normal_adjustment_rotations_.Dispose();
@@ -185,6 +205,11 @@ void VirtualMeshManager::RegisterProxyMesh(
         vertex_local_positions_.AddRange(proxy_mesh->vertex_local_positions);
         vertex_local_rotations_.AddRange(proxy_mesh->vertex_local_rotations);
         vertex_parent_indices_.AddRange(proxy_mesh->vertex_parent_indices);
+        if (proxy_mesh->vertex_to_triangles.Count() == vertex_count) {
+            vertex_to_triangles_.AddRange(proxy_mesh->vertex_to_triangles);
+        } else {
+            vertex_to_triangles_.AddRange(vertex_count);
+        }
         vertex_child_index_array_.AddRange(proxy_mesh->vertex_child_index_array);
         normal_adjustment_rotations_.AddRange(proxy_mesh->normal_adjustment_rotations);
         positions_.AddRange(vertex_count);
@@ -202,6 +227,32 @@ void VirtualMeshManager::RegisterProxyMesh(
         triangles_.AddRange(proxy_mesh->triangles);
         triangle_normals_.AddRange(proxy_mesh->TriangleCount());
         triangle_tangents_.AddRange(proxy_mesh->TriangleCount());
+
+        if (proxy_mesh->vertex_to_triangles.Count() != vertex_count
+            && team_data.proxy_common_chunk.IsValid()) {
+            for (int triangle_index = 0; triangle_index < proxy_mesh->TriangleCount(); ++triangle_index) {
+                const int3 triangle = proxy_mesh->triangles[triangle_index];
+                const std::uint32_t packed_triangle =
+                    data::Pack12_20(0, triangle_index);
+                const int vertices[3] = {triangle.x, triangle.y, triangle.z};
+                for (int vertex_offset = 0; vertex_offset < 3; ++vertex_offset) {
+                    const int local_vertex_index = vertices[vertex_offset];
+                    const int vertex_index =
+                        team_data.proxy_common_chunk.start_index + local_vertex_index;
+                    if (local_vertex_index < 0
+                        || local_vertex_index >= vertex_count
+                        || vertex_index < 0
+                        || vertex_index >= vertex_to_triangles_.Length()) {
+                        continue;
+                    }
+
+                    VirtualMesh::VertexTriangleList triangle_list =
+                        vertex_to_triangles_[vertex_index];
+                    triangle_list.Set(packed_triangle);
+                    vertex_to_triangles_[vertex_index] = triangle_list;
+                }
+            }
+        }
     }
 
     if (proxy_mesh->edges.Count() > 0) {
@@ -277,6 +328,7 @@ void VirtualMeshManager::ExitProxyMesh(
     vertex_local_positions_.Remove(team_data.proxy_common_chunk);
     vertex_local_rotations_.Remove(team_data.proxy_common_chunk);
     vertex_parent_indices_.Remove(team_data.proxy_common_chunk);
+    vertex_to_triangles_.Remove(team_data.proxy_common_chunk);
     vertex_child_index_array_.Remove(team_data.proxy_common_chunk);
     normal_adjustment_rotations_.Remove(team_data.proxy_common_chunk);
     positions_.Remove(team_data.proxy_common_chunk);
@@ -314,6 +366,476 @@ void VirtualMeshManager::ExitProxyMesh(
     team_data.baseline_chunk.Clear();
     team_data.baseline_data_chunk.Clear();
     team_data.center_transform_index = -1;
+}
+
+void VirtualMeshManager::UpdateProxyPositionsFromBindPose(const TeamManager& team_manager)
+{
+    if (!initialized_) {
+        return;
+    }
+
+    for (int team_id = 0; team_id < team_manager.TeamCount(); ++team_id) {
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess() || !team_data.proxy_common_chunk.IsValid()) {
+            continue;
+        }
+
+        const int start = team_data.proxy_common_chunk.start_index;
+        const int count = team_data.proxy_common_chunk.data_length;
+        for (int offset = 0; offset < count; ++offset) {
+            const int vertex_index = start + offset;
+            if (vertex_index < 0
+                || vertex_index >= positions_.Length()
+                || vertex_index >= rotations_.Length()
+                || vertex_index >= vertex_bind_pose_positions_.Length()
+                || vertex_index >= vertex_bind_pose_rotations_.Length()) {
+                continue;
+            }
+
+            positions_[vertex_index] = vertex_bind_pose_positions_[vertex_index];
+            rotations_[vertex_index] = vertex_bind_pose_rotations_[vertex_index];
+        }
+    }
+}
+
+void VirtualMeshManager::PreProxyMeshUpdate(
+    const TeamManager& team_manager,
+    const TransformManager& transform_manager
+)
+{
+    // Ported from MC2 VirtualMeshManager.PreProxyMeshUpdate()/CalcProxyMeshSkinningJob.
+    if (!initialized_) {
+        return;
+    }
+
+    const TransformData& transform_data = transform_manager.Data();
+    for (int team_id = 1; team_id < team_manager.TeamCount(); ++team_id) {
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess() || team_data.IsCullingInvisible()) {
+            continue;
+        }
+
+        const DataChunk common_chunk = team_data.proxy_common_chunk;
+        const DataChunk mesh_chunk = team_data.proxy_mesh_chunk;
+        if (!common_chunk.IsValid() || !mesh_chunk.IsValid()) {
+            continue;
+        }
+
+        for (int local_index = 0; local_index < common_chunk.data_length; ++local_index) {
+            const int vertex_index = common_chunk.start_index + local_index;
+            const int mesh_index = mesh_chunk.start_index + local_index;
+            if (vertex_index < 0
+                || vertex_index >= positions_.Length()
+                || vertex_index >= rotations_.Length()
+                || mesh_index < 0
+                || mesh_index >= local_positions_.Length()
+                || mesh_index >= local_normals_.Length()
+                || mesh_index >= local_tangents_.Length()
+                || mesh_index >= bone_weights_.Length()) {
+                continue;
+            }
+
+            const VirtualMeshBoneWeight& bone_weight = bone_weights_[mesh_index];
+            const int weight_count = bone_weight.Count();
+            float total_weight = 0.0f;
+            float3 world_position{};
+            float3 world_normal{};
+            float3 world_tangent{};
+
+            for (int weight_index = 0; weight_index < weight_count; ++weight_index) {
+                const float weight = bone_weight.weights[static_cast<std::size_t>(weight_index)];
+                const int local_bone_index =
+                    bone_weight.bone_indices[static_cast<std::size_t>(weight_index)];
+                const int skin_index = team_data.proxy_skin_bone_chunk.start_index + local_bone_index;
+                if (weight <= 0.0f
+                    || local_bone_index < 0
+                    || skin_index < 0
+                    || skin_index >= skin_bone_bind_poses_.Length()
+                    || skin_index >= skin_bone_transform_indices_.Length()) {
+                    continue;
+                }
+
+                const int transform_index =
+                    team_data.proxy_transform_chunk.start_index + skin_bone_transform_indices_[skin_index];
+                if (transform_index < 0
+                    || transform_index >= transform_data.local_to_world_matrix_array.Length()) {
+                    continue;
+                }
+
+                const float4x4 bone_pose = skin_bone_bind_poses_[skin_index];
+                const float4x4 local_to_world =
+                    transform_data.local_to_world_matrix_array[transform_index];
+                const float4x4 matrix = Multiply(local_to_world, bone_pose);
+                world_position = Add(
+                    world_position,
+                    Scale(TransformPoint(local_positions_[mesh_index], matrix), weight)
+                );
+                world_normal = Add(
+                    world_normal,
+                    Scale(TransformDirection(local_normals_[mesh_index], matrix), weight)
+                );
+                world_tangent = Add(
+                    world_tangent,
+                    Scale(TransformDirection(local_tangents_[mesh_index], matrix), weight)
+                );
+                total_weight += weight;
+            }
+
+            if (total_weight <= 1.0e-6f) {
+                if (vertex_index < vertex_bind_pose_positions_.Length()) {
+                    positions_[vertex_index] = vertex_bind_pose_positions_[vertex_index];
+                }
+                if (vertex_index < vertex_bind_pose_rotations_.Length()) {
+                    rotations_[vertex_index] = vertex_bind_pose_rotations_[vertex_index];
+                }
+                continue;
+            }
+
+            const float inv_weight = 1.0f / total_weight;
+            positions_[vertex_index] = Scale(world_position, inv_weight);
+            world_normal = Normalize(Scale(world_normal, inv_weight), float3{0.0f, 1.0f, 0.0f});
+            world_tangent = Normalize(Scale(world_tangent, inv_weight), float3{1.0f, 0.0f, 0.0f});
+            rotations_[vertex_index] = ToRotation(world_normal, world_tangent);
+        }
+    }
+}
+
+void VirtualMeshManager::PostProxyMeshUpdate(
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    // Ported from MC2 VirtualMeshManager.PostProxyMeshUpdate()/WriteTransformDataJob.
+    if (!initialized_) {
+        return;
+    }
+
+    TransformData& transform_data = transform_manager.Data();
+    for (int team_id = 1; team_id < team_manager.TeamCount(); ++team_id) {
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!team_data.IsProcess()
+            || team_data.IsCullingInvisible()
+            || team_data.proxy_mesh_type != VirtualMesh::MeshType::ProxyBoneMesh
+            || !team_data.proxy_common_chunk.IsValid()
+            || !team_data.proxy_transform_chunk.IsValid()) {
+            continue;
+        }
+
+        const ClothParameters& parameters = team_manager.GetParameters(team_id);
+        if (team_data.proxy_triangle_chunk.IsValid()
+            && team_data.proxy_triangle_chunk.data_length > 0) {
+            const int vertex_start = team_data.proxy_common_chunk.start_index;
+            for (int triangle_offset = 0; triangle_offset < team_data.proxy_triangle_chunk.data_length; ++triangle_offset) {
+                const int triangle_index = team_data.proxy_triangle_chunk.start_index + triangle_offset;
+                if (triangle_index < 0
+                    || triangle_index >= triangles_.Length()
+                    || triangle_index >= triangle_normals_.Length()
+                    || triangle_index >= triangle_tangents_.Length()
+                    || triangle_index >= triangle_team_ids_.Length()
+                    || triangle_team_ids_[triangle_index] != team_id) {
+                    continue;
+                }
+
+                const int3 triangle = triangles_[triangle_index];
+                const int v0 = vertex_start + triangle.x;
+                const int v1 = vertex_start + triangle.y;
+                const int v2 = vertex_start + triangle.z;
+                if (v0 < 0
+                    || v1 < 0
+                    || v2 < 0
+                    || v0 >= positions_.Length()
+                    || v1 >= positions_.Length()
+                    || v2 >= positions_.Length()
+                    || v0 >= uv_.Length()
+                    || v1 >= uv_.Length()
+                    || v2 >= uv_.Length()) {
+                    continue;
+                }
+
+                triangle_normals_[triangle_index] =
+                    Scale(
+                        TriangleNormal(positions_[v0], positions_[v1], positions_[v2]),
+                        team_data.negative_scale_triangle_sign.x
+                    );
+                triangle_tangents_[triangle_index] =
+                    Scale(
+                        TriangleTangent(
+                            positions_[v0],
+                            positions_[v1],
+                            positions_[v2],
+                            uv_[v0],
+                            uv_[v1],
+                            uv_[v2]
+                        ),
+                        team_data.negative_scale_triangle_sign.y
+                    );
+            }
+
+            for (int local_index = 0; local_index < team_data.proxy_common_chunk.data_length; ++local_index) {
+                const int vertex_index = team_data.proxy_common_chunk.start_index + local_index;
+                if (vertex_index < 0
+                    || vertex_index >= vertex_to_triangles_.Length()
+                    || vertex_index >= rotations_.Length()
+                    || vertex_index >= normal_adjustment_rotations_.Length()) {
+                    continue;
+                }
+
+                const VirtualMesh::VertexTriangleList& triangle_list =
+                    vertex_to_triangles_[vertex_index];
+                if (triangle_list.Length() <= 0) {
+                    continue;
+                }
+
+                float3 normal_sum{};
+                float3 tangent_sum{};
+                for (int triangle_list_index = 0;
+                     triangle_list_index < triangle_list.Length();
+                     ++triangle_list_index) {
+                    const std::uint32_t packed = triangle_list[triangle_list_index];
+                    const int flip_flag = data::Unpack12_20Hi(packed);
+                    const int local_triangle_index = data::Unpack12_20Low(packed);
+                    const int triangle_index =
+                        team_data.proxy_triangle_chunk.start_index + local_triangle_index;
+                    if (triangle_index < 0
+                        || triangle_index >= triangle_normals_.Length()
+                        || triangle_index >= triangle_tangents_.Length()) {
+                        continue;
+                    }
+
+                    normal_sum = Add(
+                        normal_sum,
+                        Scale(
+                            triangle_normals_[triangle_index],
+                            (flip_flag & 0x1) == 0 ? 1.0f : -1.0f
+                        )
+                    );
+                    tangent_sum = Add(
+                        tangent_sum,
+                        Scale(
+                            triangle_tangents_[triangle_index],
+                            (flip_flag & 0x2) == 0 ? 1.0f : -1.0f
+                        )
+                    );
+                }
+
+                if (Length(normal_sum) <= 1.0e-6f || Length(tangent_sum) <= 1.0e-6f) {
+                    continue;
+                }
+
+                const float3 normal = Normalize(normal_sum);
+                const float3 tangent = Normalize(tangent_sum);
+                const float dot = Dot(normal, tangent);
+                if (dot >= 1.0f || dot <= -1.0f) {
+                    continue;
+                }
+
+                const float3 binormal = Normalize(Cross(normal, tangent));
+                quaternion rotation = LookRotation(binormal, normal);
+                rotation = Normalize(Multiply(
+                    rotation,
+                    ApplyNegativeScaleQuaternion(
+                        normal_adjustment_rotations_[vertex_index],
+                        team_data.negative_scale_quaternion_value
+                    )
+                ));
+                rotations_[vertex_index] = rotation;
+            }
+        }
+
+        if (team_data.baseline_chunk.IsValid() && team_data.baseline_data_chunk.IsValid()) {
+            const int vertex_start = team_data.proxy_common_chunk.start_index;
+            const int baseline_data_start = team_data.baseline_data_chunk.start_index;
+            const int child_data_start = team_data.proxy_vertex_child_data_chunk.start_index;
+            const float average_rate = Clamp01(parameters.rotational_interpolation);
+            const float root_interpolation = Clamp01(parameters.root_rotation);
+
+            for (int baseline_offset = 0; baseline_offset < team_data.baseline_chunk.data_length; ++baseline_offset) {
+                const int baseline_index = team_data.baseline_chunk.start_index + baseline_offset;
+                if (baseline_index < 0
+                    || baseline_index >= base_line_flags_.Length()
+                    || baseline_index >= base_line_start_data_indices_.Length()
+                    || baseline_index >= base_line_data_counts_.Length()
+                    || baseline_index >= base_line_team_ids_.Length()
+                    || !base_line_flags_[baseline_index].IsSet(BaseLineFlagIncludeLine)
+                    || base_line_team_ids_[baseline_index] != team_id) {
+                    continue;
+                }
+
+                int data_index = baseline_data_start + base_line_start_data_indices_[baseline_index];
+                const int data_count = base_line_data_counts_[baseline_index];
+                for (int index = 0; index < data_count; ++index, ++data_index) {
+                    if (data_index < 0 || data_index >= base_line_data_.Length()) {
+                        continue;
+                    }
+
+                    const int vertex_index = vertex_start + base_line_data_[data_index];
+                    if (vertex_index < 0
+                        || vertex_index >= positions_.Length()
+                        || vertex_index >= rotations_.Length()
+                        || vertex_index >= attributes_.Length()
+                        || vertex_index >= vertex_child_index_array_.Length()) {
+                        continue;
+                    }
+
+                    const float3 parent_position = positions_[vertex_index];
+                    quaternion parent_rotation = rotations_[vertex_index];
+                    const VertexAttribute parent_attribute = attributes_[vertex_index];
+
+                    int child_count = 0;
+                    int child_start = 0;
+                    data::Unpack12_20(
+                        vertex_child_index_array_[vertex_index],
+                        child_count,
+                        child_start
+                    );
+                    if (child_count <= 0) {
+                        continue;
+                    }
+
+                    int move_count = 0;
+                    float3 rest_child_vector_sum{};
+                    float3 current_child_vector_sum{};
+                    for (int child_offset = 0; child_offset < child_count; ++child_offset) {
+                        const int child_data_index = child_data_start + child_start + child_offset;
+                        if (child_data_index < 0 || child_data_index >= vertex_child_data_array_.Length()) {
+                            continue;
+                        }
+
+                        const int child_vertex_index =
+                            vertex_start + vertex_child_data_array_[child_data_index];
+                        if (child_vertex_index < 0
+                            || child_vertex_index >= positions_.Length()
+                            || child_vertex_index >= rotations_.Length()
+                            || child_vertex_index >= attributes_.Length()
+                            || child_vertex_index >= vertex_local_positions_.Length()
+                            || child_vertex_index >= vertex_local_rotations_.Length()) {
+                            continue;
+                        }
+
+                        const VertexAttribute child_attribute = attributes_[child_vertex_index];
+                        const float3 child_local_position = vertex_local_positions_[child_vertex_index];
+                        const float3 scaled_child_local_position{
+                            child_local_position.x * team_data.negative_scale_direction.x,
+                            child_local_position.y * team_data.negative_scale_direction.y,
+                            child_local_position.z * team_data.negative_scale_direction.z,
+                        };
+                        const float3 rest_vector = Rotate(parent_rotation, scaled_child_local_position);
+                        rest_child_vector_sum = Add(rest_child_vector_sum, rest_vector);
+
+                        if (child_attribute.IsMove()) {
+                            const float3 current_vector =
+                                Subtract(positions_[child_vertex_index], parent_position);
+                            current_child_vector_sum = Add(current_child_vector_sum, current_vector);
+                            const quaternion delta_rotation = FromToRotation(rest_vector, current_vector);
+                            const quaternion child_local_rotation = ApplyNegativeScaleQuaternion(
+                                vertex_local_rotations_[child_vertex_index],
+                                team_data.negative_scale_quaternion_value
+                            );
+                            rotations_[child_vertex_index] = Normalize(Multiply(
+                                delta_rotation,
+                                Multiply(parent_rotation, child_local_rotation)
+                            ));
+                            ++move_count;
+                        } else {
+                            current_child_vector_sum =
+                                Add(current_child_vector_sum, rest_vector);
+                        }
+                    }
+
+                    if (move_count <= 0) {
+                        continue;
+                    }
+
+                    const float interpolation =
+                        parent_attribute.IsMove() ? average_rate : root_interpolation;
+                    const quaternion delta_rotation = FromToRotation(
+                        rest_child_vector_sum,
+                        current_child_vector_sum,
+                        interpolation
+                    );
+                    rotations_[vertex_index] =
+                        Normalize(Multiply(delta_rotation, parent_rotation));
+                }
+            }
+        }
+
+        for (int local_index = 0; local_index < team_data.proxy_common_chunk.data_length; ++local_index) {
+            const int vertex_index = team_data.proxy_common_chunk.start_index + local_index;
+            const int transform_index = team_data.proxy_transform_chunk.start_index + local_index;
+            if (vertex_index < 0
+                || vertex_index >= positions_.Length()
+                || vertex_index >= rotations_.Length()
+                || transform_index < 0
+                || transform_index >= transform_data.position_array.Length()
+                || transform_index >= transform_data.rotation_array.Length()
+                || transform_index >= transform_data.scale_array.Length()
+                || transform_index >= transform_data.local_position_array.Length()
+                || transform_index >= transform_data.local_rotation_array.Length()
+                || transform_index >= transform_data.local_to_world_matrix_array.Length()) {
+                continue;
+            }
+
+            quaternion world_rotation = rotations_[vertex_index];
+            const int vertex_to_transform_index = team_data.proxy_bone_chunk.start_index + local_index;
+            if (team_data.proxy_bone_chunk.IsValid()
+                && vertex_to_transform_index >= 0
+                && vertex_to_transform_index < vertex_to_transform_rotations_.Length()) {
+                world_rotation = Normalize(
+                    Multiply(world_rotation, vertex_to_transform_rotations_[vertex_to_transform_index])
+                );
+            }
+
+            transform_data.position_array[transform_index] = positions_[vertex_index];
+            transform_data.rotation_array[transform_index] = world_rotation;
+            transform_data.inverse_rotation_array[transform_index] = Inverse(world_rotation);
+            transform_data.local_to_world_matrix_array[transform_index] =
+                TRS(positions_[vertex_index], world_rotation, transform_data.scale_array[transform_index]);
+
+            const int parent_local_index =
+                vertex_index < vertex_parent_indices_.Length() ? vertex_parent_indices_[vertex_index] : -1;
+            const int parent_transform_index =
+                parent_local_index >= 0
+                    ? team_data.proxy_transform_chunk.start_index + parent_local_index
+                    : -1;
+            if (parent_transform_index >= 0
+                && parent_transform_index < transform_data.position_array.Length()
+                && parent_transform_index < transform_data.rotation_array.Length()
+                && parent_transform_index < transform_data.scale_array.Length()) {
+                const quaternion inverse_parent_rotation =
+                    Inverse(transform_data.rotation_array[parent_transform_index]);
+                transform_data.local_position_array[transform_index] =
+                    Rotate(
+                        inverse_parent_rotation,
+                        Subtract(
+                            transform_data.position_array[transform_index],
+                            transform_data.position_array[parent_transform_index]
+                        )
+                    );
+                const quaternion local_rotation =
+                    Multiply(inverse_parent_rotation, transform_data.rotation_array[transform_index]);
+                transform_data.local_rotation_array[transform_index] = Normalize(local_rotation);
+            } else {
+                transform_data.local_position_array[transform_index] =
+                    transform_data.position_array[transform_index];
+                transform_data.local_rotation_array[transform_index] =
+                    transform_data.rotation_array[transform_index];
+            }
+        }
+    }
+
+    transform_manager.SetDirty(true);
 }
 
 DataChunk VirtualMeshManager::RegisterMappingMesh(

@@ -20,6 +20,10 @@ namespace hocloth::mc2::data {
 [[nodiscard]] int Unpack32Hi(std::uint32_t pack);
 [[nodiscard]] int Unpack32Low(std::uint32_t pack);
 [[nodiscard]] int4 Unpack32(std::uint32_t pack);
+[[nodiscard]] std::uint32_t Pack10_22(int hi, int low);
+[[nodiscard]] int Unpack10_22Hi(std::uint32_t pack);
+[[nodiscard]] int Unpack10_22Low(std::uint32_t pack);
+void Unpack10_22(std::uint32_t pack, int& hi, int& low);
 [[nodiscard]] std::uint64_t Pack64(int x, int y, int z, int w);
 [[nodiscard]] std::uint64_t Pack64(const int4& value);
 [[nodiscard]] int4 Unpack64(std::uint64_t pack);

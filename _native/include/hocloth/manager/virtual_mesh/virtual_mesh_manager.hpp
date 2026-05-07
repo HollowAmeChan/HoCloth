@@ -41,6 +41,9 @@ public:
         TeamManager& team_manager,
         TransformManager& transform_manager
     );
+    void UpdateProxyPositionsFromBindPose(const TeamManager& team_manager);
+    void PreProxyMeshUpdate(const TeamManager& team_manager, const TransformManager& transform_manager);
+    void PostProxyMeshUpdate(TeamManager& team_manager, TransformManager& transform_manager);
     [[nodiscard]] DataChunk RegisterMappingMesh(
         int team_id,
         VirtualMeshContainer& mapping_mesh_container,
@@ -107,6 +110,7 @@ private:
     ExNativeArray<float3> vertex_local_positions_;
     ExNativeArray<quaternion> vertex_local_rotations_;
     ExNativeArray<int> vertex_parent_indices_;
+    ExNativeArray<VirtualMesh::VertexTriangleList> vertex_to_triangles_;
     ExNativeArray<std::uint32_t> vertex_child_index_array_;
     ExNativeArray<std::uint16_t> vertex_child_data_array_;
     ExNativeArray<quaternion> normal_adjustment_rotations_;

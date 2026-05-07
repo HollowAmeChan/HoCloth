@@ -105,6 +105,28 @@ int4 Unpack32(std::uint32_t pack)
     };
 }
 
+std::uint32_t Pack10_22(int hi, int low)
+{
+    return (static_cast<std::uint32_t>(hi) << 22)
+        | (static_cast<std::uint32_t>(low) & 0x3fffffu);
+}
+
+int Unpack10_22Hi(std::uint32_t pack)
+{
+    return static_cast<int>((pack >> 22) & 0x3ffu);
+}
+
+int Unpack10_22Low(std::uint32_t pack)
+{
+    return static_cast<int>(pack & 0x3fffffu);
+}
+
+void Unpack10_22(std::uint32_t pack, int& hi, int& low)
+{
+    hi = Unpack10_22Hi(pack);
+    low = Unpack10_22Low(pack);
+}
+
 std::uint64_t Pack64(int x, int y, int z, int w)
 {
     return ((static_cast<std::uint64_t>(x) & 0xffffull) << 48)

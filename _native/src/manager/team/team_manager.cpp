@@ -1292,7 +1292,8 @@ void TeamManager::UpdateCenterAndInertia(
             Subtract(component_world_position, old_component_position);
         const float frame_delta_angle =
             Angle(old_component_rotation, component_world_rotation);
-        if (parameters.inertia_constraint.teleport_mode != 0 && !team_data.IsReset()) {
+        if (parameters.inertia_constraint.teleport_mode != InertiaTeleportMode::None
+            && !team_data.IsReset()) {
             bool is_teleport =
                 Length(frame_delta_vector)
                     >= parameters.inertia_constraint.teleport_distance * component_scale_ratio;
@@ -1300,9 +1301,9 @@ void TeamManager::UpdateCenterAndInertia(
                 || frame_delta_angle * radians_to_degrees
                     >= parameters.inertia_constraint.teleport_rotation;
             if (is_teleport) {
-                if (parameters.inertia_constraint.teleport_mode == 1) {
+                if (parameters.inertia_constraint.teleport_mode == InertiaTeleportMode::Reset) {
                     team_data.flag.Set(FlagReset, true);
-                } else if (parameters.inertia_constraint.teleport_mode == 2) {
+                } else if (parameters.inertia_constraint.teleport_mode == InertiaTeleportMode::Keep) {
                     team_data.flag.Set(FlagKeepTeleport, true);
                 }
             }

@@ -107,6 +107,7 @@ int MagicaManager::StepFrame(
         wind_manager_,
         cloth_manager_.Inertia().FixedArray()
     );
+    virtual_mesh_manager_.PreProxyMeshUpdate(team_manager_, transform_manager_);
     simulation_manager_.PreSimulationUpdate(team_manager_, virtual_mesh_manager_);
     collider_manager_.PreSimulationUpdate(team_manager_, transform_manager_);
     for (int update_index = 0; update_index < max_update_count; ++update_index) {
@@ -145,6 +146,7 @@ int MagicaManager::StepFrame(
         team_manager_,
         virtual_mesh_manager_
     );
+    virtual_mesh_manager_.PostProxyMeshUpdate(team_manager_, transform_manager_);
     collider_manager_.PostSimulationUpdate(team_manager_);
     team_manager_.PostTeamUpdate();
     return max_update_count;

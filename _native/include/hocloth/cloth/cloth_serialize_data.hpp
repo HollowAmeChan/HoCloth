@@ -150,6 +150,8 @@ struct ClothSerializeData final : public IValid, public IDataValidate {
         parameters.gravity_falloff = gravity_falloff;
         parameters.stabilization_time_after_reset = stabilization_time_after_reset;
         parameters.blend_weight = blend_weight;
+        parameters.rotational_interpolation = rotational_interpolation;
+        parameters.root_rotation = root_rotation;
         parameters.damping_curve_data = damping.ConvertFloatArray();
         for (int index = 0; index < 16; ++index) {
             MC2SetValue(

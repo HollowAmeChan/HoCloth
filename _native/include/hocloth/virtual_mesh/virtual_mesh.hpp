@@ -5,6 +5,7 @@
 #include "hocloth/utility/native_collection/bit_flag.hpp"
 #include "hocloth/utility/native_collection/data_chunk.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
+#include "hocloth/utility/native_collection/fixed_list.hpp"
 #include "hocloth/utility/result_code/result_code.hpp"
 #include "hocloth/virtual_mesh/vertex_attribute.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_bone_weight.hpp"
@@ -21,6 +22,7 @@ struct ReductionWorkData;
 // Port target for Magica Cloth 2: Scripts/Core/VirtualMesh/VirtualMesh.cs
 class VirtualMesh {
 public:
+    using VertexTriangleList = FixedList<std::uint32_t, 7>;
     using ShareSerializationData = VirtualMeshSerializationData::ShareSerializationData;
     using UniqueSerializationData = VirtualMeshSerializationData::UniqueSerializationData;
 
@@ -44,6 +46,9 @@ public:
     ExSimpleNativeArray<float3> local_normals;
     ExSimpleNativeArray<float3> local_tangents;
     ExSimpleNativeArray<float2> uv;
+    ExSimpleNativeArray<VertexTriangleList> vertex_to_triangles;
+    ExSimpleNativeArray<std::uint32_t> vertex_to_vertex_index_array;
+    ExSimpleNativeArray<std::uint16_t> vertex_to_vertex_data_array;
     ExSimpleNativeArray<VirtualMeshBoneWeight> bone_weights;
     ExSimpleNativeArray<int3> triangles;
     ExSimpleNativeArray<int2> lines;
@@ -90,6 +95,7 @@ public:
     void CreateProxyFixedListAndAABB();
     void CreateVertexBindPose();
     void CreateVertexToTransformRotations();
+    void BuildVertexToTriangles();
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();

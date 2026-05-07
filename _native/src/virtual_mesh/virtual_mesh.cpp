@@ -279,6 +279,164 @@ void VirtualMesh::CreateVertexToTransformRotations()
     }
 }
 
+void VirtualMesh::BuildVertexToTriangles()
+{
+    // Ported from MC2 Proxy_CalcVertexToTriangleJob + Proxy_OrganizeVertexToTrianglsJob.
+    const int vertex_count = VertexCount();
+    const int triangle_count = TriangleCount();
+    vertex_to_triangles.Dispose();
+    if (vertex_count <= 0 || triangle_count <= 0) {
+        return;
+    }
+
+    vertex_to_triangles.AddRange(vertex_count, VertexTriangleList{});
+
+    std::vector<float3> triangle_normals(static_cast<std::size_t>(triangle_count));
+    std::vector<float3> triangle_tangents(static_cast<std::size_t>(triangle_count));
+    for (int triangle_index = 0; triangle_index < triangle_count; ++triangle_index) {
+        const int3 triangle = triangles[triangle_index];
+        if (!IsValidVertexIndex(triangle.x, vertex_count)
+            || !IsValidVertexIndex(triangle.y, vertex_count)
+            || !IsValidVertexIndex(triangle.z, vertex_count)) {
+            continue;
+        }
+
+        const float3 p0 = local_positions[triangle.x];
+        const float3 p1 = local_positions[triangle.y];
+        const float3 p2 = local_positions[triangle.z];
+        triangle_normals[static_cast<std::size_t>(triangle_index)] = TriangleNormal(p0, p1, p2);
+        const float2 uv0 = triangle.x < uv.Count() ? uv[triangle.x] : float2{};
+        const float2 uv1 = triangle.y < uv.Count() ? uv[triangle.y] : float2{};
+        const float2 uv2 = triangle.z < uv.Count() ? uv[triangle.z] : float2{};
+        triangle_tangents[static_cast<std::size_t>(triangle_index)] =
+            TriangleTangent(p0, p1, p2, uv0, uv1, uv2);
+
+        vertex_to_triangles[triangle.x].Set(static_cast<std::uint32_t>(triangle_index));
+        vertex_to_triangles[triangle.y].Set(static_cast<std::uint32_t>(triangle_index));
+        vertex_to_triangles[triangle.z].Set(static_cast<std::uint32_t>(triangle_index));
+    }
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        VertexTriangleList triangle_list = vertex_to_triangles[vertex_index];
+        const int count = triangle_list.Length();
+        if (count <= 0) {
+            continue;
+        }
+
+        if (vertex_index < attributes.Count()) {
+            VertexAttribute attribute = attributes[vertex_index];
+            attribute.Set(VertexAttribute::FlagTriangle, true);
+            attributes[vertex_index] = attribute;
+        }
+
+        float3 final_normal{};
+        float3 final_tangent{};
+        for (int index = 0; index < count; ++index) {
+            const int triangle_index = static_cast<int>(triangle_list[index]);
+            if (triangle_index < 0 || triangle_index >= triangle_count) {
+                continue;
+            }
+            final_normal = Add(
+                final_normal,
+                triangle_normals[static_cast<std::size_t>(triangle_index)]
+            );
+            final_tangent = Add(
+                final_tangent,
+                triangle_tangents[static_cast<std::size_t>(triangle_index)]
+            );
+        }
+
+        if (Length(final_normal) < 0.5f) {
+            float max_distance = -1.0f;
+            final_normal = float3{};
+            for (int index = 0; index < count; ++index) {
+                const int candidate_index = static_cast<int>(triangle_list[index]);
+                if (candidate_index < 0 || candidate_index >= triangle_count) {
+                    continue;
+                }
+                const float3 candidate_normal =
+                    triangle_normals[static_cast<std::size_t>(candidate_index)];
+                float3 normal_sum{};
+                for (int other_index = 0; other_index < count; ++other_index) {
+                    const int triangle_index = static_cast<int>(triangle_list[other_index]);
+                    if (triangle_index < 0
+                        || triangle_index >= triangle_count
+                        || triangle_index == candidate_index) {
+                        continue;
+                    }
+                    const float3 normal =
+                        triangle_normals[static_cast<std::size_t>(triangle_index)];
+                    normal_sum = Add(
+                        normal_sum,
+                        Dot(candidate_normal, normal) >= 0.0f ? normal : Scale(normal, -1.0f)
+                    );
+                }
+                const float distance = LengthSquared(normal_sum);
+                if (distance > max_distance) {
+                    max_distance = distance;
+                    final_normal = candidate_normal;
+                }
+            }
+        } else {
+            final_normal = Normalize(final_normal);
+        }
+
+        if (Length(final_tangent) < 0.5f) {
+            float max_distance = -1.0f;
+            final_tangent = float3{};
+            for (int index = 0; index < count; ++index) {
+                const int candidate_index = static_cast<int>(triangle_list[index]);
+                if (candidate_index < 0 || candidate_index >= triangle_count) {
+                    continue;
+                }
+                const float3 candidate_tangent =
+                    triangle_tangents[static_cast<std::size_t>(candidate_index)];
+                float3 tangent_sum{};
+                for (int other_index = 0; other_index < count; ++other_index) {
+                    const int triangle_index = static_cast<int>(triangle_list[other_index]);
+                    if (triangle_index < 0
+                        || triangle_index >= triangle_count
+                        || triangle_index == candidate_index) {
+                        continue;
+                    }
+                    const float3 tangent =
+                        triangle_tangents[static_cast<std::size_t>(triangle_index)];
+                    tangent_sum = Add(
+                        tangent_sum,
+                        Dot(candidate_tangent, tangent) >= 0.0f
+                            ? tangent
+                            : Scale(tangent, -1.0f)
+                    );
+                }
+                const float distance = LengthSquared(tangent_sum);
+                if (distance > max_distance) {
+                    max_distance = distance;
+                    final_tangent = candidate_tangent;
+                }
+            }
+        } else {
+            final_tangent = Normalize(final_tangent);
+        }
+
+        for (int index = 0; index < count; ++index) {
+            const int triangle_index = static_cast<int>(triangle_list[index]);
+            if (triangle_index < 0 || triangle_index >= triangle_count) {
+                continue;
+            }
+
+            int flip_flag = 0;
+            if (Dot(final_normal, triangle_normals[static_cast<std::size_t>(triangle_index)]) < 0.0f) {
+                flip_flag |= 0x1;
+            }
+            if (Dot(final_tangent, triangle_tangents[static_cast<std::size_t>(triangle_index)]) < 0.0f) {
+                flip_flag |= 0x2;
+            }
+            triangle_list[index] = data::Pack12_20(flip_flag, triangle_index);
+        }
+        vertex_to_triangles[vertex_index] = triangle_list;
+    }
+}
+
 void VirtualMesh::BuildMeshBaseLinesFromEdges()
 {
     // Ported from Magica Cloth 2: Scripts/Core/VirtualMesh/Function/VirtualMeshProxy.cs
@@ -1078,6 +1236,9 @@ void VirtualMesh::Dispose()
     local_normals.Dispose();
     local_tangents.Dispose();
     uv.Dispose();
+    vertex_to_triangles.Dispose();
+    vertex_to_vertex_index_array.Dispose();
+    vertex_to_vertex_data_array.Dispose();
     bone_weights.Dispose();
     triangles.Dispose();
     lines.Dispose();
@@ -1102,7 +1263,24 @@ void VirtualMesh::Dispose()
     base_line_data.Dispose();
     normal_adjustment_rotations.Dispose();
     vertex_to_transform_rotations.Dispose();
+    result = Result::Ok();
+    is_managed = false;
+    mesh_type = MeshType::NormalMesh;
+    is_bone_cloth = false;
+    center_transform_index = -1;
+    init_local_to_world = float4x4{};
+    init_world_to_local = float4x4{};
+    init_rotation = quaternion{};
+    init_inverse_rotation = quaternion{};
+    init_scale = float3{1.0f, 1.0f, 1.0f};
+    skin_root_index = -1;
+    bounding_box = AABB{};
+    average_vertex_distance = 0.0f;
+    max_vertex_distance = 0.0f;
     merge_chunk.Clear();
+    to_proxy_matrix = float4x4{};
+    to_proxy_rotation = quaternion{};
+    mapping_id = -1;
 }
 
 void VirtualMesh::BuildBaseLinesFromParents()

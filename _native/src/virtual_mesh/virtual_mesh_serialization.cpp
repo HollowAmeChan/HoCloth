@@ -47,6 +47,48 @@ void DeserializeRawBitFlag8Array(
     }
 }
 
+void DeserializeFixedList32UIntArray(
+    ExSimpleNativeArray<VirtualMesh::VertexTriangleList>& target,
+    const std::vector<std::uint8_t>& bytes
+)
+{
+    target.Dispose();
+
+    constexpr std::size_t kUnityFixedList32Bytes = 32;
+    constexpr std::size_t kUnityLengthBytes = 2;
+    constexpr std::size_t kUIntBytes = sizeof(std::uint32_t);
+    if (bytes.size() < kUnityFixedList32Bytes) {
+        return;
+    }
+
+    const std::size_t count = bytes.size() / kUnityFixedList32Bytes;
+    for (std::size_t list_index = 0; list_index < count; ++list_index) {
+        const std::size_t offset = list_index * kUnityFixedList32Bytes;
+        const auto length = static_cast<int>(
+            static_cast<std::uint16_t>(bytes[offset])
+            | (static_cast<std::uint16_t>(bytes[offset + 1]) << 8)
+        );
+
+        VirtualMesh::VertexTriangleList list;
+        const int value_count =
+            std::min(length, VirtualMesh::VertexTriangleList::CapacityValue);
+        for (int value_index = 0; value_index < value_count; ++value_index) {
+            const std::size_t value_offset =
+                offset + kUnityLengthBytes + static_cast<std::size_t>(value_index) * kUIntBytes;
+            if (value_offset + kUIntBytes > offset + kUnityFixedList32Bytes) {
+                break;
+            }
+            const std::uint32_t value =
+                static_cast<std::uint32_t>(bytes[value_offset])
+                | (static_cast<std::uint32_t>(bytes[value_offset + 1]) << 8)
+                | (static_cast<std::uint32_t>(bytes[value_offset + 2]) << 16)
+                | (static_cast<std::uint32_t>(bytes[value_offset + 3]) << 24);
+            list.Add(value);
+        }
+        target.Add(list);
+    }
+}
+
 }  // namespace
 
 VirtualMesh VirtualMeshSerializationData::ShareDeserialize(
@@ -86,6 +128,9 @@ VirtualMesh VirtualMeshSerializationData::ShareDeserialize(
     DeserializeSimpleArray(mesh.skin_bone_transform_indices, data.skin_bone_transform_indices);
     DeserializeSimpleArray(mesh.skin_bone_bind_poses, data.skin_bone_bind_poses);
 
+    DeserializeFixedList32UIntArray(mesh.vertex_to_triangles, data.vertex_to_triangles);
+    DeserializeRawArray(mesh.vertex_to_vertex_index_array, data.vertex_to_vertex_index_array);
+    DeserializeRawArray(mesh.vertex_to_vertex_data_array, data.vertex_to_vertex_data_array);
     DeserializeRawArray(mesh.edges, data.edges);
     DeserializeRawBitFlag8Array(mesh.edge_flags, data.edge_flags);
     DeserializeRawArray(mesh.vertex_bind_pose_positions, data.vertex_bind_pose_positions);
