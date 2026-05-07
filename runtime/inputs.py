@@ -1,6 +1,6 @@
 from mathutils import Matrix, Vector
 
-from ..compile.compiler import resolve_armature_object
+from .blender_refs import resolve_armature_object
 from .exchange import empty_frame_inputs, wrap_frame_inputs
 
 

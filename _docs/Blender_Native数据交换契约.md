@@ -65,6 +65,15 @@ Python stub backend 仍会在本地拆成旧 payload，因为 stub 使用的是 
 
 这是下一阶段的主 build 输入。它表示 Blender 侧用户真实组件和相关对象采样，不表示 MC2 已编译拓扑。C++ 侧的 Blender transfer unit 负责把它转换为 MC2 PreBuild/Build 所需数据。
 
+实现约定更新：
+
+- Blender 侧组件语义必须直接对齐 MC2 Unity 组件，而不是发明一套 HoCloth 专用组件模型。
+- BoneCloth/BoneSpring 在协议中统一表示为 `mc2_component_type = "MagicaCloth"`，并通过 `mc2_authoring_mode = "BoneCloth" | "BoneSpring"` 区分。
+- MagicaCloth 参数主结构为 `serialize_data`，字段按 MC2 `ClothSerializeData` / constraint `SerializeData` 命名，例如 `rootBones`、`gravity`、`gravityDirection`、`inertiaConstraint`、`distanceConstraint`、`angleRestorationConstraint`、`springConstraint`、`colliderCollisionConstraint.colliderList`。
+- Collider 组件表示为 `MagicaSphereCollider`、`MagicaCapsuleCollider`、`MagicaPlaneCollider` 等 MC2 collider component，使用 `center`、`size`、`direction`、`reverseDirection`、`alignedOnCenter` 等 MC2 语义；旧 `shape_type/radius/height` 字段仅作为过渡兼容别名。
+- 当前 Blender `PropertyGroup` 类名可暂时保持旧名以兼容 .blend 存档，但 UI、导出、native transfer 的主语义必须以 MC2 component/serialize data 为准。
+- Python 可以采样真实骨架 rest 数据和 object transform；不能再生成尾端骨、虚拟粒子、baseline、constraint 拓扑等 MC2 build 结果。
+
 预期 payload:
 
 ```text

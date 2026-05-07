@@ -12,6 +12,7 @@ LENGTH_UNIT = "meter"
 QUATERNION_ORDER = "wxyz"
 
 PayloadType = Literal[
+    "authoring_snapshot",
     "compiled_scene",
     "build_output",
     "frame_inputs",
@@ -109,6 +110,16 @@ def wrap_compiled_scene(compiled_scene_or_dict: Any) -> ExchangeEnvelope:
     )
 
 
+def wrap_authoring_snapshot(snapshot_or_dict: Any) -> ExchangeEnvelope:
+    if is_exchange_envelope(snapshot_or_dict):
+        if snapshot_or_dict.get("payload_type") != "authoring_snapshot":
+            raise ValueError(
+                f"Expected exchange payload 'authoring_snapshot', got '{snapshot_or_dict.get('payload_type')}'."
+            )
+        return deepcopy(snapshot_or_dict)
+    return make_envelope("authoring_snapshot", deepcopy(dict(snapshot_or_dict or {})))
+
+
 def empty_build_output() -> dict[str, Any]:
     return {"particles": [], "lines": [], "baselines": [], "colliders": []}
 
@@ -176,12 +187,14 @@ def wrap_runtime_debug(
     transforms: list[dict[str, Any]],
     mesh_outputs: list[dict[str, Any]] | None = None,
     build_output: dict[str, Any] | None = None,
+    authoring_snapshot: dict[str, Any] | None = None,
 ) -> ExchangeEnvelope:
     compiled_envelope = wrap_compiled_scene(compiled_scene) if compiled_scene is not None else None
     return make_envelope(
         "runtime_debug",
         {
             "runtime_state": dict(runtime_state),
+            "authoring_snapshot": wrap_authoring_snapshot(authoring_snapshot) if authoring_snapshot is not None else None,
             "compiled_scene": compiled_envelope,
             "build_output": wrap_build_output(build_output),
             "runtime_inputs": wrap_frame_inputs(runtime_inputs),

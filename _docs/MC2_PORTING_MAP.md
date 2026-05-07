@@ -41,11 +41,18 @@ These MC2 files should not be forced into the native solver layer. Their Unity o
 
 | Boundary area | Status | HoCloth side |
 | --- | --- | --- |
-| Component wrapper / authoring state | partial | `components/`, `authoring/`; MC2 preset parameters, simplified UI, native backend default, build/debug controls, compiled-scene preview, and first BoneCloth component creation/viewport path |
-| Mesh / renderer / transform acquisition | partial | `compile/compiler.py`, `compile/compiled.py`, `runtime/inputs.py`; Blender object ids, mesh/bone inputs, frame transform data, Cache Output based `mesh_writeback_targets`, and explicit full custom-skinning/normal-adjustment `TransformRecord` feed remains a BL/native boundary item |
+| Component wrapper / authoring state | partial | `components/mc2.py`, `authoring/`; MC2 preset parameters, simplified UI, native backend default, build/debug controls, authoring snapshot export, and first BoneCloth component creation/viewport path |
+| Mesh / renderer / transform acquisition | partial | `runtime/authoring_snapshot.py`, `runtime/bone_sampling.py`, `runtime/compiled_scene.py`, `runtime/inputs.py`; Blender object ids, mesh/bone inputs, frame transform data, Cache Output based `mesh_writeback_targets`, and explicit full custom-skinning/normal-adjustment `TransformRecord` feed remains a BL/native boundary item |
 | Native bridge envelope | partial | `runtime/exchange.py`, `runtime/bridge.py`, `runtime/session.py`, `_native/src/hocloth_python_module.cpp`; session lifecycle plus compiled/frame/step payload exchange, C++ parsing of BoneCloth/BoneSpring `cloth_type`, active runtime conversion from compiled bones to native Bone RenderSetupData, native RenderSetup fallback for BoneCloth custom-skinning/normal-adjustment records, `mesh_writeback_targets`, and native `get_mesh_outputs` export for later RenderData/Mapping output |
 | Runtime stepping and writeback | partial | `runtime/live.py`, `runtime/pose_apply.py`; realtime/manual step, returned transform summary, applied/missing counts, pose writeback path, active runtime ProxyBoneMesh team tagging for MC2 post-writeback, object-local/world-space mesh output writeback, and manual mesh-output apply operator |
-| Debug artifacts | partial | `_build/compiled_scene_preview.json`, `_build/frame_inputs_preview.json`, `_build/runtime_debug_latest.json`; useful for BL/native boundary diagnosis and now includes mesh writeback targets/outputs |
+| Debug artifacts | partial | `_build/authoring_snapshot_preview.json`, `_build/backend_scene_preview.json`, `_build/frame_inputs_preview.json`, `_build/runtime_debug_latest.json`; useful for BL/native boundary diagnosis and now includes mesh writeback targets/outputs |
+
+Current authoring boundary rule:
+
+- Blender component properties must mirror MC2 Unity components. `BONE_CLOTH` / `SPRING_BONE` are authoring modes of `MagicaCloth` with `ClothSerializeData`; colliders are `MagicaSphereCollider` / `MagicaCapsuleCollider` / `MagicaPlaneCollider` style components.
+- Old HoCloth `components/properties.py`, `components/registry.py`, and `compile/` package have been removed from the active frontend. Scene authoring now goes through MC2-style component collections plus an `authoring_snapshot`.
+- New protocol/debug work should inspect `_build/authoring_snapshot_preview.json` first. `_build/backend_scene_preview.json` is a runtime/writeback view generated from the snapshot until those consumers can read native `build_output` directly.
+- New frontend work lives in `components/mc2.py` and the simplified `authoring/panel.py`. The main panel creates MC2-native component containers and the build path sends `authoring_snapshot` to native first.
 
 ## Cloth
 
@@ -348,7 +355,7 @@ Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtim
 
 Architecture direction update:
 
-- The Blender Python `compile/` layer is now considered a transition/legacy compatibility layer, not the long-term MC2 build authority. It should not gain new MC2 topology, constraint, baseline, particle, or VirtualMesh responsibilities.
-- The next build input should be `authoring_snapshot`: raw Blender components plus sampled armature/mesh/collider data. C++ owns the Blender transfer unit that converts this snapshot into MC2-style PreBuild/Build data.
-- `compiled_scene` remains available for debug and old paths while the C++ transfer unit comes online, but new work should move toward `authoring_snapshot -> native transfer -> MC2 PreBuild/Build -> build_output`.
+- The Blender Python `compile/` layer has been removed from active code. Python may still keep a runtime-only backend scene view for pose/frame-input compatibility, but it must not become the MC2 build authority again.
+- The active build input is `authoring_snapshot`: raw Blender components plus sampled armature/mesh/collider data. C++ owns the Blender transfer unit that converts this snapshot into MC2-style PreBuild/Build data.
+- `compiled_scene` remains only as a legacy/debug envelope name and native runtime structure while the C++ transfer unit comes online; new work should move toward `authoring_snapshot -> native transfer -> MC2 PreBuild/Build -> build_output`.
 - Viewport drawing and debug inspection should consume `build_output` returned by native build, not Python-side real-time topology guesses.

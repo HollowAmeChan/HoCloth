@@ -5,14 +5,13 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 
-from ..compile.compiler import resolve_bone_chain_names
-from ..components.properties import _parse_component_id_list, find_component_by_id
+from ..runtime.session import get_last_build_output
 
 
 _DRAW_HANDLER = None
 _LINE_SHADER = None
 
-_SPRING_COLOR = (0.24, 0.78, 1.0, 1.0)
+_BONE_COLOR = (0.24, 0.78, 1.0, 1.0)
 _RADIUS_COLOR = (1.0, 0.72, 0.18, 1.0)
 _COLLIDER_COLOR = (1.0, 0.36, 0.36, 1.0)
 
@@ -33,17 +32,13 @@ def _viewport_basis(region_data):
 
 
 def _circle_points(center: Vector, axis_a: Vector, axis_b: Vector, radius: float, segments: int = 32):
-    points = []
-    for index in range(segments + 1):
-        angle = (math.tau * index) / segments
-        offset = (axis_a * math.cos(angle) + axis_b * math.sin(angle)) * radius
-        points.append(center + offset)
-    return points
+    return [
+        center + (axis_a * math.cos((math.tau * index) / segments) + axis_b * math.sin((math.tau * index) / segments)) * radius
+        for index in range(segments + 1)
+    ]
 
 
 def _append_polyline(segments: list[tuple[Vector, Vector]], points: list[Vector]):
-    if len(points) < 2:
-        return
     for start, end in zip(points, points[1:]):
         segments.append((start, end))
 
@@ -72,83 +67,11 @@ def _draw_segments(segments: list[tuple[Vector, Vector]], color, alpha_scale: fl
     batch.draw(shader)
 
 
-def _iter_enabled_spring_bones(scene):
-    for item in scene.hocloth_components:
-        if not item.enabled or item.component_type not in {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}:
-            continue
-        component = find_component_by_id(scene.hocloth_spring_bone_components, item.component_id)
-        if component is not None:
-            yield item, component
+def _to_vector(value) -> Vector:
+    return Vector((float(value[0]), float(value[1]), float(value[2])))
 
 
-def _iter_enabled_colliders(scene):
-    for item in scene.hocloth_components:
-        if not item.enabled or item.component_type != "COLLIDER":
-            continue
-        component = find_component_by_id(scene.hocloth_collider_components, item.component_id)
-        if component is not None:
-            yield item, component
-
-
-def _joint_radius(component, bone_name: str) -> float:
-    for entry in component.joint_overrides:
-        if entry.bone_name == bone_name and entry.enabled:
-            return max(0.0, entry.radius)
-    return max(0.0, component.joint_radius)
-
-
-def _joint_world_positions(component):
-    armature_object = component.armature_object
-    if armature_object is None or armature_object.type != "ARMATURE" or armature_object.pose is None:
-        return {}, []
-    bone_names = resolve_bone_chain_names(bpy.context.scene, armature_object, component.root_bone_name)
-    bone_name_set = set(bone_names)
-    positions = {}
-    segments = []
-    for bone_name in bone_names:
-        pose_bone = armature_object.pose.bones.get(bone_name)
-        if pose_bone is None:
-            continue
-        world_matrix = armature_object.matrix_world @ pose_bone.matrix
-        positions[bone_name] = world_matrix.translation.copy()
-
-    for bone_name in bone_names:
-        bone = armature_object.data.bones.get(bone_name)
-        if bone is None or bone.parent is None or bone.parent.name not in bone_name_set:
-            continue
-        parent_position = positions.get(bone.parent.name)
-        child_position = positions.get(bone_name)
-        if parent_position is not None and child_position is not None:
-            segments.append((bone.parent.name, bone_name))
-
-    return positions, segments
-
-
-def _append_spring_bone_segments(scene, region_data, spring_segments, radius_segments):
-    right, up, _forward = _viewport_basis(region_data)
-    for _item, component in _iter_enabled_spring_bones(scene):
-        joint_positions, joint_segments = _joint_world_positions(component)
-        if len(joint_positions) < 1:
-            continue
-
-        if scene.hocloth_viewport_draw_bones:
-            for start_name, end_name in joint_segments:
-                start = joint_positions.get(start_name)
-                end = joint_positions.get(end_name)
-                if start is not None and end is not None:
-                    spring_segments.append((start, end))
-            for _bone_name, position in joint_positions.items():
-                _append_cross(spring_segments, position, 0.01)
-
-        if scene.hocloth_viewport_draw_particle_radius:
-            for bone_name, position in joint_positions.items():
-                radius = _joint_radius(component, bone_name)
-                if radius <= 0.0:
-                    continue
-                _append_collider_sphere_segments(radius_segments, position, radius, region_data)
-
-
-def _append_collider_sphere_segments(segments, center, radius, region_data):
+def _append_sphere_segments(segments, center, radius, region_data):
     if radius <= 0.0:
         return
     right, up, forward = _viewport_basis(region_data)
@@ -157,51 +80,56 @@ def _append_collider_sphere_segments(segments, center, radius, region_data):
     _append_polyline(segments, _circle_points(center, up, forward, radius))
 
 
-def _append_collider_capsule_segments(segments, matrix_world, radius, height, region_data):
-    axis = (matrix_world.to_quaternion() @ Vector((0.0, 0.0, 1.0))).normalized()
-    center = matrix_world.translation.copy()
-    half_height = max(0.0, height) * 0.5
-    top = center + axis * half_height
-    bottom = center - axis * half_height
-    _append_collider_sphere_segments(segments, top, radius, region_data)
-    _append_collider_sphere_segments(segments, bottom, radius, region_data)
-
-    if half_height <= 0.0 or radius <= 0.0:
-        return
-
-    view_right, view_up, _view_forward = _viewport_basis(region_data)
-    side = axis.cross(view_up)
-    if side.length < 1e-5:
-        side = axis.cross(view_right)
-    if side.length < 1e-5:
-        return
-    side.normalize()
-    ortho = axis.cross(side).normalized()
-    for offset_axis in (side, -side, ortho, -ortho):
-        offset = offset_axis * radius
-        segments.append((top + offset, bottom + offset))
-
-
-def _append_collider_segments(scene, region_data, collider_segments):
-    if not scene.hocloth_viewport_draw_colliders:
-        return
-    for _item, component in _iter_enabled_colliders(scene):
-        collider_object = component.collider_object
-        if collider_object is None:
+def _build_component_particle_positions(scene, build_output):
+    positions: dict[str, list[Vector]] = {}
+    for item in build_output.get("particles", []):
+        component_id = item.get("component_id", "")
+        bone_name = item.get("bone_name", "")
+        if not component_id or not bone_name:
             continue
-        matrix_world = collider_object.matrix_world.copy()
-        center = matrix_world.translation.copy()
-        radius = max(0.0, component.radius)
-        if component.shape_type == "CAPSULE":
-            _append_collider_capsule_segments(
-                collider_segments,
-                matrix_world,
-                radius,
-                component.height,
-                region_data,
-            )
+        armature_name = ""
+        for cloth in scene.hocloth_mc2_magica_cloths:
+            if cloth.component_id == component_id and cloth.armature_object is not None:
+                armature_name = cloth.armature_object.name
+                break
+        armature_object = scene.objects.get(armature_name) if armature_name else None
+        pose_bone = armature_object.pose.bones.get(bone_name) if armature_object is not None and armature_object.pose is not None else None
+        if pose_bone is not None:
+            position = (armature_object.matrix_world @ pose_bone.matrix).translation.copy()
         else:
-            _append_collider_sphere_segments(collider_segments, center, radius, region_data)
+            position = _to_vector(item.get("rest_head_local", (0.0, 0.0, 0.0)))
+        positions.setdefault(component_id, []).append(position)
+    return positions
+
+
+def _append_build_output_segments(scene, region_data, bone_segments, radius_segments, collider_segments):
+    build_output = get_last_build_output()
+    positions = _build_component_particle_positions(scene, build_output)
+
+    if scene.hocloth_viewport_draw_bones:
+        for component_id, component_positions in positions.items():
+            for position in component_positions:
+                _append_cross(bone_segments, position, 0.01)
+            for line in build_output.get("lines", []):
+                if line.get("component_id") != component_id:
+                    continue
+                start_index = int(line.get("start_index", -1))
+                end_index = int(line.get("end_index", -1))
+                if 0 <= start_index < len(component_positions) and 0 <= end_index < len(component_positions):
+                    bone_segments.append((component_positions[start_index], component_positions[end_index]))
+
+    if scene.hocloth_viewport_draw_particle_radius:
+        for particle in build_output.get("particles", []):
+            component_id = particle.get("component_id", "")
+            joint_index = int(particle.get("joint_index", -1))
+            component_positions = positions.get(component_id, [])
+            if 0 <= joint_index < len(component_positions):
+                _append_sphere_segments(radius_segments, component_positions[joint_index], float(particle.get("radius", 0.0)), region_data)
+
+    if scene.hocloth_viewport_draw_colliders:
+        for collider in build_output.get("colliders", []):
+            center = _to_vector(collider.get("world_translation", (0.0, 0.0, 0.0)))
+            _append_sphere_segments(collider_segments, center, float(collider.get("radius", 0.0)), region_data)
 
 
 def _draw_viewport_overlay():
@@ -213,15 +141,13 @@ def _draw_viewport_overlay():
     if not scene.hocloth_viewport_overlay_enabled:
         return
 
-    spring_segments = []
+    bone_segments = []
     radius_segments = []
     collider_segments = []
-
-    _append_spring_bone_segments(scene, context.region_data, spring_segments, radius_segments)
-    _append_collider_segments(scene, context.region_data, collider_segments)
+    _append_build_output_segments(scene, context.region_data, bone_segments, radius_segments, collider_segments)
 
     alpha = scene.hocloth_viewport_overlay_alpha
-    _draw_segments(spring_segments, _SPRING_COLOR, alpha)
+    _draw_segments(bone_segments, _BONE_COLOR, alpha)
     _draw_segments(radius_segments, _RADIUS_COLOR, alpha)
     _draw_segments(collider_segments, _COLLIDER_COLOR, alpha)
     gpu.state.line_width_set(1.0)

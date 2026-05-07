@@ -1,7 +1,7 @@
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
-from ..compile.compiler import resolve_armature_object
+from .blender_refs import resolve_armature_object
 
 
 def _component_armature_lookup(compiled_scene) -> dict[str, str]:

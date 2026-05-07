@@ -369,6 +369,14 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 
 `runtime_debug_latest.json` 已包含 `build_output` envelope，当前字段为 `particles / lines / baselines / colliders`。后续补全 VirtualMesh 与 ParticleBuffer 时继续扩展这个输出，而不是恢复 Blender 侧的自动拓扑加工。
 
+组件对齐原则：
+
+- Blender authoring 侧的组件属性需要直接对齐 MagicaCloth2 的 Unity 组件，而不是维护一套 HoCloth 自己的中间组件概念。
+- BoneCloth / BoneSpring 都应视为 `MagicaCloth` 组件的不同 authoring mode，主参数结构按 MC2 `ClothSerializeData` 和各 constraint `SerializeData` 命名。
+- Collider 侧按 `ColliderComponent`、`MagicaSphereCollider`、`MagicaCapsuleCollider`、`MagicaPlaneCollider` 组织，链级碰撞引用对齐 `ColliderCollisionConstraint.colliderList`。
+- Blender 旧 `PropertyGroup` 类名和 `compile/` 数据结构只作为迁移兼容壳存在；UI 文案、导出协议、native transfer 都应优先使用 MC2 component / serialize data 名称。
+- 新前端主线已经转到 `components/mc2.py`：主面板只创建 MC2-native component，保留 Build / Step / Live Run / Reset-to-first-frame 这些有价值的 runtime 控制。旧 Blender component/compile 面板不再作为主入口，只在过渡期给旧文件 fallback。
+
 ## 架构转向：移除 Blender 侧重编译层
 
 当前 HoCloth 同时存在四层逻辑：

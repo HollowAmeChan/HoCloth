@@ -2,7 +2,15 @@ from importlib import import_module
 import math
 import os
 
-from .exchange import empty_build_output, empty_frame_inputs, frame_inputs_payload, wrap_compiled_scene, wrap_frame_inputs
+from .exchange import (
+    empty_build_output,
+    empty_frame_inputs,
+    frame_inputs_payload,
+    is_exchange_envelope,
+    wrap_authoring_snapshot,
+    wrap_compiled_scene,
+    wrap_frame_inputs,
+)
 
 
 _BOOTSTRAP_COLLIDER_PROJECTION_SCALE = 0.35
@@ -129,7 +137,8 @@ class NativeBridgeStub:
         self._scenes = {}
         self._import_error = import_error
 
-    def build_scene(self, compiled_scene):
+    def build_scene(self, build_input, backend_scene_view=None):
+        compiled_scene = backend_scene_view if backend_scene_view is not None else build_input
         handle = self._next_handle
         self._next_handle += 1
         self._scenes[handle] = {
@@ -609,7 +618,14 @@ class NativeModuleBridge:
     def __init__(self, module):
         self._module = module
 
-    def build_scene(self, compiled_scene):
+    def build_scene(self, build_input, backend_scene_view=None):
+        if (
+            hasattr(self._module, "build_authoring_snapshot")
+            and is_exchange_envelope(build_input)
+            and build_input.get("payload_type") == "authoring_snapshot"
+        ):
+            return self._module.build_authoring_snapshot(wrap_authoring_snapshot(build_input))
+        compiled_scene = backend_scene_view if backend_scene_view is not None else build_input
         return self._module.build_scene(wrap_compiled_scene(compiled_scene))
 
     def destroy_scene(self, handle):
@@ -635,9 +651,9 @@ class NativeModuleBridge:
 
 def load_bridge(use_native: bool | None = None):
     if use_native is None:
-        use_native = os.environ.get("HOCLOTH_USE_NATIVE", "0").strip().lower() in {"1", "true", "yes", "on"}
+        use_native = os.environ.get("HOCLOTH_USE_NATIVE", "1").strip().lower() not in {"0", "false", "no", "off"}
     if not use_native:
-        return NativeBridgeStub("Native backend disabled. Enable Use Native Backend or set HOCLOTH_USE_NATIVE=1.")
+        return NativeBridgeStub("Native backend disabled by HOCLOTH_USE_NATIVE.")
 
     try:
         module = import_module("hocloth_native")

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from mathutils import Matrix, Quaternion, Vector
 
-from .compiled import CompiledSpringBaseline, CompiledSpringJoint, CompiledSpringLine
+from .compiled_scene import CompiledSpringBaseline, CompiledSpringJoint, CompiledSpringLine
 
 
 @dataclass

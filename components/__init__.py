@@ -1,11 +1,9 @@
-from . import properties, registry
+from . import mc2
 
 
 def register():
-    registry.register()
-    properties.register()
+    mc2.register()
 
 
 def unregister():
-    properties.unregister()
-    registry.unregister()
+    mc2.unregister()

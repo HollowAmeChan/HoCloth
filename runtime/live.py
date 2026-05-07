@@ -1,4 +1,4 @@
-import bpy
+﻿import bpy
 
 from .inputs import build_runtime_inputs, reset_runtime_input_tracking
 from .pose_apply import (
@@ -9,7 +9,7 @@ from .pose_apply import (
     restore_pose_state,
 )
 from .session import (
-    get_compiled_scene,
+    get_backend_scene_view,
     get_pose_baseline,
     reset_runtime,
     set_runtime_inputs_only,
@@ -119,15 +119,15 @@ def on_animation_playback_pre(scene, depsgraph):
     if not _is_scene_live_enabled(scene):
         return
 
-    if scene.hocloth_runtime_handle == 0 or get_compiled_scene() is None:
+    if scene.hocloth_runtime_handle == 0 or get_backend_scene_view() is None:
         _mark_stopped(scene, "Live runtime stopped: build the runtime first")
         return
 
     _LIVE_STATE["active_scene_name"] = scene.name
     _reset_runtime_tracking()
     reset_runtime()
-    set_runtime_inputs_only(build_runtime_inputs(scene, get_compiled_scene()))
-    set_pose_baseline(capture_pose_baseline(scene, get_compiled_scene()))
+    set_runtime_inputs_only(build_runtime_inputs(scene, get_backend_scene_view()))
+    set_pose_baseline(capture_pose_baseline(scene, get_backend_scene_view()))
     scene.hocloth_runtime_status = "Live runtime playback started"
 
 
@@ -140,7 +140,7 @@ def on_frame_change_pre(scene, depsgraph):
     if _LIVE_STATE["active_scene_name"] != scene.name:
         return
 
-    compiled_scene = get_compiled_scene()
+    compiled_scene = get_backend_scene_view()
     if compiled_scene is None:
         return
 
@@ -173,14 +173,14 @@ def on_frame_change_post(scene, depsgraph):
         return
     _LIVE_STATE["last_processed_identity"] = processed_identity
 
-    if runtime_handle == 0 or get_compiled_scene() is None:
+    if runtime_handle == 0 or get_backend_scene_view() is None:
         _mark_stopped(scene, "Live runtime stopped: runtime is unavailable")
         return
 
     if not _check_frame_continuity(scene):
         return
 
-    compiled_scene = get_compiled_scene()
+    compiled_scene = get_backend_scene_view()
     source_pose = capture_pose_state(scene, compiled_scene)
     runtime_inputs = build_runtime_inputs(scene, compiled_scene)
 
