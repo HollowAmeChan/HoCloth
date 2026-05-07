@@ -49,9 +49,9 @@ def _current_bridge():
     return _active_bridge
 
 
-def build_runtime(compiled_scene):
+def build_runtime(compiled_scene, use_native_backend: bool | None = None):
     global _active_bridge, _compiled_scene, _last_transforms
-    bridge = load_bridge()
+    bridge = load_bridge(use_native_backend)
     _active_bridge = bridge
     _compiled_scene = compiled_scene
     _last_transforms = []

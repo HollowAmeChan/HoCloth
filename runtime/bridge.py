@@ -1,5 +1,6 @@
 from importlib import import_module
 import math
+import os
 
 from .exchange import empty_frame_inputs, frame_inputs_payload, wrap_compiled_scene, wrap_frame_inputs
 
@@ -192,7 +193,10 @@ class NativeBridgeStub:
                 bone_state = chain_state[bone_index]
                 pitch = bone_state["pitch"]
                 roll = bone_state["roll"]
-                half_pitch = pitch * 0.5
+                # Match the native output adapter: Blender bones point along
+                # local +Y, while the compact spring plane's positive pitch is
+                # visually opposite when applied as a pose-bone delta.
+                half_pitch = -pitch * 0.5
                 half_roll = roll * 0.5
                 quat_x = (math.cos(half_pitch), math.sin(half_pitch), 0.0, 0.0)
                 quat_z = (math.cos(half_roll), 0.0, 0.0, math.sin(half_roll))
@@ -467,7 +471,12 @@ class NativeModuleBridge:
         return self._module.get_bone_transforms(handle)
 
 
-def load_bridge():
+def load_bridge(use_native: bool | None = None):
+    if use_native is None:
+        use_native = os.environ.get("HOCLOTH_USE_NATIVE", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if not use_native:
+        return NativeBridgeStub("Native backend disabled. Enable Use Native Backend or set HOCLOTH_USE_NATIVE=1.")
+
     try:
         module = import_module("hocloth_native")
     except Exception as exc:

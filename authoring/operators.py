@@ -7,6 +7,8 @@ from ..compile.compiler import (
     resolve_bone_chain_branching_names,
 )
 from ..components.properties import (
+    HOCLOTH_MC2_BONE_SPRING_PRESETS,
+    apply_mc2_bone_spring_preset,
     create_component,
     delete_component,
     rebuild_component_indices,
@@ -34,150 +36,6 @@ from ..runtime.session import (
     step_runtime,
 )
 from .extract import extract_active_bone_chain
-
-
-_BONE_CHAIN_PRESETS = {
-    "SOFT_SPRING": {
-        "label": "MC2 SoftSpring",
-        # From MC2: Res/Preset/MC2_Preset_SoftSpring.json
-        "joint_radius": 0.02,
-        "damping": 0.2,
-        "distance_stiffness": 0.242,
-        "world_inertia": 1.0,
-        "movement_inertia_smoothing": 0.4,
-        "movement_speed_limit_use": True,
-        "movement_speed_limit": 1.0,
-        "rotation_speed_limit_use": True,
-        "rotation_speed_limit": 360.0,
-        "local_inertia": 1.0,
-        "local_movement_speed_limit_use": True,
-        "local_movement_speed_limit": 1.0,
-        "local_rotation_speed_limit_use": True,
-        "local_rotation_speed_limit": 360.0,
-        "depth_inertia": 0.0,
-        "centrifugal_acceleration": 0.0,
-        "particle_speed_limit_use": True,
-        "particle_speed_limit": 4.0,
-        "tether_distance_compression": 0.099,
-        "angle_restoration_enabled": True,
-        "angle_restoration_stiffness": 0.2,
-        "angle_restoration_velocity_attenuation": 0.8,
-        "use_spring": True,
-        "spring_power": 0.01,
-        "limit_distance": 0.05,
-        "normal_limit_ratio": 1.0,
-        "spring_noise": 0.0,
-        "collider_friction": 0.2,
-        "collider_limit_distance": 0.05,
-        "gravity_strength": 0.0,
-        "gravity_direction": (0.0, -1.0, 0.0),
-    },
-    "MIDDLE_SPRING": {
-        "label": "MC2 MiddleSpring",
-        # From MC2: Res/Preset/MC2_Preset_MiddleSpring.json
-        "joint_radius": 0.02,
-        "damping": 0.3,
-        "distance_stiffness": 0.242,
-        "world_inertia": 1.0,
-        "movement_inertia_smoothing": 0.4,
-        "movement_speed_limit_use": True,
-        "movement_speed_limit": 1.0,
-        "rotation_speed_limit_use": True,
-        "rotation_speed_limit": 360.0,
-        "local_inertia": 1.0,
-        "local_movement_speed_limit_use": True,
-        "local_movement_speed_limit": 1.0,
-        "local_rotation_speed_limit_use": True,
-        "local_rotation_speed_limit": 360.0,
-        "depth_inertia": 0.0,
-        "centrifugal_acceleration": 0.0,
-        "particle_speed_limit_use": True,
-        "particle_speed_limit": 4.0,
-        "tether_distance_compression": 0.099,
-        "angle_restoration_enabled": True,
-        "angle_restoration_stiffness": 0.4,
-        "angle_restoration_velocity_attenuation": 0.6,
-        "use_spring": True,
-        "spring_power": 0.03,
-        "limit_distance": 0.05,
-        "normal_limit_ratio": 1.0,
-        "spring_noise": 0.0,
-        "collider_friction": 0.2,
-        "collider_limit_distance": 0.05,
-        "gravity_strength": 0.0,
-        "gravity_direction": (0.0, -1.0, 0.0),
-    },
-    "HARD_SPRING": {
-        "label": "MC2 HardSpring",
-        # From MC2: Res/Preset/MC2_Preset_HardSpring.json
-        "joint_radius": 0.02,
-        "damping": 0.3,
-        "distance_stiffness": 0.242,
-        "world_inertia": 1.0,
-        "movement_inertia_smoothing": 0.4,
-        "movement_speed_limit_use": True,
-        "movement_speed_limit": 1.0,
-        "rotation_speed_limit_use": True,
-        "rotation_speed_limit": 360.0,
-        "local_inertia": 1.0,
-        "local_movement_speed_limit_use": True,
-        "local_movement_speed_limit": 1.0,
-        "local_rotation_speed_limit_use": True,
-        "local_rotation_speed_limit": 360.0,
-        "depth_inertia": 0.0,
-        "centrifugal_acceleration": 0.0,
-        "particle_speed_limit_use": True,
-        "particle_speed_limit": 4.0,
-        "tether_distance_compression": 0.099,
-        "angle_restoration_enabled": True,
-        "angle_restoration_stiffness": 0.6,
-        "angle_restoration_velocity_attenuation": 0.4,
-        "use_spring": True,
-        "spring_power": 0.06,
-        "limit_distance": 0.05,
-        "normal_limit_ratio": 1.0,
-        "spring_noise": 0.0,
-        "collider_friction": 0.2,
-        "collider_limit_distance": 0.05,
-        "gravity_strength": 0.0,
-        "gravity_direction": (0.0, -1.0, 0.0),
-    },
-    "TAIL": {
-        "label": "MC2 Tail",
-        # From MC2: Res/Preset/MC2_Preset_Tail.json
-        "joint_radius": 0.02,
-        "damping": 0.05,
-        "distance_stiffness": 1.0,
-        "world_inertia": 1.0,
-        "movement_inertia_smoothing": 0.5,
-        "movement_speed_limit_use": True,
-        "movement_speed_limit": 5.0,
-        "rotation_speed_limit_use": True,
-        "rotation_speed_limit": 720.0,
-        "local_inertia": 1.0,
-        "local_movement_speed_limit_use": True,
-        "local_movement_speed_limit": 3.0,
-        "local_rotation_speed_limit_use": True,
-        "local_rotation_speed_limit": 360.0,
-        "depth_inertia": 0.0,
-        "centrifugal_acceleration": 0.0,
-        "particle_speed_limit_use": True,
-        "particle_speed_limit": 4.0,
-        "tether_distance_compression": 0.8,
-        "angle_restoration_enabled": True,
-        "angle_restoration_stiffness": 0.1,
-        "angle_restoration_velocity_attenuation": 0.5,
-        "use_spring": True,
-        "spring_power": 0.01,
-        "limit_distance": 0.05,
-        "normal_limit_ratio": 1.0,
-        "spring_noise": 0.0,
-        "collider_friction": 0.05,
-        "collider_limit_distance": 0.05,
-        "gravity_strength": 0.0,
-        "gravity_direction": (0.0, -1.0, 0.0),
-    },
-}
 
 
 def _find_spring_bone_component(scene, component_id: str):
@@ -216,13 +74,18 @@ def _build_runtime_from_scene(context, report=None) -> bool:
         scene.hocloth_runtime_status = "Build failed: resolved 0 bones"
         return False
 
-    runtime_state = build_runtime(compiled)
+    runtime_state = build_runtime(compiled, True)
     initial_inputs = build_runtime_inputs(scene, compiled)
     set_runtime_inputs_only(initial_inputs)
     set_pose_baseline(capture_pose_baseline(scene, compiled))
     scene.hocloth_runtime_handle = runtime_state["handle"]
+    scene.hocloth_runtime_backend = runtime_state.get("backend", "unknown")
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    scene.hocloth_runtime_applied_count = 0
+    scene.hocloth_runtime_missing_bone_count = 0
+    scene.hocloth_runtime_missing_armature_count = 0
+    scene.hocloth_runtime_apply_armature_count = 0
     scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
     build_message = runtime_state.get("build_message", "")
     solver_ready = runtime_state.get("physics_scene_ready", False)
@@ -325,8 +188,8 @@ class HOCLOTH_OT_add_cache_output(bpy.types.Operator):
 
 class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
     bl_idname = "hocloth.assign_selected_colliders_to_group"
-    bl_label = "Use Selected Collision Objects"
-    bl_description = "Fill this collision binding from the currently selected collider source objects"
+    bl_label = "使用选中碰撞体"
+    bl_description = "用当前选中的碰撞体组件填充这个碰撞绑定"
 
     component_id: bpy.props.StringProperty(name="Component ID")
 
@@ -343,7 +206,7 @@ class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
             if collider.collider_object is not None and collider.collider_object.name in selected_object_names
         ]
         group.collider_ids = ", ".join(matched_ids)
-        context.scene.hocloth_runtime_status = f"Assigned {len(matched_ids)} collision objects to binding"
+        context.scene.hocloth_runtime_status = f"已将 {len(matched_ids)} 个碰撞体加入绑定"
         return {"FINISHED"}
 
 
@@ -384,49 +247,15 @@ class HOCLOTH_OT_apply_spring_bone_preset(bpy.types.Operator):
             self.report({"ERROR"}, "Spring-bone component was not found.")
             return {"CANCELLED"}
 
-        preset = _BONE_CHAIN_PRESETS.get(chain.preset_profile)
+        preset = HOCLOTH_MC2_BONE_SPRING_PRESETS.get(chain.preset_profile)
         if preset is None:
             self.report({"ERROR"}, f"Unknown preset: {chain.preset_profile}")
             return {"CANCELLED"}
 
-        chain.joint_radius = preset["joint_radius"]
-        chain.damping_curve.use_curve = False
-        chain.damping_curve.value = preset["damping"]
-        chain.inertia_constraint.world_inertia = preset["world_inertia"]
-        chain.inertia_constraint.movement_inertia_smoothing = preset["movement_inertia_smoothing"]
-        chain.inertia_constraint.movement_speed_limit.use = preset["movement_speed_limit_use"]
-        chain.inertia_constraint.movement_speed_limit.value = preset["movement_speed_limit"]
-        chain.inertia_constraint.rotation_speed_limit.use = preset["rotation_speed_limit_use"]
-        chain.inertia_constraint.rotation_speed_limit.value = preset["rotation_speed_limit"]
-        chain.inertia_constraint.local_inertia = preset["local_inertia"]
-        chain.inertia_constraint.local_movement_speed_limit.use = preset["local_movement_speed_limit_use"]
-        chain.inertia_constraint.local_movement_speed_limit.value = preset["local_movement_speed_limit"]
-        chain.inertia_constraint.local_rotation_speed_limit.use = preset["local_rotation_speed_limit_use"]
-        chain.inertia_constraint.local_rotation_speed_limit.value = preset["local_rotation_speed_limit"]
-        chain.inertia_constraint.depth_inertia = preset["depth_inertia"]
-        chain.inertia_constraint.centrifugal_acceleration = preset["centrifugal_acceleration"]
-        chain.inertia_constraint.particle_speed_limit.use = preset["particle_speed_limit_use"]
-        chain.inertia_constraint.particle_speed_limit.value = preset["particle_speed_limit"]
-        chain.tether_constraint.distance_compression = preset["tether_distance_compression"]
-        chain.distance_constraint.stiffness.use_curve = False
-        chain.distance_constraint.stiffness.value = preset["distance_stiffness"]
-        chain.angle_restoration_constraint.use_angle_restoration = preset["angle_restoration_enabled"]
-        chain.angle_restoration_constraint.stiffness.use_curve = False
-        chain.angle_restoration_constraint.stiffness.value = preset["angle_restoration_stiffness"]
-        chain.angle_restoration_constraint.velocity_attenuation = preset["angle_restoration_velocity_attenuation"]
-        chain.spring_constraint.use_spring = preset["use_spring"]
-        chain.spring_constraint.spring_power = preset["spring_power"]
-        chain.spring_constraint.limit_distance = preset["limit_distance"]
-        chain.spring_constraint.normal_limit_ratio = preset["normal_limit_ratio"]
-        chain.spring_constraint.spring_noise = preset["spring_noise"]
-        chain.collider_collision_constraint.friction = preset["collider_friction"]
-        chain.collider_collision_constraint.limit_distance.value = preset["collider_limit_distance"]
-        chain.collider_collision_constraint.limit_distance.use_curve = False
-        chain.gravity_strength = preset["gravity_strength"]
-        chain.gravity_direction = preset["gravity_direction"]
-        sync_runtime_compat_fields(chain)
+        apply_mc2_bone_spring_preset(chain, chain.preset_profile)
         context.scene.hocloth_runtime_status = (
-            f"Applied preset {preset['label']} to {chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
+            f"Applied preset {preset['label']} ({preset['source']}) to "
+            f"{chain.root_bone_name or 'bone chain'}; rebuild runtime to test"
         )
         return {"FINISHED"}
 
@@ -552,6 +381,32 @@ class HOCLOTH_OT_export_compiled_scene(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_export_frame_inputs(bpy.types.Operator):
+    bl_idname = "hocloth.export_frame_inputs"
+    bl_label = "Export Frame Inputs"
+    bl_description = "Export the current frame input envelope sent to the runtime"
+
+    def execute(self, context):
+        compiled_scene = get_compiled_scene()
+        if compiled_scene is None:
+            rebuild_component_indices(context.scene)
+            compiled_scene = compile_scene_from_components(context.scene)
+            context.scene.hocloth_compile_summary = compiled_scene.summary()
+
+        frame_inputs = build_runtime_inputs(context.scene, compiled_scene)
+        plugin_root = os.path.dirname(os.path.dirname(__file__))
+        export_dir = os.path.join(plugin_root, "_build")
+        os.makedirs(export_dir, exist_ok=True)
+        export_path = os.path.join(export_dir, "frame_inputs_preview.json")
+
+        with open(export_path, "w", encoding="utf-8") as handle:
+            json.dump(frame_inputs, handle, indent=2, ensure_ascii=False)
+
+        context.scene.hocloth_runtime_status = f"Frame inputs exported: {export_path}"
+        self.report({"INFO"}, f"Frame inputs exported to {export_path}")
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
     bl_idname = "hocloth.reset_runtime"
     bl_label = "Reset Runtime"
@@ -571,6 +426,10 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
             set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        context.scene.hocloth_runtime_applied_count = 0
+        context.scene.hocloth_runtime_missing_bone_count = 0
+        context.scene.hocloth_runtime_missing_armature_count = 0
+        context.scene.hocloth_runtime_apply_armature_count = 0
         context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
         if runtime_state["handle"]:
             context.scene.hocloth_runtime_status = "Runtime reset"
@@ -608,6 +467,10 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
             set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
             context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
             context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+            context.scene.hocloth_runtime_applied_count = 0
+            context.scene.hocloth_runtime_missing_bone_count = 0
+            context.scene.hocloth_runtime_missing_armature_count = 0
+            context.scene.hocloth_runtime_apply_armature_count = 0
             context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
             context.scene.hocloth_runtime_status = (
                 f"Returned to frame {target_frame} and cleared simulated pose ({cleared_count} bones)"
@@ -616,6 +479,10 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
 
         context.scene.hocloth_runtime_step_count = 0
         context.scene.hocloth_runtime_transform_count = 0
+        context.scene.hocloth_runtime_applied_count = 0
+        context.scene.hocloth_runtime_missing_bone_count = 0
+        context.scene.hocloth_runtime_missing_armature_count = 0
+        context.scene.hocloth_runtime_apply_armature_count = 0
         context.scene.hocloth_runtime_last_fixed_steps = 0
         context.scene.hocloth_runtime_status = (
             f"Returned to frame {target_frame}"
@@ -646,7 +513,11 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
-        status_suffix = ""
+        context.scene.hocloth_runtime_applied_count = 0
+        context.scene.hocloth_runtime_missing_bone_count = 0
+        context.scene.hocloth_runtime_missing_armature_count = 0
+        context.scene.hocloth_runtime_apply_armature_count = 0
+        status_suffix = ", not applied"
         if context.scene.hocloth_apply_pose_on_step:
             apply_result = apply_runtime_transforms_to_scene(
                 context.scene,
@@ -655,7 +526,15 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
                 get_pose_baseline(),
             )
             context.view_layer.update()
-            status_suffix = f", applied={apply_result['applied_count']}"
+            context.scene.hocloth_runtime_applied_count = apply_result["applied_count"]
+            context.scene.hocloth_runtime_missing_bone_count = apply_result["missing_bone_count"]
+            context.scene.hocloth_runtime_missing_armature_count = apply_result["missing_armature_count"]
+            context.scene.hocloth_runtime_apply_armature_count = apply_result["armature_count"]
+            status_suffix = (
+                f", applied={apply_result['applied_count']}, "
+                f"missing_bones={apply_result['missing_bone_count']}, "
+                f"missing_armatures={apply_result['missing_armature_count']}"
+            )
         context.scene.hocloth_runtime_status = (
             f"Stepped {runtime_state['step_count']} fixed steps, "
             f"last={runtime_state.get('last_executed_steps', 0)}, "
@@ -710,9 +589,15 @@ class HOCLOTH_OT_apply_runtime_pose(bpy.types.Operator):
             get_pose_baseline(),
         )
         context.view_layer.update()
+        context.scene.hocloth_runtime_applied_count = apply_result["applied_count"]
+        context.scene.hocloth_runtime_missing_bone_count = apply_result["missing_bone_count"]
+        context.scene.hocloth_runtime_missing_armature_count = apply_result["missing_armature_count"]
+        context.scene.hocloth_runtime_apply_armature_count = apply_result["armature_count"]
         context.scene.hocloth_runtime_status = (
             f"Applied pose to {apply_result['applied_count']} bones "
-            f"across {apply_result['armature_count']} armatures"
+            f"across {apply_result['armature_count']} armatures, "
+            f"missing_bones={apply_result['missing_bone_count']}, "
+            f"missing_armatures={apply_result['missing_armature_count']}"
         )
         return {"FINISHED"}
 
@@ -729,8 +614,13 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
             bpy.ops.screen.animation_cancel(restore_frame=False)
         destroy_runtime()
         context.scene.hocloth_runtime_handle = 0
+        context.scene.hocloth_runtime_backend = "none"
         context.scene.hocloth_runtime_step_count = 0
         context.scene.hocloth_runtime_transform_count = 0
+        context.scene.hocloth_runtime_applied_count = 0
+        context.scene.hocloth_runtime_missing_bone_count = 0
+        context.scene.hocloth_runtime_missing_armature_count = 0
+        context.scene.hocloth_runtime_apply_armature_count = 0
         context.scene.hocloth_runtime_last_fixed_steps = 0
         context.scene.hocloth_runtime_status = "Runtime destroyed"
         return {"FINISHED"}
@@ -749,6 +639,7 @@ CLASSES = (
     HOCLOTH_OT_assign_all_groups_to_spring_bone,
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_export_compiled_scene,
+    HOCLOTH_OT_export_frame_inputs,
     HOCLOTH_OT_reset_runtime,
     HOCLOTH_OT_restart_runtime_from_baseline,
     HOCLOTH_OT_step_runtime,

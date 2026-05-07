@@ -1,6 +1,4 @@
 #include "hocloth_runtime_api.hpp"
-#include "hocloth/api/mc2_backend.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -149,7 +147,10 @@ Vec3 RotateVector(const Quat& rotation, const Vec3& value)
 
 Quat QuaternionFromPitchRoll(float pitch, float roll)
 {
-    const float half_pitch = pitch * 0.5f;
+    // Blender pose bones use local +Y as the head-to-tail axis. The compact
+    // BoneSpring plane stores positive pitch in the opposite visual direction,
+    // so only flip the sign at the output adapter boundary.
+    const float half_pitch = -pitch * 0.5f;
     const float half_roll = roll * 0.5f;
     const Quat quat_x{
         std::cos(half_pitch),
@@ -248,14 +249,32 @@ bool EndsWith(const std::string& value, const std::string& suffix)
 std::vector<CompiledSpringLine> BuildLineIndices(const CompiledSpringBone& chain)
 {
     if (!chain.lines.empty()) {
-        return chain.lines;
+        std::vector<CompiledSpringLine> result;
+        result.reserve(chain.lines.size());
+        const int joint_count = static_cast<int>(chain.joints.size());
+        for (const CompiledSpringLine& line : chain.lines) {
+            if (
+                line.start_index >= 0
+                && line.start_index < joint_count
+                && line.end_index >= 0
+                && line.end_index < joint_count
+                && line.start_index != line.end_index
+            ) {
+                result.push_back(line);
+            }
+        }
+        return result;
     }
 
     std::vector<CompiledSpringLine> result;
     result.reserve(chain.joints.size());
     for (std::size_t index = 0; index < chain.joints.size(); ++index) {
         const int parent_index = chain.joints[index].parent_index;
-        if (parent_index >= 0) {
+        if (
+            parent_index >= 0
+            && parent_index < static_cast<int>(chain.joints.size())
+            && parent_index != static_cast<int>(index)
+        ) {
             result.push_back(CompiledSpringLine{parent_index, static_cast<int>(index)});
         }
     }
@@ -280,7 +299,11 @@ std::vector<std::vector<int>> BuildBaselinePaths(const CompiledSpringBone& chain
     std::unordered_map<int, std::vector<int>> parent_to_children;
     for (std::size_t index = 0; index < chain.joints.size(); ++index) {
         const int parent_index = chain.joints[index].parent_index;
-        if (parent_index >= 0) {
+        if (
+            parent_index >= 0
+            && parent_index < static_cast<int>(chain.joints.size())
+            && parent_index != static_cast<int>(index)
+        ) {
             parent_to_children[parent_index].push_back(static_cast<int>(index));
         }
     }
@@ -291,10 +314,22 @@ std::vector<std::vector<int>> BuildBaselinePaths(const CompiledSpringBone& chain
         }
 
         std::vector<int> path;
+        std::vector<bool> visited(chain.joints.size(), false);
         int current = static_cast<int>(index);
         while (current >= 0) {
+            if (
+                current >= static_cast<int>(chain.joints.size())
+                || visited[static_cast<std::size_t>(current)]
+            ) {
+                path.clear();
+                break;
+            }
+            visited[static_cast<std::size_t>(current)] = true;
             path.push_back(current);
             current = chain.joints[static_cast<std::size_t>(current)].parent_index;
+        }
+        if (path.empty()) {
+            continue;
         }
         std::reverse(path.begin(), path.end());
         result.push_back(std::move(path));
@@ -858,7 +893,7 @@ BuildSceneResult RuntimeModule::BuildScene(CompiledScene compiled_scene)
     result.summary = scene->compiled_scene.Summary();
     result.backend = "native_mc2_bootstrap";
     result.build_message = "HoCloth native MC2 bootstrap active.";
-    result.backend_status = mc2::CreateBootstrapBackendStatus().Summary();
+    result.backend_status = "hocloth_mc2_core:runtime_build managers=deferred";
 
     scenes_[handle] = std::move(scene);
     return result;

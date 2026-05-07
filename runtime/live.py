@@ -166,8 +166,12 @@ def on_frame_change_post(scene, depsgraph):
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
     scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+    scene.hocloth_runtime_applied_count = 0
+    scene.hocloth_runtime_missing_bone_count = 0
+    scene.hocloth_runtime_missing_armature_count = 0
+    scene.hocloth_runtime_apply_armature_count = 0
 
-    status_suffix = ""
+    status_suffix = ", not applied"
     if scene.hocloth_apply_pose_on_step:
         apply_result = apply_runtime_transforms_to_scene(
             scene,
@@ -175,7 +179,15 @@ def on_frame_change_post(scene, depsgraph):
             result["transforms"],
             get_pose_baseline(),
         )
-        status_suffix = f", applied={apply_result['applied_count']}"
+        scene.hocloth_runtime_applied_count = apply_result["applied_count"]
+        scene.hocloth_runtime_missing_bone_count = apply_result["missing_bone_count"]
+        scene.hocloth_runtime_missing_armature_count = apply_result["missing_armature_count"]
+        scene.hocloth_runtime_apply_armature_count = apply_result["armature_count"]
+        status_suffix = (
+            f", applied={apply_result['applied_count']}, "
+            f"missing_bones={apply_result['missing_bone_count']}, "
+            f"missing_armatures={apply_result['missing_armature_count']}"
+        )
     _LIVE_STATE["last_source_pose"] = source_pose
 
     scene.hocloth_runtime_status = (

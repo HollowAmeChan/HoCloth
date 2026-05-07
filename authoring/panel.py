@@ -55,147 +55,122 @@ def _draw_spring_bone_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.prop(chain, "armature_object", text="Armature")
+    body.prop(chain, "armature_object", text="骨架")
     if armature_object and armature_object.data:
         root_row = body.row()
         root_row.alert = bool(chain.root_bone_name) and not root_bone_is_valid
-        root_row.prop_search(chain, "root_bone_name", armature_object.data, "bones", text="Root Bone")
+        root_row.prop_search(chain, "root_bone_name", armature_object.data, "bones", text="根骨骼")
     else:
-        body.prop(chain, "root_bone_name", text="Root Bone")
-        body.label(text="Select an armature object first", icon="INFO")
+        body.prop(chain, "root_bone_name", text="根骨骼")
+        body.label(text="先选择骨架对象", icon="INFO")
 
     if armature_object and not chain.root_bone_name:
-        body.label(text="Select a root bone", icon="INFO")
+        body.label(text="选择一个根骨骼", icon="INFO")
     elif armature_object and chain.root_bone_name and not root_bone_is_valid:
         warn = body.row()
         warn.alert = True
-        warn.label(text="Stored root bone is no longer valid on this armature", icon="ERROR")
+        warn.label(text="记录的根骨骼在当前骨架中无效", icon="ERROR")
 
     params = body.column(align=True)
-    preset_box = body.box()
-    preset_box.label(text="MC2 Preset Target")
-    preset_box.prop(chain, "preset_profile", text="")
-    preset_op = preset_box.operator("hocloth.apply_spring_bone_preset", text="Apply Selected Preset")
+    preset_row = params.row(align=True)
+    preset_row.prop(chain, "preset_profile", text="MC2预设")
+    preset_op = preset_row.operator("hocloth.apply_spring_bone_preset", text="应用")
     preset_op.component_id = item.component_id
-    preset_box.label(text="Use MC2 preset names as the effect baseline.", icon="INFO")
-    preset_box.label(text="Apply preset, then rebuild runtime.", icon="INFO")
 
-    params.label(text="Spring")
-    params.prop(chain, "center_source", text="Center Anchor")
+    params.prop(chain, "center_source", text="中心锚点")
     if chain.center_source == "OBJECT":
-        params.prop(chain, "center_object", text="Center Object")
+        params.prop(chain, "center_object", text="中心对象")
     elif chain.center_source == "BONE":
-        params.prop(chain, "center_armature_object", text="Center Armature")
+        params.prop(chain, "center_armature_object", text="中心骨架")
         if chain.center_armature_object and chain.center_armature_object.data:
-            params.prop_search(chain, "center_bone_name", chain.center_armature_object.data, "bones", text="Center Bone")
+            params.prop_search(chain, "center_bone_name", chain.center_armature_object.data, "bones", text="中心骨骼")
         else:
-            params.prop(chain, "center_bone_name", text="Center Bone")
-    params.prop(chain, "joint_radius", text="Particle Radius")
-    params.prop(chain, "append_tail_tip", text="Append Tail Tip Joint")
-    damping_box = body.box()
-    damping_box.label(text="MC2 Damping")
-    damping_box.prop(chain.damping_curve, "value", text="Value")
-    damping_box.label(text="Curve interface reserved only for now.", icon="INFO")
-    inertia_box = body.box()
-    inertia_box.label(text="MC2 Inertia Constraint")
-    inertia_box.prop(chain.inertia_constraint, "world_inertia")
-    inertia_box.prop(chain.inertia_constraint, "movement_inertia_smoothing")
-    inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "use", text="Use Movement Speed Limit")
-    if chain.inertia_constraint.movement_speed_limit.use:
-        inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "value", text="Movement Speed Limit")
-    inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "use", text="Use Rotation Speed Limit")
-    if chain.inertia_constraint.rotation_speed_limit.use:
-        inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "value", text="Rotation Speed Limit")
-    inertia_box.prop(chain.inertia_constraint, "local_inertia")
-    inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "use", text="Use Local Movement Speed Limit")
-    if chain.inertia_constraint.local_movement_speed_limit.use:
-        inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "value", text="Local Movement Speed Limit")
-    inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "use", text="Use Local Rotation Speed Limit")
-    if chain.inertia_constraint.local_rotation_speed_limit.use:
-        inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "value", text="Local Rotation Speed Limit")
-    inertia_box.prop(chain.inertia_constraint, "depth_inertia")
-    inertia_box.prop(chain.inertia_constraint, "centrifugal_acceleration")
-    inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "use", text="Use Particle Speed Limit")
-    if chain.inertia_constraint.particle_speed_limit.use:
-        inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "value", text="Particle Speed Limit")
-    distance_box = body.box()
-    distance_box.label(text="MC2 Distance / Tether")
-    distance_box.prop(chain.distance_constraint.stiffness, "value", text="Distance Stiffness")
-    distance_box.prop(chain.tether_constraint, "distance_compression")
-    distance_box.label(text="Curve interface reserved only for now.", icon="INFO")
-    angle_box = body.box()
-    angle_box.label(text="MC2 Angle Restoration Constraint")
-    angle_box.prop(chain.angle_restoration_constraint, "use_angle_restoration")
-    angle_col = angle_box.column(align=True)
-    angle_col.enabled = chain.angle_restoration_constraint.use_angle_restoration
-    angle_col.prop(chain.angle_restoration_constraint.stiffness, "value", text="Stiffness")
-    angle_col.prop(chain.angle_restoration_constraint, "velocity_attenuation")
-    spring_box = body.box()
-    spring_box.label(text="MC2 Spring Constraint")
-    spring_box.prop(chain.spring_constraint, "use_spring")
-    spring_col = spring_box.column(align=True)
-    spring_col.enabled = chain.spring_constraint.use_spring
-    spring_col.prop(chain.spring_constraint, "spring_power")
-    spring_col.prop(chain.spring_constraint, "limit_distance")
-    spring_col.prop(chain.spring_constraint, "normal_limit_ratio")
-    spring_col.prop(chain.spring_constraint, "spring_noise")
-    collision_box = body.box()
-    collision_box.label(text="MC2 Collider Collision Constraint")
-    collision_box.prop(chain.collider_collision_constraint, "friction")
-    collision_box.prop(chain.collider_collision_constraint.limit_distance, "value", text="Push Limit Distance")
-    collision_box.label(text="Curve interface reserved only. Curve UI will be implemented later.", icon="INFO")
-    collision_box.label(text="BoneSpring uses MC2 collision push limit from collider constraint.", icon="INFO")
+            params.prop(chain, "center_bone_name", text="中心骨骼")
+    params.prop(chain, "joint_radius", text="粒子半径")
+    params.prop(chain, "append_tail_tip", text="追加尾端粒子")
+    params.prop(chain.damping_curve, "value", text="阻尼")
+    params.prop(chain.distance_constraint.stiffness, "value", text="距离刚度")
+    params.prop(chain.tether_constraint, "distance_compression", text="系绳压缩")
+    params.prop(chain.spring_constraint, "spring_power", text="弹簧强度")
+    params.prop(chain, "gravity_strength", text="重力强度")
+
+    detail_row = body.row(align=True)
+    detail_row.prop(
+        scene,
+        "hocloth_ui_details_expanded",
+        text="显示详细信息",
+        icon="TRIA_DOWN" if scene.hocloth_ui_details_expanded else "TRIA_RIGHT",
+    )
+    if scene.hocloth_ui_details_expanded:
+        damping_box = body.box()
+        damping_box.label(text="MC2 阻尼")
+        damping_box.prop(chain.damping_curve, "use_curve", text="使用曲线")
+        damping_box.prop(chain.damping_curve, "value", text="阻尼值")
+        inertia_box = body.box()
+        inertia_box.label(text="MC2 惯性约束")
+        inertia_box.prop(chain.inertia_constraint, "world_inertia", text="世界惯性")
+        inertia_box.prop(chain.inertia_constraint, "movement_inertia_smoothing", text="移动惯性平滑")
+        inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "use", text="启用移动速度限制")
+        if chain.inertia_constraint.movement_speed_limit.use:
+            inertia_box.prop(chain.inertia_constraint.movement_speed_limit, "value", text="移动速度限制")
+        inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "use", text="启用旋转速度限制")
+        if chain.inertia_constraint.rotation_speed_limit.use:
+            inertia_box.prop(chain.inertia_constraint.rotation_speed_limit, "value", text="旋转速度限制")
+        inertia_box.prop(chain.inertia_constraint, "local_inertia", text="局部惯性")
+        inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "use", text="启用局部移动速度限制")
+        if chain.inertia_constraint.local_movement_speed_limit.use:
+            inertia_box.prop(chain.inertia_constraint.local_movement_speed_limit, "value", text="局部移动速度限制")
+        inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "use", text="启用局部旋转速度限制")
+        if chain.inertia_constraint.local_rotation_speed_limit.use:
+            inertia_box.prop(chain.inertia_constraint.local_rotation_speed_limit, "value", text="局部旋转速度限制")
+        inertia_box.prop(chain.inertia_constraint, "depth_inertia", text="深度惯性")
+        inertia_box.prop(chain.inertia_constraint, "centrifugal_acceleration", text="离心加速度")
+        inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "use", text="启用粒子速度限制")
+        if chain.inertia_constraint.particle_speed_limit.use:
+            inertia_box.prop(chain.inertia_constraint.particle_speed_limit, "value", text="粒子速度限制")
+        distance_box = body.box()
+        distance_box.label(text="MC2 距离 / 系绳")
+        distance_box.prop(chain.distance_constraint.stiffness, "use_curve", text="距离刚度使用曲线")
+        distance_box.prop(chain.distance_constraint.stiffness, "value", text="距离刚度")
+        distance_box.prop(chain.tether_constraint, "distance_compression", text="系绳距离压缩")
+        angle_box = body.box()
+        angle_box.label(text="MC2 角度复原约束")
+        angle_box.prop(chain.angle_restoration_constraint, "use_angle_restoration", text="启用角度复原")
+        angle_col = angle_box.column(align=True)
+        angle_col.enabled = chain.angle_restoration_constraint.use_angle_restoration
+        angle_col.prop(chain.angle_restoration_constraint.stiffness, "use_curve", text="复原刚度使用曲线")
+        angle_col.prop(chain.angle_restoration_constraint.stiffness, "value", text="复原刚度")
+        angle_col.prop(chain.angle_restoration_constraint, "velocity_attenuation", text="速度衰减")
+        spring_box = body.box()
+        spring_box.label(text="MC2 弹簧约束")
+        spring_box.prop(chain.spring_constraint, "use_spring", text="启用弹簧")
+        spring_col = spring_box.column(align=True)
+        spring_col.enabled = chain.spring_constraint.use_spring
+        spring_col.prop(chain.spring_constraint, "spring_power", text="弹簧强度")
+        spring_col.prop(chain.spring_constraint, "limit_distance", text="限制距离")
+        spring_col.prop(chain.spring_constraint, "normal_limit_ratio", text="法线限制比例")
+        spring_col.prop(chain.spring_constraint, "spring_noise", text="弹簧噪声")
+        collision_box = body.box()
+        collision_box.label(text="MC2 碰撞体碰撞约束")
+        collision_box.prop(chain.collider_collision_constraint, "friction", text="摩擦")
+        collision_box.prop(chain.collider_collision_constraint.limit_distance, "use_curve", text="推出距离使用曲线")
+        collision_box.prop(chain.collider_collision_constraint.limit_distance, "value", text="推出限制距离")
     params.separator()
-    params.label(text="Collision")
-    params.prop(chain, "collider_group_ids", text="Collision Bindings")
-    sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH")
+    params.prop(chain, "collider_group_ids", text="碰撞绑定")
+    sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH", text="同步骨骼")
     sync_op.component_id = item.component_id
-    group_link_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED")
+    group_link_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED", text="使用全部碰撞绑定")
     group_link_op.component_id = item.component_id
 
     group_names = list_component_display_names(scene, _parse_component_id_list(chain.collider_group_ids))
     if group_names:
-        body.label(text="Collision Bindings", icon="LINKED")
+        body.label(text="碰撞绑定", icon="LINKED")
         for group_name in group_names[:4]:
             body.label(text=group_name, icon="DOT")
 
-    summary_box = body.box()
-    summary_box.label(text="Config Summary")
-    summary_box.label(text=f"Root: {chain.root_bone_name or 'None'}", icon="BONE_DATA")
-    summary_box.label(text=f"Joints: {bone_count}", icon="ARMATURE_DATA")
-    summary_box.label(text=f"Particle Radius: {chain.joint_radius:.3f}", icon="MESH_UVSPHERE")
-    summary_box.label(text=f"Tail Tip: {'On' if chain.append_tail_tip else 'Off'}", icon="BONE_DATA")
-    summary_box.label(text=f"Preset Target: {chain.preset_profile}", icon="SETTINGS")
-    summary_box.label(
-        text=(
-            f"Spring: {'On' if chain.spring_constraint.use_spring else 'Off'}"
-            f" / power {chain.spring_constraint.spring_power:.3f}"
-            f" / limit {chain.spring_constraint.limit_distance:.3f}"
-        ),
-        icon="FORCE_HARMONIC",
-    )
-    summary_box.label(
-        text=(
-            f"Damping {chain.damping_curve.value:.3f}"
-            f" / Distance {chain.distance_constraint.stiffness.value:.3f}"
-            f" / Tether {chain.tether_constraint.distance_compression:.3f}"
-        ),
-        icon="MODIFIER",
-    )
-    summary_box.label(text=f"Collision Push Limit: {chain.collider_collision_constraint.limit_distance.value:.3f}", icon="MOD_PHYSICS")
-    if chain.center_source == "OBJECT" and chain.center_object is not None:
-        summary_box.label(text=f"Center Object: {chain.center_object.name}", icon="EMPTY_AXIS")
-    elif chain.center_source == "BONE" and chain.center_bone_name:
-        summary_box.label(text=f"Center Bone: {chain.center_bone_name}", icon="CON_ARMATURE")
-    else:
-        summary_box.label(text="Center: None", icon="INFO")
-    summary_box.label(text=f"Collision Bindings: {len(group_names)}", icon="LINKED")
-    if branching_bones:
-        summary_box.label(text=f"Branch Points: {len(branching_bones)}", icon="NODETREE")
-
-    if chain.joint_overrides:
+    if chain.joint_overrides and scene.hocloth_ui_details_expanded:
         joint_box = body.box()
-        joint_box.label(text="Joint Overrides")
+        joint_box.label(text="关节覆盖")
         preview_count = min(6, len(chain.joint_overrides))
         for entry in chain.joint_overrides[:preview_count]:
             row = joint_box.row(align=True)
@@ -208,11 +183,10 @@ def _draw_spring_bone_details(layout, scene, item):
             reset_op.bone_name = entry.bone_name
             if entry.enabled:
                 detail = joint_box.column(align=True)
-                detail.prop(entry, "radius")
-                detail.prop(entry, "stiffness")
-                detail.prop(entry, "damping")
-                detail.prop(entry, "drag")
-                detail.label(text="Per-joint gravity is reserved and not part of current MC2 BoneSpring path.", icon="INFO")
+                detail.prop(entry, "radius", text="半径")
+                detail.prop(entry, "stiffness", text="刚度")
+                detail.prop(entry, "damping", text="阻尼")
+                detail.prop(entry, "drag", text="拖拽")
         if len(chain.joint_overrides) > preview_count:
             joint_box.label(text=f"... and {len(chain.joint_overrides) - preview_count} more joints", icon="INFO")
 
@@ -221,19 +195,14 @@ def _draw_spring_bone_details(layout, scene, item):
         return
 
     if branching_bones:
-        info = body.box()
-        info.label(text="Branching topology detected", icon="NODETREE")
-        for branch_name in branching_bones[:4]:
-            info.label(text=branch_name, icon="DOT")
-        if len(branching_bones) > 4:
-            info.label(text=f"... and {len(branching_bones) - 4} more", icon="INFO")
+        body.label(text=f"检测到 {len(branching_bones)} 个分支点", icon="NODETREE")
 
-    preview_count = min(8, bone_count)
-    for bone_name in bone_names[:preview_count]:
-        body.label(text=bone_name, icon="DOT")
-
-    if bone_count > preview_count:
-        body.label(text=f"... and {bone_count - preview_count} more", icon="INFO")
+    if scene.hocloth_ui_details_expanded:
+        preview_count = min(8, bone_count)
+        for bone_name in bone_names[:preview_count]:
+            body.label(text=bone_name, icon="DOT")
+        if bone_count > preview_count:
+            body.label(text=f"... and {bone_count - preview_count} more", icon="INFO")
 
 
 def _draw_collider_details(layout, scene, item):
@@ -268,18 +237,18 @@ def _draw_collider_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.label(text="Collision Object")
-    body.prop(collider, "collider_object", text="Source Object")
-    body.prop(collider, "shape_type", text="Shape")
-    body.prop(collider, "radius", text="Radius")
+    body.label(text="碰撞体")
+    body.prop(collider, "collider_object", text="源对象")
+    body.prop(collider, "shape_type", text="形状")
+    body.prop(collider, "radius", text="半径")
     if collider.shape_type == "CAPSULE":
-        body.prop(collider, "height", text="Capsule Height")
+        body.prop(collider, "height", text="胶囊高度")
 
     if collider_object is None:
-        body.label(text="Assign an object for this collision object", icon="INFO")
+        body.label(text="指定一个对象作为碰撞体", icon="INFO")
     else:
-        body.label(text=f"Transform Source: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
-        body.label(text=f"Type: {collider_object.type}", icon="INFO")
+        body.label(text=f"变换源: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
+        body.label(text=f"类型: {collider_object.type}", icon="INFO")
 
 
 def _draw_collider_group_details(layout, scene, item):
@@ -293,7 +262,7 @@ def _draw_collider_group_details(layout, scene, item):
     header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
     title_col = header.column(align=True)
     title_col.label(text=item.display_name, icon="GROUP")
-    title_col.label(text=f"{len(collider_names)} collision objects", icon="MESH_UVSPHERE")
+    title_col.label(text=f"{len(collider_names)} 个碰撞体", icon="MESH_UVSPHERE")
     actions = header.row(align=True)
     actions.prop(item, "enabled", text="")
     remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
@@ -303,11 +272,9 @@ def _draw_collider_group_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.label(text="Collision Binding")
-    body.prop(group, "collider_ids", text="Collision Objects")
-    body.label(text="Use comma-separated collider component IDs", icon="INFO")
-    body.label(text="This compiles into a runtime collision binding", icon="INFO")
-    assign_op = body.operator("hocloth.assign_selected_colliders_to_group", icon="RESTRICT_SELECT_OFF")
+    body.label(text="碰撞绑定")
+    body.prop(group, "collider_ids", text="碰撞体")
+    assign_op = body.operator("hocloth.assign_selected_colliders_to_group", icon="RESTRICT_SELECT_OFF", text="使用选中碰撞体")
     assign_op.component_id = item.component_id
     for collider_name in collider_names[:6]:
         body.label(text=collider_name, icon="DOT")
@@ -332,11 +299,11 @@ def _draw_cache_output_details(layout, scene, item):
         return
 
     body = layout.box()
-    body.prop(cache_output, "source_object")
-    body.prop(cache_output, "cache_format")
-    body.prop(cache_output, "cache_path")
+    body.prop(cache_output, "source_object", text="源对象")
+    body.prop(cache_output, "cache_format", text="格式")
+    body.prop(cache_output, "cache_path", text="路径")
     if cache_output.source_object is None:
-        body.label(text="Assign a source object to describe the cache target", icon="INFO")
+        body.label(text="指定缓存输出源对象", icon="INFO")
 
 
 class HOCLOTH_PT_main_panel(bpy.types.Panel):
@@ -350,36 +317,44 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        layout.label(text="XPBD Spring Runtime")
+        layout.label(text="HoCloth XPBD")
         quick_add = layout.row(align=True)
-        quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA", text="Spring")
-        quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE", text="Collider")
-        quick_add.operator("hocloth.add_collider_group", icon="GROUP", text="Binding")
-        quick_add.operator("hocloth.add_cache_output", icon="EXPORT", text="Cache")
+        quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA", text="弹簧骨骼")
+        quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE", text="碰撞体")
+        quick_add.operator("hocloth.add_collider_group", icon="GROUP", text="绑定")
+        quick_add.operator("hocloth.add_cache_output", icon="EXPORT", text="缓存")
 
         row = layout.row(align=True)
-        row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH", text="Build")
-        row.operator("hocloth.step_runtime", icon="FRAME_NEXT", text="Step")
+        row.operator("hocloth.rebuild_scene", icon="FILE_REFRESH", text="构建")
+        row.operator("hocloth.step_runtime", icon="FRAME_NEXT", text="步进")
         row.operator(
             "hocloth.toggle_live_runtime",
             icon="PAUSE" if scene.hocloth_runtime_live_running else "PLAY",
-            text="Pause" if scene.hocloth_runtime_live_running else "Live",
+            text="暂停" if scene.hocloth_runtime_live_running else "实时",
+        )
+        row.operator("hocloth.restart_runtime_from_baseline", icon="ARMATURE_DATA", text="回到第一帧")
+
+        layout.prop(
+            scene,
+            "hocloth_ui_details_expanded",
+            text="显示详细信息",
+            icon="TRIA_DOWN" if scene.hocloth_ui_details_expanded else "TRIA_RIGHT",
         )
 
         debug_box = layout.box()
-        debug_box.prop(scene, "hocloth_ui_debug_expanded", text="Advanced Tools")
+        debug_box.prop(scene, "hocloth_ui_debug_expanded", text="调试工具")
         if scene.hocloth_ui_debug_expanded:
             debug_row = debug_box.row(align=True)
-            debug_row.operator("hocloth.export_compiled_scene", icon="EXPORT")
-            debug_row.operator("hocloth.reset_runtime", icon="LOOP_BACK")
-            debug_row.operator("hocloth.restart_runtime_from_baseline", icon="ARMATURE_DATA")
-            debug_row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE")
-            debug_row.operator("hocloth.destroy_runtime", icon="TRASH")
+            debug_row.operator("hocloth.export_compiled_scene", icon="EXPORT", text="导出结构")
+            debug_row.operator("hocloth.export_frame_inputs", icon="FILE_TEXT", text="导出帧输入")
+            debug_row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置")
+            debug_row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE", text="应用姿态")
+            debug_row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁")
 
         box = layout.box()
-        box.label(text="Components")
+        box.label(text="组件")
         if not scene.hocloth_components:
-            box.label(text="No components yet", icon="INFO")
+            box.label(text="还没有组件", icon="INFO")
         else:
             for item in scene.hocloth_components:
                 if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
@@ -399,32 +374,38 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                     op.component_id = item.component_id
 
         runtime_box = layout.box()
-        runtime_box.label(text="Runtime")
-        runtime_box.label(text=f"Compiled: {scene.hocloth_compile_summary}")
+        runtime_box.label(text="运行时")
         settings_col = runtime_box.column(align=True)
-        settings_col.prop(scene, "hocloth_runtime_dt", text="Frame dt")
-        settings_col.prop(scene, "hocloth_simulation_frequency", text="Simulation Hz")
-        settings_col.prop(scene, "hocloth_apply_pose_on_step", text="Apply Pose On Step")
-        runtime_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
-        runtime_box.label(text=f"Steps: {scene.hocloth_runtime_step_count}")
-        runtime_box.label(text=f"Last Fixed Steps: {getattr(scene, 'hocloth_runtime_last_fixed_steps', 0)}")
-        runtime_box.label(text=f"Transforms: {scene.hocloth_runtime_transform_count}")
-        runtime_box.label(text=f"Live: {'Running' if scene.hocloth_runtime_live_running else 'Stopped'}")
-        runtime_box.label(text=f"Status: {scene.hocloth_runtime_status}")
-        exchange_info = get_exchange_info()
-        runtime_box.label(text=f"Exchange: {exchange_info['schema']} v{exchange_info['schema_version']}")
-        if scene.hocloth_ui_debug_expanded:
-            runtime_box.label(text=f"Debug Dump: {exchange_info['debug_dump_path']}", icon="FILE_TEXT")
+        settings_col.prop(scene, "hocloth_runtime_dt", text="帧间隔")
+        settings_col.prop(scene, "hocloth_simulation_frequency", text="模拟频率")
+        settings_col.prop(scene, "hocloth_apply_pose_on_step", text="步进后写回姿态")
+        runtime_box.label(text=f"状态: {scene.hocloth_runtime_status}")
+        runtime_box.label(text=f"步数: {scene.hocloth_runtime_step_count}, 返回: {scene.hocloth_runtime_transform_count}, 写回: {getattr(scene, 'hocloth_runtime_applied_count', 0)}")
+        if scene.hocloth_ui_details_expanded:
+            exchange_info = get_exchange_info()
+            runtime_box.label(text=f"结构: {scene.hocloth_compile_summary}")
+            runtime_box.label(text=f"Handle: {scene.hocloth_runtime_handle}")
+            runtime_box.label(text=f"Backend: {getattr(scene, 'hocloth_runtime_backend', 'none')}")
+            runtime_box.label(text=f"Last Fixed Steps: {getattr(scene, 'hocloth_runtime_last_fixed_steps', 0)}")
+            runtime_box.label(
+                text=(
+                    f"Missing: bones={getattr(scene, 'hocloth_runtime_missing_bone_count', 0)}, "
+                    f"armatures={getattr(scene, 'hocloth_runtime_missing_armature_count', 0)}"
+                )
+            )
+            runtime_box.label(text=f"Exchange: {exchange_info['schema']} v{exchange_info['schema_version']}")
+            if scene.hocloth_ui_debug_expanded:
+                runtime_box.label(text=f"Debug Dump: {exchange_info['debug_dump_path']}", icon="FILE_TEXT")
 
         overlay_box = layout.box()
-        overlay_box.label(text="Viewport Overlay")
-        overlay_box.prop(scene, "hocloth_viewport_overlay_enabled", text="Enable Overlay")
+        overlay_box.label(text="视口显示")
+        overlay_box.prop(scene, "hocloth_viewport_overlay_enabled", text="启用覆盖显示")
         overlay_col = overlay_box.column(align=True)
         overlay_col.enabled = scene.hocloth_viewport_overlay_enabled
-        overlay_col.prop(scene, "hocloth_viewport_draw_bones")
-        overlay_col.prop(scene, "hocloth_viewport_draw_particle_radius")
-        overlay_col.prop(scene, "hocloth_viewport_draw_colliders")
-        overlay_col.prop(scene, "hocloth_viewport_overlay_alpha")
+        overlay_col.prop(scene, "hocloth_viewport_draw_bones", text="骨骼")
+        overlay_col.prop(scene, "hocloth_viewport_draw_particle_radius", text="粒子半径")
+        overlay_col.prop(scene, "hocloth_viewport_draw_colliders", text="碰撞体")
+        overlay_col.prop(scene, "hocloth_viewport_overlay_alpha", text="透明度")
 
 
 CLASSES = (HOCLOTH_PT_main_panel,)
