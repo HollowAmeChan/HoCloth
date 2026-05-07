@@ -7,6 +7,7 @@
 #include "hocloth/manager/simulation/simulation_manager.hpp"
 #include "hocloth/manager/transform/transform_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_container.hpp"
 #include <algorithm>
@@ -51,6 +52,52 @@ float Clamp(float value, float low, float high)
 float Clamp01(float value)
 {
     return Clamp(value, 0.0f, 1.0f);
+}
+
+float EvaluateCurve(const CompiledCurve& curve, float fallback_value, float depth_ratio, bool clamp01 = false)
+{
+    const float value = curve.has_value ? curve.value : fallback_value;
+    float sample = value;
+    if (curve.use_curve && curve.samples.size() == 16) {
+        const float scaled_time = Clamp01(depth_ratio) * 15.0f;
+        const int index0 = static_cast<int>(std::floor(scaled_time));
+        const int index1 = std::min(index0 + 1, 15);
+        const float t = scaled_time - static_cast<float>(index0);
+        const float v0 = curve.samples[static_cast<std::size_t>(index0)];
+        const float v1 = curve.samples[static_cast<std::size_t>(index1)];
+        sample = value * (v0 + (v1 - v0) * t);
+    }
+    return clamp01 ? Clamp01(sample) : sample;
+}
+
+mc2::float4x4 ToCurveMatrix(const CompiledCurve& curve, float fallback_value, bool clamp01 = false)
+{
+    const float value = curve.has_value ? curve.value : fallback_value;
+    if (!curve.use_curve || curve.samples.size() != 16) {
+        return mc2::ConstantCurve(value);
+    }
+
+    mc2::float4x4 result = mc2::ConstantCurve(0.0f);
+    for (int index = 0; index < 16; ++index) {
+        float sample = curve.samples[static_cast<std::size_t>(index)] * value;
+        if (clamp01) {
+            sample = Clamp01(sample);
+        }
+        mc2::MC2SetValue(result, index, sample);
+    }
+    return result;
+}
+
+mc2::float4x4 ScaleCurveMatrix(mc2::float4x4 curve, float scale, bool clamp01 = false)
+{
+    for (int index = 0; index < 16; ++index) {
+        float value = mc2::MC2GetValue(curve, index) * scale;
+        if (clamp01) {
+            value = Clamp01(value);
+        }
+        mc2::MC2SetValue(curve, index, value);
+    }
+    return curve;
 }
 
 float Sign(float value)
@@ -772,17 +819,50 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
 
     for (const CompiledSpringBone& chain : scene.compiled_scene.spring_bones) {
         mc2::ClothParameters parameters;
+        const bool is_bone_spring = IsBoneSpring(chain);
         parameters.gravity = IsBoneCloth(chain) ? std::max(0.0f, chain.gravity_strength) : 0.0f;
         parameters.world_gravity_direction = ToMc2Float3(Normalize(chain.gravity_direction));
-        parameters.radius_curve_data = mc2::ConstantCurve(std::max(0.0001f, chain.joint_radius));
-        parameters.damping_curve_data = mc2::ConstantCurve(Clamp01(chain.damping));
-        parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
-        parameters.collider_collision_constraint.dynamic_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
-        parameters.collider_collision_constraint.static_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
+        parameters.radius_curve_data = ToCurveMatrix(chain.radius_curve, std::max(0.0001f, chain.joint_radius));
+        parameters.damping_curve_data = ScaleCurveMatrix(
+            ToCurveMatrix(chain.damping_curve, Clamp01(chain.damping), true),
+            0.2f,
+            true
+        );
+        parameters.distance_constraint.restoration_stiffness =
+            is_bone_spring
+                ? mc2::ConstantCurve(kMc2BoneSpringDistanceStiffness)
+                : ToCurveMatrix(chain.distance_stiffness_curve, Clamp01(chain.distance_stiffness), true);
+        parameters.tether_constraint.compression_limit = is_bone_spring
+            ? kMc2BoneSpringTetherCompressionLimit
+            : Clamp01(chain.tether_distance_compression);
+        parameters.spring_constraint.spring_power =
+            is_bone_spring && chain.use_spring ? Clamp(chain.spring_power, 0.001f, 1.0f) : 0.0f;
+        parameters.spring_constraint.limit_distance = std::max(0.0f, chain.limit_distance);
+        parameters.spring_constraint.normal_limit_ratio = Clamp01(chain.normal_limit_ratio);
+        parameters.spring_constraint.spring_noise = Clamp01(chain.spring_noise);
+        parameters.angle_constraint.use_angle_restoration = chain.angle_restoration_enabled ? 1 : 0;
+        parameters.angle_constraint.restoration_stiffness =
+            ToCurveMatrix(chain.angle_restoration_stiffness_curve, Clamp01(chain.angle_restoration_stiffness), true);
+        parameters.angle_constraint.restoration_velocity_attenuation =
+            Clamp01(chain.angle_restoration_velocity_attenuation);
+        if (!chain.collider_collision_enabled || chain.collider_ids.empty()) {
+            parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::None;
+        } else if (is_bone_spring) {
+            parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
+        } else if (chain.collider_collision_mode == "Edge") {
+            parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Edge;
+        } else {
+            parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
+        }
+        const float collider_friction = is_bone_spring
+            ? kMc2BoneSpringCollisionFriction
+            : Clamp(chain.collider_friction, 0.0f, 1.0f);
+        parameters.collider_collision_constraint.dynamic_friction = collider_friction;
+        parameters.collider_collision_constraint.static_friction = collider_friction;
         parameters.collider_collision_constraint.limit_distance =
-            mc2::ConstantCurve(std::max(0.0001f, chain.collider_limit_distance));
+            ToCurveMatrix(chain.collider_limit_distance_curve, std::max(0.0001f, chain.collider_limit_distance));
 
-        const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, IsBoneSpring(chain));
+        const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, is_bone_spring);
         auto proxy_mesh = BuildRuntimeProxyMesh(chain);
         mc2::VirtualMeshContainer proxy_container(proxy_mesh);
         scene.mc2_virtual_mesh_manager.RegisterProxyMesh(
@@ -827,12 +907,13 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
         }
 
         if (!colliders.empty()) {
-            scene.mc2_collider_manager.RegisterColliderDataRange(
+            const mc2::DataChunk collider_chunk = scene.mc2_collider_manager.RegisterColliderDataRange(
                 team_id,
                 scene.mc2_team_manager,
                 scene.mc2_transform_manager,
                 colliders
             );
+            (void)collider_chunk;
         }
 
         scene.mc2_chain_team_ids.push_back(team_id);
@@ -1289,10 +1370,21 @@ void StepChain(
             JointState& state = cache.joint_states[static_cast<std::size_t>(joint_index)];
             const JointState& parent_state = cache.joint_states[static_cast<std::size_t>(joint.parent_index)];
 
-            const float stiffness = Clamp01(joint.stiffness > 0.0f ? joint.stiffness : chain.stiffness);
-            const float damping = Clamp01(joint.damping > 0.0f ? joint.damping : chain.damping);
-            const float drag = Clamp01(joint.drag > 0.0f ? joint.drag : chain.drag);
             const float depth_ratio = static_cast<float>(path_index) / path_depth;
+            const float stiffness = Clamp01(joint.stiffness > 0.0f
+                ? joint.stiffness
+                : EvaluateCurve(chain.distance_stiffness_curve, chain.stiffness, depth_ratio, true));
+            const float damping = Clamp01(joint.damping > 0.0f
+                ? joint.damping
+                : EvaluateCurve(chain.damping_curve, chain.damping, depth_ratio, true)) * 0.2f;
+            const float drag = Clamp01(joint.drag > 0.0f ? joint.drag : chain.drag);
+            const float angle_restoration_stiffness =
+                EvaluateCurve(
+                    chain.angle_restoration_stiffness_curve,
+                    chain.angle_restoration_stiffness,
+                    depth_ratio,
+                    true
+                );
             const float inertia_depth = Clamp01(chain.inertia_depth_inertia) * (1.0f - depth_ratio * depth_ratio);
 
             Vec3 inertia_vector = cache.inertia_vector;
@@ -1381,7 +1473,13 @@ void StepChain(
                 }
             }
 
-            const float inherit = Clamp01(chain.tether_distance_compression) * (0.55f + stiffness * 0.25f);
+            const float tether_compression = is_bone_cloth
+                ? Clamp01(chain.tether_distance_compression)
+                : kMc2BoneSpringTetherCompressionLimit;
+            const float distance_stiffness = is_bone_cloth
+                ? stiffness
+                : kMc2BoneSpringDistanceStiffness;
+            const float inherit = tether_compression * (0.55f + stiffness * 0.25f);
             const float center_offset_scale = 0.16f * (1.0f - depth_ratio * 0.35f);
             const float inertia_scale = 0.014f * (1.0f - depth_ratio * 0.45f);
 
@@ -1394,18 +1492,36 @@ void StepChain(
                 + center_offset.x * center_offset_scale
                 + center_velocity.x * inertia_scale;
 
-            const float spring_gain =
-                (0.45f + stiffness * 0.55f)
-                * std::max(0.0f, chain.distance_stiffness)
-                * (0.85f + scene.time_state.simulation_power[1] * 0.35f);
+            const float bone_spring_power_scale = is_bone_cloth
+                ? 1.0f
+                : (chain.use_spring ? Clamp01(chain.spring_power) : 0.0f);
+            const float spring_gain = is_bone_cloth
+                ? (
+                    chain.angle_restoration_enabled
+                        ? angle_restoration_stiffness
+                            * (0.10f + Clamp01(chain.angle_restoration_velocity_attenuation) * 0.08f)
+                            * (0.85f + scene.time_state.simulation_power[1] * 0.35f)
+                        : 0.0f
+                )
+                : (
+                    (0.45f + stiffness * 0.55f)
+                    * distance_stiffness
+                    * bone_spring_power_scale
+                    * (0.85f + scene.time_state.simulation_power[1] * 0.35f)
+                );
             const float damping_gain = chain.angle_restoration_enabled
-                ? (0.25f + Clamp01(chain.angle_restoration_stiffness) * 0.65f)
+                ? (
+                    is_bone_cloth
+                        ? angle_restoration_stiffness
+                        : (0.25f + angle_restoration_stiffness * 0.65f)
+                )
                 : 0.0f;
             const float drag_factor = std::max(
                 0.0f,
                 1.0f
                 - (
                     (drag * 0.5f)
+                    + (damping * scene.time_state.simulation_power[2])
                     + (Clamp01(chain.angle_restoration_velocity_attenuation) * 0.25f)
                 ) * scene.time_state.simulation_delta_time * 18.0f
             );
@@ -1443,7 +1559,10 @@ void StepChain(
 
         const JointState& parent = cache.joint_states[static_cast<std::size_t>(line.start_index)];
         JointState& child = cache.joint_states[static_cast<std::size_t>(line.end_index)];
-        const float relax = 0.08f + kMc2BoneSpringDistanceStiffness * 0.2f;
+        const float relax = is_bone_cloth
+            ? 0.0f
+            : (0.08f + kMc2BoneSpringDistanceStiffness * 0.2f)
+                * (chain.use_spring ? Clamp01(chain.spring_power) : 0.0f);
         child.pitch = Clamp(child.pitch * (1.0f - relax) + parent.pitch * relax, -1.2f, 1.2f);
         child.roll = Clamp(child.roll * (1.0f - relax) + parent.roll * relax, -1.2f, 1.2f);
     }

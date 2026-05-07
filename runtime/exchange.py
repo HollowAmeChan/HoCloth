@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
 
 
@@ -13,11 +12,9 @@ QUATERNION_ORDER = "wxyz"
 
 PayloadType = Literal[
     "authoring_snapshot",
-    "compiled_scene",
     "build_output",
     "frame_inputs",
     "step_output",
-    "runtime_debug",
 ]
 
 
@@ -29,38 +26,6 @@ class ExchangeEnvelope(TypedDict):
     length_unit: str
     quaternion_order: str
     payload: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class ExchangeInfo:
-    schema: str = SCHEMA_NAME
-    schema_version: int = SCHEMA_VERSION
-    coordinate_space: str = COORDINATE_SPACE
-    length_unit: str = LENGTH_UNIT
-    quaternion_order: str = QUATERNION_ORDER
-
-    def label(self) -> str:
-        return f"{self.schema} v{self.schema_version}"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema": self.schema,
-            "schema_version": self.schema_version,
-            "coordinate_space": self.coordinate_space,
-            "length_unit": self.length_unit,
-            "quaternion_order": self.quaternion_order,
-        }
-
-
-INFO = ExchangeInfo()
-
-
-def schema_label() -> str:
-    return INFO.label()
-
-
-def schema_metadata() -> dict[str, Any]:
-    return INFO.to_dict()
 
 
 def is_exchange_envelope(value: Any) -> bool:
@@ -97,17 +62,6 @@ def unwrap_payload(value: dict[str, Any] | None, expected_type: PayloadType | No
             f"Expected exchange payload '{expected_type}', got '{value.get('payload_type')}'."
         )
     return value.get("payload") or {}
-
-
-def wrap_compiled_scene(compiled_scene_or_dict: Any) -> ExchangeEnvelope:
-    if hasattr(compiled_scene_or_dict, "to_dict"):
-        scene_data = compiled_scene_or_dict.to_dict()
-    else:
-        scene_data = dict(compiled_scene_or_dict or {})
-    return make_envelope(
-        "compiled_scene",
-        {"scene": deepcopy(scene_data)},
-    )
 
 
 def wrap_authoring_snapshot(snapshot_or_dict: Any) -> ExchangeEnvelope:
@@ -176,28 +130,5 @@ def wrap_step_output(
             "runtime_state": dict(runtime_state),
             "transforms": list(transforms),
             "mesh_outputs": list(mesh_outputs or []),
-        },
-    )
-
-
-def wrap_runtime_debug(
-    runtime_state: dict[str, Any],
-    compiled_scene: Any,
-    runtime_inputs: dict[str, Any] | None,
-    transforms: list[dict[str, Any]],
-    mesh_outputs: list[dict[str, Any]] | None = None,
-    build_output: dict[str, Any] | None = None,
-    authoring_snapshot: dict[str, Any] | None = None,
-) -> ExchangeEnvelope:
-    compiled_envelope = wrap_compiled_scene(compiled_scene) if compiled_scene is not None else None
-    return make_envelope(
-        "runtime_debug",
-        {
-            "runtime_state": dict(runtime_state),
-            "authoring_snapshot": wrap_authoring_snapshot(authoring_snapshot) if authoring_snapshot is not None else None,
-            "compiled_scene": compiled_envelope,
-            "build_output": wrap_build_output(build_output),
-            "runtime_inputs": wrap_frame_inputs(runtime_inputs),
-            "step_output": wrap_step_output(runtime_state, transforms, mesh_outputs),
         },
     )

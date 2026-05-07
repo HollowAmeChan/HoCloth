@@ -367,7 +367,7 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 - Native/backend 构建：解析 joints/lines/baselines/colliders，并逐步接管 ParticleBuffer、VirtualMesh、mapping、debug primitive。
 - Blender 侧绘制/调试：优先读取 `build_output`，不再从 authoring 层反推 MC2 拓扑。
 
-`runtime_debug_latest.json` 已包含 `build_output` envelope，当前字段为 `particles / lines / baselines / colliders`。后续补全 VirtualMesh 与 ParticleBuffer 时继续扩展这个输出，而不是恢复 Blender 侧的自动拓扑加工。
+native `build_scene()` 已返回 `build_output` envelope，当前字段为 `particles / lines / baselines / colliders`。后续补全 VirtualMesh 与 ParticleBuffer 时继续扩展这个输出，而不是恢复 Blender 侧的自动拓扑加工或 Python debug dump。
 
 组件对齐原则：
 

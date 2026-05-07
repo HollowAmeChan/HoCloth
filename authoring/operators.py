@@ -1,14 +1,9 @@
-﻿import json
-import os
-
 import bpy
 
 from ..components import mc2
 from ..runtime.authoring_snapshot import (
     build_authoring_snapshot,
-    runtime_scene_view_from_authoring_snapshot,
 )
-from ..runtime.exchange import wrap_compiled_scene
 from ..runtime.inputs import build_runtime_inputs
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.pose_apply import (
@@ -21,7 +16,7 @@ from ..runtime.pose_apply import (
 from ..runtime.session import (
     build_runtime,
     destroy_runtime,
-    get_backend_scene_view,
+    get_last_authoring_snapshot,
     get_last_mesh_outputs,
     get_last_transforms,
     get_pose_baseline,
@@ -33,37 +28,8 @@ from ..runtime.session import (
 from .extract import extract_active_bone_chain
 
 
-def _join_component_id_list(component_ids: list[str]) -> str:
-    return mc2.join_component_id_list(component_ids)
-
-
 def _find_cloth(scene, component_id: str):
     return mc2.find_magica_cloth(scene, component_id)
-
-
-def _append_collider_to_cloth(cloth, collider_id: str) -> bool:
-    collider_ids = mc2.parse_component_id_list(getattr(cloth, "collider_ids", ""))
-    if collider_id in collider_ids:
-        return False
-    collider_ids.append(collider_id)
-    cloth.collider_ids = _join_component_id_list(collider_ids)
-    return True
-
-
-def _auto_link_existing_colliders(scene, cloth) -> int:
-    linked_count = 0
-    for collider in scene.hocloth_mc2_colliders:
-        if collider.collider_object is not None and _append_collider_to_cloth(cloth, collider.component_id):
-            linked_count += 1
-    return linked_count
-
-
-def _link_collider_to_all_cloths(scene, collider_id: str) -> int:
-    linked_count = 0
-    for cloth in scene.hocloth_mc2_magica_cloths:
-        if _append_collider_to_cloth(cloth, collider_id):
-            linked_count += 1
-    return linked_count
 
 
 def _clear_runtime_mesh_writeback_stats(scene):
@@ -97,9 +63,8 @@ def _mesh_writeback_status_suffix(scene) -> str:
     return suffix
 
 
-def _current_backend_scene_view(scene):
-    authoring_snapshot = build_authoring_snapshot(scene)
-    return authoring_snapshot, runtime_scene_view_from_authoring_snapshot(authoring_snapshot)
+def _current_authoring_snapshot(scene):
+    return build_authoring_snapshot(scene)
 
 
 def _build_runtime_from_scene(context, report=None) -> bool:
@@ -109,23 +74,25 @@ def _build_runtime_from_scene(context, report=None) -> bool:
     if screen is not None and getattr(screen, "is_animation_playing", False):
         bpy.ops.screen.animation_cancel(restore_frame=False)
 
-    authoring_snapshot, compiled = _current_backend_scene_view(scene)
-    scene.hocloth_backend_summary = compiled.summary()
-    if not compiled.spring_bones:
+    authoring_snapshot = _current_authoring_snapshot(scene)
+    payload = authoring_snapshot.get("payload", {})
+    bone_chains = payload.get("bone_chains", [])
+    bone_count = sum(len(chain.get("bones", [])) for chain in bone_chains)
+    if not bone_chains:
         if report is not None:
             report({"ERROR"}, "No enabled MagicaCloth BoneCloth/BoneSpring components found.")
         scene.hocloth_runtime_status = "Build failed: no MagicaCloth components"
         return False
-    if compiled.total_bone_count() == 0:
+    if bone_count == 0:
         if report is not None:
             report({"ERROR"}, "MagicaCloth components resolved 0 bones.")
         scene.hocloth_runtime_status = "Build failed: resolved 0 bones"
         return False
 
-    runtime_state = build_runtime(authoring_snapshot, True, backend_scene_view=compiled)
-    initial_inputs = build_runtime_inputs(scene, compiled)
+    runtime_state = build_runtime(authoring_snapshot, True)
+    initial_inputs = build_runtime_inputs(scene, authoring_snapshot)
     set_runtime_inputs_only(initial_inputs)
-    set_pose_baseline(capture_pose_baseline(scene, compiled))
+    set_pose_baseline(capture_pose_baseline(scene, authoring_snapshot))
     scene.hocloth_runtime_handle = runtime_state["handle"]
     scene.hocloth_runtime_backend = runtime_state.get("backend", "unknown")
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
@@ -165,12 +132,8 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
         )
         cloth.armature_object = context.object
         cloth.root_bone_name = extracted.root_bone_name
-        linked = _auto_link_existing_colliders(context.scene, cloth)
         mc2.sync_joint_override_names(cloth, extracted.bone_names)
-        context.scene.hocloth_runtime_status = (
-            f"Added BoneSpring with {len(extracted.bone_names)} bones"
-            + (f"; linked {linked} colliders" if linked else "")
-        )
+        context.scene.hocloth_runtime_status = f"Added BoneSpring with {len(extracted.bone_names)} bones"
         return {"FINISHED"}
 
 
@@ -194,12 +157,8 @@ class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
         cloth.armature_object = context.object
         cloth.root_bone_name = extracted.root_bone_name
         cloth.spring_constraint.use_spring = False
-        linked = _auto_link_existing_colliders(context.scene, cloth)
         mc2.sync_joint_override_names(cloth, extracted.bone_names)
-        context.scene.hocloth_runtime_status = (
-            f"Added BoneCloth with {len(extracted.bone_names)} bones"
-            + (f"; linked {linked} colliders" if linked else "")
-        )
+        context.scene.hocloth_runtime_status = f"Added BoneCloth with {len(extracted.bone_names)} bones"
         return {"FINISHED"}
 
 
@@ -221,11 +180,7 @@ class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
             f"Magica{collider_type.title()}Collider: {active_object.name}",
         )
         collider.collider_object = active_object
-        linked = _link_collider_to_all_cloths(context.scene, collider.component_id)
-        context.scene.hocloth_runtime_status = (
-            f"Added {collider.collider_type} collider from {active_object.name}"
-            + (f"; linked {linked} cloth components" if linked else "")
-        )
+        context.scene.hocloth_runtime_status = f"Added {collider.collider_type} collider from {active_object.name}"
         return {"FINISHED"}
 
 
@@ -245,53 +200,6 @@ class HOCLOTH_OT_add_cache_output(bpy.types.Operator):
             if main_item is not None:
                 main_item.display_name = f"Blender Cache Output: {context.object.name}"
         context.scene.hocloth_runtime_status = "Added cache output"
-        return {"FINISHED"}
-
-
-class HOCLOTH_OT_assign_selected_colliders_to_spring_bone(bpy.types.Operator):
-    bl_idname = "hocloth.assign_selected_colliders_to_spring_bone"
-    bl_label = "Use Selected Colliders"
-    bl_description = "Use selected MC2 collider components on this MagicaCloth component"
-
-    component_id: bpy.props.StringProperty(name="Component ID")
-
-    def execute(self, context):
-        cloth = _find_cloth(context.scene, self.component_id)
-        if cloth is None:
-            self.report({"ERROR"}, "MagicaCloth component was not found.")
-            return {"CANCELLED"}
-
-        selected_object_names = {obj.name for obj in context.selected_objects}
-        collider_ids = [
-            collider.component_id
-            for collider in context.scene.hocloth_mc2_colliders
-            if collider.collider_object is not None and collider.collider_object.name in selected_object_names
-        ]
-        cloth.collider_ids = _join_component_id_list(collider_ids)
-        context.scene.hocloth_runtime_status = f"Assigned {len(collider_ids)} colliders"
-        return {"FINISHED"}
-
-
-class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
-    bl_idname = "hocloth.assign_all_groups_to_spring_bone"
-    bl_label = "Use All Colliders"
-    bl_description = "Assign all current MC2 colliders to this MagicaCloth component"
-
-    component_id: bpy.props.StringProperty(name="Component ID")
-
-    def execute(self, context):
-        cloth = _find_cloth(context.scene, self.component_id)
-        if cloth is None:
-            self.report({"ERROR"}, "MagicaCloth component was not found.")
-            return {"CANCELLED"}
-
-        collider_ids = [
-            collider.component_id
-            for collider in context.scene.hocloth_mc2_colliders
-            if collider.collider_object is not None
-        ]
-        cloth.collider_ids = _join_component_id_list(collider_ids)
-        context.scene.hocloth_runtime_status = f"Assigned {len(collider_ids)} colliders"
         return {"FINISHED"}
 
 
@@ -347,7 +255,7 @@ class HOCLOTH_OT_sync_spring_bone_joints(bpy.types.Operator):
             self.report({"ERROR"}, "Assign an armature before syncing joints.")
             return {"CANCELLED"}
 
-        from ..runtime.bone_sampling import resolve_bone_chain_names
+        from ..runtime.blender_bone_refs import resolve_bone_chain_names
 
         bone_names = resolve_bone_chain_names(context.scene, cloth.armature_object, cloth.root_bone_name)
         synced = mc2.sync_joint_override_names(cloth, bone_names)
@@ -383,6 +291,50 @@ class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_add_collider_reference(bpy.types.Operator):
+    bl_idname = "hocloth.add_collider_reference"
+    bl_label = "Add Collider Reference"
+    bl_description = "Add a MagicaCollider object reference to this MagicaCloth component"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        cloth = _find_cloth(context.scene, self.component_id)
+        if cloth is None:
+            self.report({"ERROR"}, "MagicaCloth component was not found.")
+            return {"CANCELLED"}
+        reference = cloth.collider_references.add()
+        cloth.collider_reference_index = max(len(cloth.collider_references) - 1, 0)
+        active_object = context.object
+        if mc2.find_collider_by_object(context.scene, active_object) is not None:
+            reference.collider_object = active_object
+        context.scene.hocloth_runtime_status = "Added collider reference"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_remove_collider_reference(bpy.types.Operator):
+    bl_idname = "hocloth.remove_collider_reference"
+    bl_label = "Remove Collider Reference"
+    bl_description = "Remove a MagicaCollider object reference from this MagicaCloth component"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+    index: bpy.props.IntProperty(name="Index", default=-1)
+
+    def execute(self, context):
+        cloth = _find_cloth(context.scene, self.component_id)
+        if cloth is None:
+            self.report({"ERROR"}, "MagicaCloth component was not found.")
+            return {"CANCELLED"}
+        index = self.index if self.index >= 0 else cloth.collider_reference_index
+        if index < 0 or index >= len(cloth.collider_references):
+            self.report({"ERROR"}, "Collider reference was not found.")
+            return {"CANCELLED"}
+        cloth.collider_references.remove(index)
+        cloth.collider_reference_index = min(cloth.collider_reference_index, max(len(cloth.collider_references) - 1, 0))
+        context.scene.hocloth_runtime_status = "Removed collider reference"
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     bl_idname = "hocloth.rebuild_scene"
     bl_label = "Build Runtime"
@@ -391,55 +343,6 @@ class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     def execute(self, context):
         if not _build_runtime_from_scene(context, self.report):
             return {"CANCELLED"}
-        return {"FINISHED"}
-
-
-class HOCLOTH_OT_export_mc2_snapshot(bpy.types.Operator):
-    bl_idname = "hocloth.export_mc2_snapshot"
-    bl_label = "Export MC2 Snapshot"
-    bl_description = "Export the current MC2 authoring snapshot and backend runtime view"
-
-    def execute(self, context):
-        authoring_snapshot, compiled = _current_backend_scene_view(context.scene)
-        context.scene.hocloth_backend_summary = compiled.summary()
-
-        plugin_root = os.path.dirname(os.path.dirname(__file__))
-        export_dir = os.path.join(plugin_root, "_build")
-        os.makedirs(export_dir, exist_ok=True)
-        snapshot_path = os.path.join(export_dir, "authoring_snapshot_preview.json")
-        backend_path = os.path.join(export_dir, "backend_scene_preview.json")
-
-        with open(snapshot_path, "w", encoding="utf-8") as handle:
-            json.dump(authoring_snapshot, handle, indent=2, ensure_ascii=False)
-        with open(backend_path, "w", encoding="utf-8") as handle:
-            json.dump(wrap_compiled_scene(compiled), handle, indent=2, ensure_ascii=False)
-
-        context.scene.hocloth_runtime_status = f"Authoring snapshot exported: {snapshot_path}"
-        self.report({"INFO"}, f"Authoring snapshot exported to {snapshot_path}")
-        return {"FINISHED"}
-
-
-class HOCLOTH_OT_export_frame_inputs(bpy.types.Operator):
-    bl_idname = "hocloth.export_frame_inputs"
-    bl_label = "Export Frame Inputs"
-    bl_description = "Export current frame inputs sent to the runtime"
-
-    def execute(self, context):
-        compiled_scene = get_backend_scene_view()
-        if compiled_scene is None:
-            _authoring_snapshot, compiled_scene = _current_backend_scene_view(context.scene)
-            context.scene.hocloth_backend_summary = compiled_scene.summary()
-
-        frame_inputs = build_runtime_inputs(context.scene, compiled_scene)
-        plugin_root = os.path.dirname(os.path.dirname(__file__))
-        export_dir = os.path.join(plugin_root, "_build")
-        os.makedirs(export_dir, exist_ok=True)
-        export_path = os.path.join(export_dir, "frame_inputs_preview.json")
-        with open(export_path, "w", encoding="utf-8") as handle:
-            json.dump(frame_inputs, handle, indent=2, ensure_ascii=False)
-
-        context.scene.hocloth_runtime_status = f"Frame inputs exported: {export_path}"
-        self.report({"INFO"}, f"Frame inputs exported to {export_path}")
         return {"FINISHED"}
 
 
@@ -454,12 +357,12 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
         if screen is not None and getattr(screen, "is_animation_playing", False):
             bpy.ops.screen.animation_cancel(restore_frame=False)
 
-        compiled_scene = get_backend_scene_view()
-        if context.scene.hocloth_runtime_handle and compiled_scene is not None:
-            set_runtime_inputs_only(build_runtime_inputs(context.scene, compiled_scene))
+        authoring_snapshot = get_last_authoring_snapshot()
+        if context.scene.hocloth_runtime_handle and authoring_snapshot is not None:
+            set_runtime_inputs_only(build_runtime_inputs(context.scene, authoring_snapshot))
         runtime_state = reset_runtime()
         if runtime_state["handle"]:
-            set_pose_baseline(capture_pose_baseline(context.scene, compiled_scene))
+            set_pose_baseline(capture_pose_baseline(context.scene, authoring_snapshot))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
         context.scene.hocloth_runtime_applied_count = 0
@@ -484,12 +387,12 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
         if screen is not None and getattr(screen, "is_animation_playing", False):
             bpy.ops.screen.animation_cancel(restore_frame=False)
 
-        compiled_scene = get_backend_scene_view()
+        authoring_snapshot = get_last_authoring_snapshot()
         pose_state = get_pose_baseline()
         if pose_state:
-            restore_pose_state(scene, compiled_scene, pose_state)
+            restore_pose_state(scene, authoring_snapshot, pose_state)
         else:
-            clear_pose_transforms(scene, compiled_scene)
+            clear_pose_transforms(scene, authoring_snapshot)
 
         target_frame = scene.frame_start
         scene.frame_set(target_frame)
@@ -506,12 +409,12 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
     bl_description = "Execute one fixed simulation step through the runtime API"
 
     def execute(self, context):
-        compiled_scene = get_backend_scene_view()
+        authoring_snapshot = get_last_authoring_snapshot()
         try:
             result = step_runtime(
                 context.scene.hocloth_runtime_dt,
                 context.scene.hocloth_simulation_frequency,
-                build_runtime_inputs(context.scene, compiled_scene),
+                build_runtime_inputs(context.scene, authoring_snapshot),
             )
         except RuntimeError as exc:
             self.report({"ERROR"}, str(exc))
@@ -533,7 +436,6 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         if context.scene.hocloth_apply_pose_on_step:
             apply_result = apply_runtime_transforms_to_scene(
                 context.scene,
-                compiled_scene,
                 result["transforms"],
                 get_pose_baseline(),
             )
@@ -590,15 +492,13 @@ class HOCLOTH_OT_apply_runtime_pose(bpy.types.Operator):
     bl_description = "Apply the most recently fetched runtime transforms back onto Blender pose bones"
 
     def execute(self, context):
-        compiled_scene = get_backend_scene_view()
         transforms = get_last_transforms()
-        if compiled_scene is None or not transforms:
+        if not transforms:
             self.report({"INFO"}, "No runtime transforms are available yet.")
             return {"CANCELLED"}
 
         apply_result = apply_runtime_transforms_to_scene(
             context.scene,
-            compiled_scene,
             transforms,
             get_pose_baseline(),
         )
@@ -663,15 +563,13 @@ CLASSES = (
     HOCLOTH_OT_add_active_spring_bone,
     HOCLOTH_OT_add_active_collider,
     HOCLOTH_OT_add_cache_output,
-    HOCLOTH_OT_assign_selected_colliders_to_spring_bone,
-    HOCLOTH_OT_assign_all_groups_to_spring_bone,
     HOCLOTH_OT_remove_component,
     HOCLOTH_OT_apply_spring_bone_preset,
     HOCLOTH_OT_sync_spring_bone_joints,
     HOCLOTH_OT_reset_spring_joint_override,
+    HOCLOTH_OT_add_collider_reference,
+    HOCLOTH_OT_remove_collider_reference,
     HOCLOTH_OT_rebuild_scene,
-    HOCLOTH_OT_export_mc2_snapshot,
-    HOCLOTH_OT_export_frame_inputs,
     HOCLOTH_OT_reset_runtime,
     HOCLOTH_OT_restart_runtime_from_baseline,
     HOCLOTH_OT_step_runtime,

@@ -282,6 +282,10 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         chain.spring_noise = ReadFloat(chain_dict, "spring_noise", 0.0f);
         chain.collider_friction = ReadFloat(chain_dict, "collider_friction", 0.5f);
         chain.collider_limit_distance = ReadFloat(chain_dict, "collider_limit_distance", 0.05f);
+        if (chain_dict.contains("collider_collision_enabled")) {
+            chain.collider_collision_enabled = nb::cast<bool>(chain_dict["collider_collision_enabled"]);
+        }
+        chain.collider_collision_mode = ReadString(chain_dict, "collider_collision_mode", "Point");
         chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);
@@ -290,6 +294,9 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
             chain.armature_scale = ReadVec3(chain_dict["armature_scale"]);
         }
         chain.collider_ids = ReadStringArray(chain_dict, "collider_ids");
+        if (!chain.collider_collision_enabled) {
+            chain.collider_ids.clear();
+        }
         chain.collider_group_ids = ReadStringArray(chain_dict, "collider_group_ids");
         chain.collision_binding_ids = ReadStringArray(chain_dict, "collision_binding_ids");
         chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");

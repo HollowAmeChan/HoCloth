@@ -2,17 +2,7 @@ from __future__ import annotations
 
 from mathutils import Matrix, Quaternion, Vector
 
-from .bone_sampling import resolve_bone_chain_names
-from .compiled_scene import (
-    CompiledCollisionBinding,
-    CompiledCollisionObject,
-    CompiledMeshWritebackTarget,
-    CompiledScene,
-    CompiledSpringBaseline,
-    CompiledSpringBone,
-    CompiledSpringJoint,
-    CompiledSpringLine,
-)
+from .blender_bone_refs import resolve_bone_chain_names
 from ..components import mc2
 from .exchange import wrap_authoring_snapshot
 
@@ -23,6 +13,17 @@ def _vec3(value) -> tuple[float, float, float]:
 
 def _quat(value) -> tuple[float, float, float, float]:
     return (float(value.w), float(value.x), float(value.y), float(value.z))
+
+
+def _curve_parameter(value) -> dict:
+    samples = list(getattr(value, "curve_samples", []))
+    if len(samples) != 16:
+        samples = [1.0] * 16
+    return {
+        "value": float(value.value),
+        "useCurve": bool(value.use_curve),
+        "samples": [float(sample) for sample in samples],
+    }
 
 
 def _joint_override_map(typed_item) -> dict[str, object]:
@@ -140,7 +141,8 @@ def _bone_chain_snapshot(scene, item, typed_item):
         center_object_name = typed_item.center_armature_object.name
         center_bone_name = typed_item.center_bone_name
 
-    collider_ids = mc2.parse_component_id_list(getattr(typed_item, "collider_ids", ""))
+    collider_collision_enabled = bool(typed_item.collider_collision_constraint.enabled)
+    collider_ids = mc2.resolve_cloth_collider_ids(scene, typed_item) if collider_collision_enabled else []
     runtime_stiffness = float(typed_item.distance_constraint.stiffness.value)
     runtime_damping = float(typed_item.damping_curve.value)
     runtime_drag = max(0.0, min(1.0, 1.0 - float(typed_item.angle_restoration_constraint.velocity_attenuation)))
@@ -149,8 +151,12 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "rootBones": [typed_item.root_bone_name] if typed_item.root_bone_name else [],
         "gravity": float(typed_item.gravity_strength),
         "gravityDirection": _vec3(typed_item.gravity_direction),
-        "damping": {"value": float(typed_item.damping_curve.value)},
-        "radius": {"value": float(typed_item.joint_radius)},
+        "damping": _curve_parameter(typed_item.damping_curve),
+        "radius": {
+            "value": float(typed_item.joint_radius),
+            "useCurve": False,
+            "samples": [1.0] * 16,
+        },
         "inertiaConstraint": {
             "worldInertia": float(typed_item.inertia_constraint.world_inertia),
             "movementInertiaSmoothing": float(typed_item.inertia_constraint.movement_inertia_smoothing),
@@ -182,11 +188,11 @@ def _bone_chain_snapshot(scene, item, typed_item):
             "distanceCompression": float(typed_item.tether_constraint.distance_compression),
         },
         "distanceConstraint": {
-            "stiffness": {"value": float(typed_item.distance_constraint.stiffness.value)},
+            "stiffness": _curve_parameter(typed_item.distance_constraint.stiffness),
         },
         "angleRestorationConstraint": {
             "useAngleRestoration": bool(typed_item.angle_restoration_constraint.use_angle_restoration),
-            "stiffness": {"value": float(typed_item.angle_restoration_constraint.stiffness.value)},
+            "stiffness": _curve_parameter(typed_item.angle_restoration_constraint.stiffness),
             "velocityAttenuation": float(typed_item.angle_restoration_constraint.velocity_attenuation),
         },
         "springConstraint": {
@@ -197,13 +203,13 @@ def _bone_chain_snapshot(scene, item, typed_item):
             "springNoise": float(typed_item.spring_constraint.spring_noise),
         },
         "colliderCollisionConstraint": {
-            "mode": "Point",
+            "mode": typed_item.collider_collision_constraint.mode
+            if typed_item.collider_collision_constraint.enabled
+            else "None",
             "friction": float(typed_item.collider_collision_constraint.friction),
             "colliderList": list(collider_ids),
             "collisionBones": [],
-            "limitDistance": {
-                "value": float(typed_item.collider_collision_constraint.limit_distance.value),
-            },
+            "limitDistance": _curve_parameter(typed_item.collider_collision_constraint.limit_distance),
         },
     }
 
@@ -254,6 +260,10 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "spring_noise": float(typed_item.spring_constraint.spring_noise),
         "collider_friction": float(typed_item.collider_collision_constraint.friction),
         "collider_limit_distance": float(typed_item.collider_collision_constraint.limit_distance.value),
+        "collider_collision_enabled": collider_collision_enabled,
+        "collider_collision_mode": typed_item.collider_collision_constraint.mode
+        if collider_collision_enabled
+        else "None",
         "gravity_strength": float(typed_item.gravity_strength),
         "gravity_direction": _vec3(typed_item.gravity_direction),
         "armature_scale": armature_scale,
@@ -387,182 +397,3 @@ def build_authoring_snapshot(scene):
                     payload["mesh_writeback_targets"].append(cache_payload["mesh_writeback_target"])
 
     return wrap_authoring_snapshot(payload)
-
-
-def _payload_from_snapshot(authoring_snapshot: dict) -> dict:
-    if authoring_snapshot.get("payload_type") == "authoring_snapshot":
-        return authoring_snapshot.get("payload") or {}
-    return authoring_snapshot
-
-
-def _build_lines(joints: list[CompiledSpringJoint]) -> list[CompiledSpringLine]:
-    return [
-        CompiledSpringLine(start_index=joint.parent_index, end_index=index)
-        for index, joint in enumerate(joints)
-        if joint.parent_index >= 0
-    ]
-
-
-def _build_baselines(joints: list[CompiledSpringJoint]) -> list[CompiledSpringBaseline]:
-    children = {index: [] for index in range(len(joints))}
-    for index, joint in enumerate(joints):
-        if joint.parent_index >= 0:
-            children.setdefault(joint.parent_index, []).append(index)
-
-    baselines = []
-    for index in range(len(joints)):
-        if children.get(index):
-            continue
-        path = []
-        current = index
-        while 0 <= current < len(joints):
-            path.append(current)
-            current = joints[current].parent_index
-        baselines.append(CompiledSpringBaseline(joint_indices=list(reversed(path))))
-    return baselines
-
-
-def runtime_scene_view_from_authoring_snapshot(authoring_snapshot: dict) -> CompiledScene:
-    """Build the thin Python runtime view used for frame input and stub fallback.
-
-    Native MC2 build authority lives in the C++ Blender transfer unit; this view
-    must stay a compatibility/runtime helper, not a Python prebuild layer.
-    """
-    payload = _payload_from_snapshot(authoring_snapshot)
-    compiled = CompiledScene()
-    collision_object_id_by_collider_id: dict[str, str] = {}
-
-    for chain_data in payload.get("bone_chains", []):
-        authored_bones = chain_data.get("bones")
-        if authored_bones is None:
-            authored_bones = chain_data.get("joints", [])
-        joints = [
-            CompiledSpringJoint(
-                name=bone.get("name", ""),
-                parent_index=int(bone.get("parent_index", -1)),
-                depth=int(bone.get("depth", 0)),
-                length=float(bone.get("length", 0.0)),
-                radius=float(bone.get("radius", chain_data.get("joint_radius", 0.02))),
-                stiffness=float(bone.get("stiffness", chain_data.get("stiffness", 0.0))),
-                damping=float(bone.get("damping", chain_data.get("damping", 0.0))),
-                drag=float(bone.get("drag", chain_data.get("drag", 0.0))),
-                gravity_scale=float(bone.get("gravity_scale", 1.0)),
-                rest_head_local=tuple(bone.get("rest_head_local", (0.0, 0.0, 0.0))),
-                rest_tail_local=tuple(bone.get("rest_tail_local", (0.0, 0.0, 0.0))),
-                rest_local_translation=tuple(bone.get("rest_local_translation", (0.0, 0.0, 0.0))),
-                rest_local_rotation=tuple(bone.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0))),
-            )
-            for bone in authored_bones
-        ]
-        lines = _build_lines(joints)
-        baselines = _build_baselines(joints)
-        compiled.spring_bones.append(
-            CompiledSpringBone(
-                component_id=chain_data.get("component_id", ""),
-                component_type=chain_data.get("component_type", "BONE_CLOTH"),
-                cloth_type=chain_data.get("cloth_type", "BoneCloth"),
-                armature_name=chain_data.get("armature_name", ""),
-                root_bone_name=chain_data.get("root_bone_name", ""),
-                center_object_name=chain_data.get("center_object_name", ""),
-                center_bone_name=chain_data.get("center_bone_name", ""),
-                joint_radius=float(chain_data.get("joint_radius", 0.02)),
-                stiffness=float(chain_data.get("stiffness", 0.0)),
-                damping=float(chain_data.get("damping", 0.0)),
-                drag=float(chain_data.get("drag", 0.0)),
-                damping_curve_value=float(chain_data.get("damping_curve_value", chain_data.get("damping", 0.0))),
-                inertia_world_inertia=float(chain_data.get("inertia_world_inertia", 1.0)),
-                inertia_movement_inertia_smoothing=float(chain_data.get("inertia_movement_inertia_smoothing", 0.4)),
-                inertia_movement_speed_limit_enabled=bool(chain_data.get("inertia_movement_speed_limit_enabled", False)),
-                inertia_movement_speed_limit=float(chain_data.get("inertia_movement_speed_limit", 0.0)),
-                inertia_rotation_speed_limit_enabled=bool(chain_data.get("inertia_rotation_speed_limit_enabled", False)),
-                inertia_rotation_speed_limit=float(chain_data.get("inertia_rotation_speed_limit", 0.0)),
-                inertia_local_inertia=float(chain_data.get("inertia_local_inertia", 1.0)),
-                inertia_local_movement_speed_limit_enabled=bool(chain_data.get("inertia_local_movement_speed_limit_enabled", False)),
-                inertia_local_movement_speed_limit=float(chain_data.get("inertia_local_movement_speed_limit", 0.0)),
-                inertia_local_rotation_speed_limit_enabled=bool(chain_data.get("inertia_local_rotation_speed_limit_enabled", False)),
-                inertia_local_rotation_speed_limit=float(chain_data.get("inertia_local_rotation_speed_limit", 0.0)),
-                inertia_depth_inertia=float(chain_data.get("inertia_depth_inertia", 0.0)),
-                inertia_centrifugal_acceleration=float(chain_data.get("inertia_centrifugal_acceleration", 0.0)),
-                inertia_particle_speed_limit_enabled=bool(chain_data.get("inertia_particle_speed_limit_enabled", False)),
-                inertia_particle_speed_limit=float(chain_data.get("inertia_particle_speed_limit", 0.0)),
-                tether_distance_compression=float(chain_data.get("tether_distance_compression", 0.8)),
-                distance_stiffness=float(chain_data.get("distance_stiffness", chain_data.get("stiffness", 0.0))),
-                angle_restoration_enabled=bool(chain_data.get("angle_restoration_enabled", True)),
-                angle_restoration_stiffness=float(chain_data.get("angle_restoration_stiffness", 0.0)),
-                angle_restoration_velocity_attenuation=float(chain_data.get("angle_restoration_velocity_attenuation", 0.6)),
-                use_spring=bool(chain_data.get("use_spring", True)),
-                spring_power=float(chain_data.get("spring_power", 0.04)),
-                limit_distance=float(chain_data.get("limit_distance", 0.1)),
-                normal_limit_ratio=float(chain_data.get("normal_limit_ratio", 1.0)),
-                spring_noise=float(chain_data.get("spring_noise", 0.0)),
-                collider_friction=float(chain_data.get("collider_friction", 0.5)),
-                collider_limit_distance=float(chain_data.get("collider_limit_distance", 0.05)),
-                gravity_strength=float(chain_data.get("gravity_strength", 0.0)),
-                gravity_direction=tuple(chain_data.get("gravity_direction", (0.0, -1.0, 0.0))),
-                collider_ids=list(chain_data.get("collider_ids", [])),
-                collider_group_ids=list(chain_data.get("collider_group_ids", [])),
-                armature_scale=tuple(chain_data.get("armature_scale", (1.0, 1.0, 1.0))),
-                joints=joints,
-                lines=lines,
-                baselines=baselines,
-            )
-        )
-
-    for collider_data in payload.get("colliders", []):
-        component_id = collider_data.get("component_id", "")
-        collision_object_id = f"collision::{component_id}"
-        collision_object_id_by_collider_id[component_id] = collision_object_id
-        compiled.collision_objects.append(
-            CompiledCollisionObject(
-                collision_object_id=collision_object_id,
-                owner_component_id=component_id,
-                motion_type="KINEMATIC",
-                shape_type=collider_data.get("shape_type", "SPHERE"),
-                world_translation=tuple(collider_data.get("world_translation", (0.0, 0.0, 0.0))),
-                world_rotation=tuple(collider_data.get("world_rotation", (1.0, 0.0, 0.0, 0.0))),
-                radius=float(collider_data.get("radius", 0.0)),
-                height=float(collider_data.get("height", 0.0)),
-                capsule_direction=collider_data.get("capsule_direction", "Y"),
-                capsule_aligned_on_center=bool(collider_data.get("capsule_aligned_on_center", True)),
-                capsule_reverse_direction=bool(collider_data.get("capsule_reverse_direction", False)),
-                capsule_end_radius=float(collider_data.get("capsule_end_radius", collider_data.get("radius", 0.0))),
-                source_object_name=collider_data.get("object_name", ""),
-            )
-        )
-
-    for chain in compiled.spring_bones:
-        object_ids = [
-            collision_object_id_by_collider_id[collider_id]
-            for collider_id in chain.collider_ids
-            if collider_id in collision_object_id_by_collider_id
-        ]
-        if not object_ids:
-            continue
-        binding_id = f"chain::{chain.component_id}::colliders"
-        compiled.collision_bindings.append(
-            CompiledCollisionBinding(
-                binding_id=binding_id,
-                owner_component_id=chain.component_id,
-                collision_object_ids=object_ids,
-            )
-        )
-        chain.collision_binding_ids = [binding_id]
-
-    for target_data in payload.get("mesh_writeback_targets", []):
-        compiled.mesh_writeback_targets.append(
-            CompiledMeshWritebackTarget(
-                component_id=target_data.get("component_id", ""),
-                source_object_name=target_data.get("source_object_name", ""),
-                vertex_count=int(target_data.get("vertex_count", 0)),
-                edge_count=int(target_data.get("edge_count", 0)),
-                face_count=int(target_data.get("face_count", 0)),
-                topology_hash=target_data.get("topology_hash", ""),
-                space=target_data.get("space", "object_local"),
-            )
-        )
-
-    return compiled
-
-
-def compiled_scene_from_authoring_snapshot(authoring_snapshot: dict) -> CompiledScene:
-    return runtime_scene_view_from_authoring_snapshot(authoring_snapshot)

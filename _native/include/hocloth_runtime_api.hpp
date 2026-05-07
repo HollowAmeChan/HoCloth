@@ -48,6 +48,13 @@ struct CompiledSpringBaseline {
     std::vector<int> joint_indices;
 };
 
+struct CompiledCurve {
+    float value = 0.0f;
+    bool has_value = false;
+    bool use_curve = false;
+    std::vector<float> samples;
+};
+
 struct CompiledSpringBone {
     std::string component_id;
     std::string component_type;
@@ -57,8 +64,10 @@ struct CompiledSpringBone {
     std::string center_object_name;
     std::string center_bone_name;
     float joint_radius = 0.0f;
+    CompiledCurve radius_curve;
     float stiffness = 0.0f;
     float damping = 0.0f;
+    CompiledCurve damping_curve;
     float drag = 0.0f;
     float damping_curve_value = 0.0f;
     float inertia_world_inertia = 1.0f;
@@ -78,8 +87,10 @@ struct CompiledSpringBone {
     float inertia_particle_speed_limit = 0.0f;
     float tether_distance_compression = 0.8f;
     float distance_stiffness = 0.5f;
+    CompiledCurve distance_stiffness_curve;
     bool angle_restoration_enabled = true;
     float angle_restoration_stiffness = 0.0f;
+    CompiledCurve angle_restoration_stiffness_curve;
     float angle_restoration_velocity_attenuation = 0.6f;
     bool use_spring = true;
     float spring_power = 0.04f;
@@ -88,6 +99,9 @@ struct CompiledSpringBone {
     float spring_noise = 0.0f;
     float collider_friction = 0.5f;
     float collider_limit_distance = 0.05f;
+    CompiledCurve collider_limit_distance_curve;
+    bool collider_collision_enabled = true;
+    std::string collider_collision_mode = "Point";
     float gravity_strength = 0.0f;
     Vec3 gravity_direction{0.0f, -1.0f, 0.0f};
     std::vector<std::string> collider_ids;

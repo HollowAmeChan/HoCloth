@@ -2,7 +2,6 @@ import bpy
 
 
 SCENE_PROPERTIES = (
-    "hocloth_backend_summary",
     "hocloth_runtime_status",
     "hocloth_runtime_backend",
     "hocloth_runtime_handle",
@@ -23,7 +22,6 @@ SCENE_PROPERTIES = (
     "hocloth_apply_pose_on_step",
     "hocloth_runtime_live_running",
     "hocloth_ui_details_expanded",
-    "hocloth_ui_debug_expanded",
     "hocloth_viewport_overlay_enabled",
     "hocloth_viewport_draw_bones",
     "hocloth_viewport_draw_particle_radius",
@@ -33,11 +31,6 @@ SCENE_PROPERTIES = (
 
 
 def register():
-    bpy.types.Scene.hocloth_backend_summary = bpy.props.StringProperty(
-        name="MC2 Backend Summary",
-        default="",
-        options={"HIDDEN"},
-    )
     bpy.types.Scene.hocloth_runtime_status = bpy.props.StringProperty(
         name="Runtime Status",
         default="Not built",
@@ -133,10 +126,6 @@ def register():
     )
     bpy.types.Scene.hocloth_ui_details_expanded = bpy.props.BoolProperty(
         name="Show Details",
-        default=False,
-    )
-    bpy.types.Scene.hocloth_ui_debug_expanded = bpy.props.BoolProperty(
-        name="Show Debug",
         default=False,
     )
     bpy.types.Scene.hocloth_viewport_overlay_enabled = bpy.props.BoolProperty(

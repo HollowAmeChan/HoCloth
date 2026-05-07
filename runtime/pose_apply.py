@@ -2,39 +2,37 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 from .blender_refs import resolve_armature_object
+from .exchange import unwrap_payload
 
 
-def _component_armature_lookup(compiled_scene) -> dict[str, str]:
-    if compiled_scene is None:
-        return {}
-    return {
-        chain.component_id: chain.armature_name
-        for chain in compiled_scene.bone_chains
-    }
+def _snapshot_payload(authoring_snapshot: dict | None) -> dict:
+    return unwrap_payload(authoring_snapshot, "authoring_snapshot") if authoring_snapshot else {}
 
 
-def capture_pose_baseline(scene: bpy.types.Scene, compiled_scene) -> dict:
-    component_lookup = _component_armature_lookup(compiled_scene)
+def capture_pose_baseline(scene: bpy.types.Scene, authoring_snapshot: dict | None) -> dict:
+    payload = _snapshot_payload(authoring_snapshot)
     armature_cache = {}
     baseline = {}
 
-    for chain in compiled_scene.bone_chains if compiled_scene is not None else []:
-        armature_name = component_lookup.get(chain.component_id, chain.armature_name)
+    for chain in payload.get("bone_chains", []):
+        component_id = chain.get("component_id", "")
+        armature_name = chain.get("armature_name", "")
         if armature_name not in armature_cache:
             armature_cache[armature_name] = resolve_armature_object(scene, armature_name)
         armature_object = armature_cache[armature_name]
         if armature_object is None or armature_object.pose is None:
             continue
 
-        for bone in chain.bones:
-            pose_bone = armature_object.pose.bones.get(bone.name)
+        for bone in chain.get("bones", []):
+            bone_name = bone.get("name", "")
+            pose_bone = armature_object.pose.bones.get(bone_name)
             if pose_bone is None:
                 continue
 
             if pose_bone.rotation_mode != "QUATERNION":
                 pose_bone.rotation_mode = "QUATERNION"
 
-            baseline[(chain.component_id, bone.name)] = {
+            baseline[(component_id, bone_name)] = {
                 "location": tuple(pose_bone.location),
                 "rotation_quaternion": tuple(pose_bone.rotation_quaternion),
             }
@@ -42,28 +40,25 @@ def capture_pose_baseline(scene: bpy.types.Scene, compiled_scene) -> dict:
     return baseline
 
 
-def capture_pose_state(scene: bpy.types.Scene, compiled_scene) -> dict:
-    return capture_pose_baseline(scene, compiled_scene)
+def capture_pose_state(scene: bpy.types.Scene, authoring_snapshot: dict | None) -> dict:
+    return capture_pose_baseline(scene, authoring_snapshot)
 
 
-def clear_pose_transforms(scene: bpy.types.Scene, compiled_scene) -> int:
-    if compiled_scene is None:
-        return 0
-
-    component_lookup = _component_armature_lookup(compiled_scene)
+def clear_pose_transforms(scene: bpy.types.Scene, authoring_snapshot: dict | None) -> int:
+    payload = _snapshot_payload(authoring_snapshot)
     armature_cache = {}
     cleared_count = 0
 
-    for chain in compiled_scene.bone_chains:
-        armature_name = component_lookup.get(chain.component_id, chain.armature_name)
+    for chain in payload.get("bone_chains", []):
+        armature_name = chain.get("armature_name", "")
         if armature_name not in armature_cache:
             armature_cache[armature_name] = resolve_armature_object(scene, armature_name)
         armature_object = armature_cache[armature_name]
         if armature_object is None or armature_object.pose is None:
             continue
 
-        for bone in chain.bones:
-            pose_bone = armature_object.pose.bones.get(bone.name)
+        for bone in chain.get("bones", []):
+            pose_bone = armature_object.pose.bones.get(bone.get("name", ""))
             if pose_bone is None:
                 continue
 
@@ -82,28 +77,30 @@ def clear_pose_transforms(scene: bpy.types.Scene, compiled_scene) -> int:
     return cleared_count
 
 
-def restore_pose_state(scene: bpy.types.Scene, compiled_scene, pose_state: dict | None) -> int:
-    if compiled_scene is None or not pose_state:
+def restore_pose_state(scene: bpy.types.Scene, authoring_snapshot: dict | None, pose_state: dict | None) -> int:
+    if not pose_state:
         return 0
 
-    component_lookup = _component_armature_lookup(compiled_scene)
+    payload = _snapshot_payload(authoring_snapshot)
     armature_cache = {}
     restored_count = 0
 
-    for chain in compiled_scene.bone_chains:
-        armature_name = component_lookup.get(chain.component_id, chain.armature_name)
+    for chain in payload.get("bone_chains", []):
+        component_id = chain.get("component_id", "")
+        armature_name = chain.get("armature_name", "")
         if armature_name not in armature_cache:
             armature_cache[armature_name] = resolve_armature_object(scene, armature_name)
         armature_object = armature_cache[armature_name]
         if armature_object is None or armature_object.pose is None:
             continue
 
-        for bone in chain.bones:
-            state = pose_state.get((chain.component_id, bone.name))
+        for bone in chain.get("bones", []):
+            bone_name = bone.get("name", "")
+            state = pose_state.get((component_id, bone_name))
             if state is None:
                 continue
 
-            pose_bone = armature_object.pose.bones.get(bone.name)
+            pose_bone = armature_object.pose.bones.get(bone_name)
             if pose_bone is None:
                 continue
 
@@ -133,8 +130,7 @@ def _multiply_quaternion(a: Quaternion, b: Quaternion) -> Quaternion:
     ))
 
 
-def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, compiled_scene, transforms: list[dict], pose_baseline: dict | None = None) -> dict:
-    component_lookup = _component_armature_lookup(compiled_scene)
+def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, transforms: list[dict], pose_baseline: dict | None = None) -> dict:
     armature_cache = {}
     touched_armatures = set()
     applied_count = 0
@@ -144,7 +140,7 @@ def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, compiled_scene, tr
 
     for transform in transforms:
         component_id = transform.get("component_id", "")
-        armature_name = transform.get("armature_name") or component_lookup.get(component_id)
+        armature_name = transform.get("armature_name", "")
         if not armature_name:
             missing_armature_count += 1
             continue

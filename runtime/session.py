@@ -1,13 +1,8 @@
-import json
-import os
-
 from .bridge import load_bridge
 from .exchange import (
     empty_build_output,
     empty_frame_inputs,
     frame_inputs_payload,
-    schema_metadata,
-    wrap_runtime_debug,
     wrap_step_output,
 )
 
@@ -25,37 +20,11 @@ _runtime_state = {
     "accumulated_time": 0.0,
 }
 _active_bridge = None
-_backend_scene_view = None
 _last_authoring_snapshot = None
 _last_transforms = []
 _last_mesh_outputs = []
 _last_build_output = empty_build_output()
 _pose_baseline = {}
-
-
-def _debug_dump_path() -> str:
-    plugin_root = os.path.dirname(os.path.dirname(__file__))
-    build_dir = os.path.join(plugin_root, "_build")
-    os.makedirs(build_dir, exist_ok=True)
-    return os.path.join(build_dir, "runtime_debug_latest.json")
-
-
-def _write_runtime_debug_dump(
-    runtime_inputs: dict | None,
-    transforms: list[dict],
-    mesh_outputs: list[dict] | None = None,
-):
-    debug_payload = wrap_runtime_debug(
-        _runtime_state,
-        _backend_scene_view,
-        runtime_inputs,
-        transforms,
-        mesh_outputs,
-        _last_build_output,
-        _last_authoring_snapshot,
-    )
-    with open(_debug_dump_path(), "w", encoding="utf-8") as handle:
-        json.dump(debug_payload, handle, indent=2, ensure_ascii=False)
 
 
 def _current_bridge():
@@ -65,15 +34,14 @@ def _current_bridge():
     return _active_bridge
 
 
-def build_runtime(build_input, force_native_backend: bool | None = None, backend_scene_view=None):
-    global _active_bridge, _backend_scene_view, _last_authoring_snapshot, _last_transforms, _last_mesh_outputs, _last_build_output
+def build_runtime(build_input, force_native_backend: bool | None = None):
+    global _active_bridge, _last_authoring_snapshot, _last_transforms, _last_mesh_outputs, _last_build_output
     bridge = load_bridge(force_native_backend)
     _active_bridge = bridge
-    _backend_scene_view = backend_scene_view if backend_scene_view is not None else build_input
     _last_authoring_snapshot = build_input if isinstance(build_input, dict) and build_input.get("payload_type") == "authoring_snapshot" else None
     _last_transforms = []
     _last_mesh_outputs = []
-    result = bridge.build_scene(build_input, backend_scene_view=backend_scene_view)
+    result = bridge.build_scene(build_input)
     _last_build_output = result.get("build_output") or empty_build_output()
     result_state = dict(result)
     result_state.pop("build_output", None)
@@ -88,10 +56,9 @@ def build_runtime(build_input, force_native_backend: bool | None = None, backend
 
 
 def destroy_runtime():
-    global _active_bridge, _backend_scene_view, _last_authoring_snapshot, _last_transforms, _last_mesh_outputs, _last_build_output, _pose_baseline
+    global _active_bridge, _last_authoring_snapshot, _last_transforms, _last_mesh_outputs, _last_build_output, _pose_baseline
     reset_runtime_state()
     _active_bridge = None
-    _backend_scene_view = None
     _last_authoring_snapshot = None
     _last_transforms = []
     _last_mesh_outputs = []
@@ -159,7 +126,6 @@ def step_runtime(
         _runtime_state["accumulated_time"] - (fixed_step_dt * _runtime_state["last_executed_steps"]),
     )
     frame_inputs = frame_inputs_payload(runtime_inputs) if runtime_inputs is not None else empty_frame_inputs()
-    _write_runtime_debug_dump(runtime_inputs, transforms, mesh_outputs)
     return {
         "runtime_state": dict(_runtime_state),
         "transforms": transforms,
@@ -186,10 +152,6 @@ def get_runtime_state():
     return dict(_runtime_state)
 
 
-def get_backend_scene_view():
-    return _backend_scene_view
-
-
 def get_last_authoring_snapshot():
     return _last_authoring_snapshot
 
@@ -213,9 +175,3 @@ def set_pose_baseline(baseline: dict):
 
 def get_pose_baseline():
     return dict(_pose_baseline)
-
-
-def get_exchange_info():
-    info = schema_metadata()
-    info["debug_dump_path"] = _debug_dump_path()
-    return info

@@ -1,8 +1,31 @@
 import bpy
 
-from ..runtime.bone_sampling import resolve_bone_chain_names
 from ..components import mc2
-from ..runtime.session import get_exchange_info
+from ..runtime.blender_bone_refs import resolve_bone_chain_names
+
+
+def _draw_collider_reference_list(layout, scene, item, cloth):
+    collider_box = layout.box()
+    collider = cloth.collider_collision_constraint
+    header = collider_box.row(align=True)
+    header.prop(collider, "enabled", text="碰撞")
+    add = header.operator("hocloth.add_collider_reference", text="", icon="ADD")
+    add.component_id = item.component_id
+
+    if not collider.enabled:
+        return
+
+    if not cloth.collider_references:
+        collider_box.label(text="未指定碰撞体", icon="INFO")
+    for index, reference in enumerate(cloth.collider_references):
+        row = collider_box.row(align=True)
+        row.prop(reference, "collider_object", text="")
+        remove = row.operator("hocloth.remove_collider_reference", text="", icon="X")
+        remove.component_id = item.component_id
+        remove.index = index
+
+    resolved_count = len(mc2.resolve_cloth_collider_ids(scene, cloth))
+    collider_box.label(text=f"Collider List: {resolved_count}")
 
 
 def _draw_mc2_cloth(layout, scene, item):
@@ -17,7 +40,7 @@ def _draw_mc2_cloth(layout, scene, item):
     header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
     title = header.column(align=True)
     title.label(text=item.display_name, icon="MOD_CLOTH")
-    title.label(text=f"MagicaCloth / {cloth.authoring_mode} / {len(bone_names)} joints", icon="ARMATURE_DATA")
+    title.label(text=f"MagicaCloth / {cloth.authoring_mode} / {len(bone_names)} bones", icon="ARMATURE_DATA")
     actions = header.row(align=True)
     actions.prop(item, "enabled", text="")
     remove = actions.operator("hocloth.remove_component", text="", icon="X")
@@ -29,47 +52,43 @@ def _draw_mc2_cloth(layout, scene, item):
     body.prop(cloth, "authoring_mode", text="模式")
     body.prop(cloth, "armature_object", text="骨架")
     if armature_object is not None and armature_object.data is not None:
-        body.prop_search(cloth, "root_bone_name", armature_object.data, "bones", text="Root Bones")
+        body.prop_search(cloth, "root_bone_name", armature_object.data, "bones", text="根骨骼")
     else:
-        body.prop(cloth, "root_bone_name", text="Root Bones")
+        body.prop(cloth, "root_bone_name", text="根骨骼")
 
     preset_row = body.row(align=True)
     preset_row.prop(cloth, "preset_profile", text="MC2 预设")
     preset = preset_row.operator("hocloth.apply_spring_bone_preset", text="应用")
     preset.component_id = item.component_id
-    body.prop(cloth, "joint_radius", text="Radius")
-    body.prop(cloth.damping_curve, "value", text="Damping")
-    body.prop(cloth, "gravity_strength", text="Gravity")
-    body.prop(cloth.distance_constraint.stiffness, "value", text="Distance Stiffness")
-    body.prop(cloth.tether_constraint, "distance_compression", text="Tether Compression")
-    body.prop(cloth.spring_constraint, "spring_power", text="Spring Power")
-    body.prop(cloth, "collider_ids", text="Collider List")
 
-    row = body.row(align=True)
-    selected = row.operator("hocloth.assign_selected_colliders_to_spring_bone", icon="RESTRICT_SELECT_OFF", text="选中碰撞体")
-    selected.component_id = item.component_id
-    all_colliders = row.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED", text="全部碰撞体")
-    all_colliders.component_id = item.component_id
+    body.prop(cloth, "joint_radius", text="粒子半径")
+    body.prop(cloth.damping_curve, "value", text="阻尼")
+    body.prop(cloth, "gravity_strength", text="重力")
+    body.prop(cloth.distance_constraint.stiffness, "value", text="距离刚度")
+    body.prop(cloth.tether_constraint, "distance_compression", text="压缩限制")
+    body.prop(cloth.spring_constraint, "spring_power", text="弹簧强度")
+    _draw_collider_reference_list(body, scene, item, cloth)
 
     if scene.hocloth_ui_details_expanded:
         detail = body.box()
-        detail.label(text="ClothSerializeData")
-        detail.prop(cloth, "center_source", text="Center")
+        detail.label(text="MagicaCloth 详细参数")
+        detail.prop(cloth, "center_source", text="中心")
         if cloth.center_source == "OBJECT":
-            detail.prop(cloth, "center_object", text="Center Object")
+            detail.prop(cloth, "center_object", text="中心物体")
         elif cloth.center_source == "BONE":
-            detail.prop(cloth, "center_armature_object", text="Center Armature")
+            detail.prop(cloth, "center_armature_object", text="中心骨架")
             if cloth.center_armature_object is not None and cloth.center_armature_object.data is not None:
-                detail.prop_search(cloth, "center_bone_name", cloth.center_armature_object.data, "bones", text="Center Bone")
+                detail.prop_search(cloth, "center_bone_name", cloth.center_armature_object.data, "bones", text="中心骨骼")
             else:
-                detail.prop(cloth, "center_bone_name", text="Center Bone")
-        detail.prop(cloth, "gravity_direction", text="Gravity Direction")
-        detail.prop(cloth.inertia_constraint, "world_inertia", text="World Inertia")
-        detail.prop(cloth.inertia_constraint, "movement_inertia_smoothing", text="Movement Smoothing")
-        detail.prop(cloth.angle_restoration_constraint, "use_angle_restoration", text="Use Angle Restoration")
-        detail.prop(cloth.angle_restoration_constraint.stiffness, "value", text="Angle Stiffness")
-        detail.prop(cloth.collider_collision_constraint, "friction", text="Collider Friction")
-        detail.prop(cloth.collider_collision_constraint.limit_distance, "value", text="Collider Limit Distance")
+                detail.prop(cloth, "center_bone_name", text="中心骨骼")
+        detail.prop(cloth, "gravity_direction", text="重力方向")
+        detail.prop(cloth.inertia_constraint, "world_inertia", text="世界惯性")
+        detail.prop(cloth.inertia_constraint, "movement_inertia_smoothing", text="移动惯性平滑")
+        detail.prop(cloth.angle_restoration_constraint, "use_angle_restoration", text="角度复原")
+        detail.prop(cloth.angle_restoration_constraint.stiffness, "value", text="角度刚度")
+        detail.prop(cloth.collider_collision_constraint, "mode", text="碰撞模式")
+        detail.prop(cloth.collider_collision_constraint, "friction", text="碰撞摩擦")
+        detail.prop(cloth.collider_collision_constraint.limit_distance, "value", text="碰撞限制距离")
 
 
 def _draw_mc2_collider(layout, item):
@@ -91,18 +110,18 @@ def _draw_mc2_collider(layout, item):
         return
 
     body = layout.box()
-    body.prop(collider, "collider_object", text="Object")
-    body.prop(collider, "collider_type", text="Type")
-    body.prop(collider, "center", text="Center")
-    body.prop(collider, "radius", text="Radius")
+    body.prop(collider, "collider_object", text="物体")
+    body.prop(collider, "collider_type", text="类型")
+    body.prop(collider, "center", text="中心")
+    body.prop(collider, "radius", text="半径")
     if collider.collider_type == "CAPSULE":
-        body.prop(collider, "radius_separation", text="Radius Separation")
+        body.prop(collider, "radius_separation", text="分离半径")
         if collider.radius_separation:
-            body.prop(collider, "end_radius", text="End Radius")
-        body.prop(collider, "length", text="Length")
-        body.prop(collider, "direction", text="Direction")
-        body.prop(collider, "reverse_direction", text="Reverse Direction")
-        body.prop(collider, "aligned_on_center", text="Aligned On Center")
+            body.prop(collider, "end_radius", text="末端半径")
+        body.prop(collider, "length", text="长度")
+        body.prop(collider, "direction", text="方向")
+        body.prop(collider, "reverse_direction", text="反向")
+        body.prop(collider, "aligned_on_center", text="中心对齐")
 
 
 def _draw_mc2_cache(layout, item):
@@ -124,9 +143,9 @@ def _draw_mc2_cache(layout, item):
         return
 
     body = layout.box()
-    body.prop(cache, "source_object", text="Source Object")
-    body.prop(cache, "cache_format", text="Format")
-    body.prop(cache, "cache_path", text="Path")
+    body.prop(cache, "source_object", text="源物体")
+    body.prop(cache, "cache_format", text="格式")
+    body.prop(cache, "cache_path", text="路径")
 
 
 class HOCLOTH_PT_main_panel(bpy.types.Panel):
@@ -155,6 +174,10 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         )
         run.operator("hocloth.restart_runtime_from_baseline", icon="ARMATURE_DATA", text="第一帧")
 
+        reset_row = layout.row(align=True)
+        reset_row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置运行时")
+        reset_row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁运行时")
+
         layout.prop(scene, "hocloth_ui_details_expanded", text="详细信息")
 
         components = layout.box()
@@ -172,7 +195,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         runtime = layout.box()
         runtime.label(text="Runtime")
         runtime.prop(scene, "hocloth_runtime_dt", text="dt")
-        runtime.prop(scene, "hocloth_simulation_frequency", text="Frequency")
+        runtime.prop(scene, "hocloth_simulation_frequency", text="模拟频率")
         runtime.prop(scene, "hocloth_apply_pose_on_step", text="Step 写回姿态")
         runtime.label(text=f"状态: {scene.hocloth_runtime_status}")
         runtime.label(
@@ -183,28 +206,15 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             )
         )
 
-        debug = layout.box()
-        debug.prop(scene, "hocloth_ui_debug_expanded", text="调试")
-        if scene.hocloth_ui_debug_expanded:
-            row = debug.row(align=True)
-            row.operator("hocloth.export_mc2_snapshot", icon="EXPORT", text="导出 MC2 快照")
-            row.operator("hocloth.export_frame_inputs", icon="FILE_TEXT", text="导出帧输入")
-            row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置")
-            row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁")
-            exchange_info = get_exchange_info()
-            debug.label(text=f"Exchange: {exchange_info['schema']} v{exchange_info['schema_version']}")
-            if scene.hocloth_ui_details_expanded:
-                debug.label(text=f"Debug Dump: {exchange_info['debug_dump_path']}", icon="FILE_TEXT")
-
         overlay = layout.box()
         overlay.label(text="Viewport")
         overlay.prop(scene, "hocloth_viewport_overlay_enabled", text="显示构建结果")
         col = overlay.column(align=True)
         col.enabled = scene.hocloth_viewport_overlay_enabled
-        col.prop(scene, "hocloth_viewport_draw_bones", text="Bones")
-        col.prop(scene, "hocloth_viewport_draw_particle_radius", text="Radius")
-        col.prop(scene, "hocloth_viewport_draw_colliders", text="Colliders")
-        col.prop(scene, "hocloth_viewport_overlay_alpha", text="Alpha")
+        col.prop(scene, "hocloth_viewport_draw_bones", text="骨骼")
+        col.prop(scene, "hocloth_viewport_draw_particle_radius", text="半径")
+        col.prop(scene, "hocloth_viewport_draw_colliders", text="碰撞体")
+        col.prop(scene, "hocloth_viewport_overlay_alpha", text="透明度")
 
 
 CLASSES = (HOCLOTH_PT_main_panel,)

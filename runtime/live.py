@@ -9,7 +9,7 @@ from .pose_apply import (
     restore_pose_state,
 )
 from .session import (
-    get_backend_scene_view,
+    get_last_authoring_snapshot,
     get_pose_baseline,
     reset_runtime,
     set_runtime_inputs_only,
@@ -119,15 +119,16 @@ def on_animation_playback_pre(scene, depsgraph):
     if not _is_scene_live_enabled(scene):
         return
 
-    if scene.hocloth_runtime_handle == 0 or get_backend_scene_view() is None:
+    authoring_snapshot = get_last_authoring_snapshot()
+    if scene.hocloth_runtime_handle == 0 or authoring_snapshot is None:
         _mark_stopped(scene, "Live runtime stopped: build the runtime first")
         return
 
     _LIVE_STATE["active_scene_name"] = scene.name
     _reset_runtime_tracking()
     reset_runtime()
-    set_runtime_inputs_only(build_runtime_inputs(scene, get_backend_scene_view()))
-    set_pose_baseline(capture_pose_baseline(scene, get_backend_scene_view()))
+    set_runtime_inputs_only(build_runtime_inputs(scene, authoring_snapshot))
+    set_pose_baseline(capture_pose_baseline(scene, authoring_snapshot))
     scene.hocloth_runtime_status = "Live runtime playback started"
 
 
@@ -140,11 +141,11 @@ def on_frame_change_pre(scene, depsgraph):
     if _LIVE_STATE["active_scene_name"] != scene.name:
         return
 
-    compiled_scene = get_backend_scene_view()
-    if compiled_scene is None:
+    authoring_snapshot = get_last_authoring_snapshot()
+    if authoring_snapshot is None:
         return
 
-    restore_pose_state(scene, compiled_scene, _LIVE_STATE["last_source_pose"])
+    restore_pose_state(scene, authoring_snapshot, _LIVE_STATE["last_source_pose"])
 
 
 @bpy.app.handlers.persistent
@@ -173,16 +174,16 @@ def on_frame_change_post(scene, depsgraph):
         return
     _LIVE_STATE["last_processed_identity"] = processed_identity
 
-    if runtime_handle == 0 or get_backend_scene_view() is None:
+    authoring_snapshot = get_last_authoring_snapshot()
+    if runtime_handle == 0 or authoring_snapshot is None:
         _mark_stopped(scene, "Live runtime stopped: runtime is unavailable")
         return
 
     if not _check_frame_continuity(scene):
         return
 
-    compiled_scene = get_backend_scene_view()
-    source_pose = capture_pose_state(scene, compiled_scene)
-    runtime_inputs = build_runtime_inputs(scene, compiled_scene)
+    source_pose = capture_pose_state(scene, authoring_snapshot)
+    runtime_inputs = build_runtime_inputs(scene, authoring_snapshot)
 
     try:
         result = step_runtime(
@@ -213,7 +214,6 @@ def on_frame_change_post(scene, depsgraph):
     if scene.hocloth_apply_pose_on_step:
         apply_result = apply_runtime_transforms_to_scene(
             scene,
-            compiled_scene,
             result["transforms"],
             get_pose_baseline(),
         )

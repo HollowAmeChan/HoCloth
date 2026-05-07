@@ -88,6 +88,33 @@ nb::sequence ReadSequence(const nb::dict& dict, const char* key)
     return nb::cast<nb::sequence>(value);
 }
 
+CompiledCurve ReadCurve(const nb::dict& dict, const char* key, float fallback = 0.0f)
+{
+    CompiledCurve curve;
+    curve.value = fallback;
+    nb::object value = GetOptional(dict, key);
+    if (value.is_none()) {
+        return curve;
+    }
+    if (!PyDict_Check(value.ptr())) {
+        curve.value = nb::cast<float>(value);
+        curve.has_value = true;
+        return curve;
+    }
+
+    nb::dict curve_dict = nb::cast<nb::dict>(value);
+    curve.value = ReadFloat(curve_dict, "value", fallback);
+    curve.has_value = !GetOptional(curve_dict, "value").is_none();
+    curve.use_curve = ReadBool(curve_dict, "useCurve", false);
+    for (nb::handle item : ReadSequence(curve_dict, "samples")) {
+        curve.samples.push_back(nb::cast<float>(item));
+    }
+    if (curve.samples.size() != 16) {
+        curve.samples.clear();
+    }
+    return curve;
+}
+
 Vec3 ReadVec3(nb::handle handle)
 {
     nb::sequence seq = nb::cast<nb::sequence>(handle);
@@ -279,8 +306,10 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
     if (serialize_data.contains("gravityDirection")) {
         chain.gravity_direction = ReadVec3(serialize_data["gravityDirection"]);
     }
-    chain.joint_radius = ReadCurveValue(serialize_data, "radius", chain.joint_radius);
-    chain.damping = ReadCurveValue(serialize_data, "damping", chain.damping);
+    chain.radius_curve = ReadCurve(serialize_data, "radius", chain.joint_radius);
+    chain.joint_radius = chain.radius_curve.value;
+    chain.damping_curve = ReadCurve(serialize_data, "damping", chain.damping);
+    chain.damping = chain.damping_curve.value;
     chain.damping_curve_value = chain.damping;
 
     nb::dict inertia = ReadDict(serialize_data, "inertiaConstraint");
@@ -324,14 +353,16 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
         ReadFloat(tether, "distanceCompression", chain.tether_distance_compression);
 
     nb::dict distance = ReadDict(serialize_data, "distanceConstraint");
-    chain.distance_stiffness = ReadCurveValue(distance, "stiffness", chain.distance_stiffness);
+    chain.distance_stiffness_curve = ReadCurve(distance, "stiffness", chain.distance_stiffness);
+    chain.distance_stiffness = chain.distance_stiffness_curve.value;
     chain.stiffness = chain.distance_stiffness;
 
     nb::dict angle = ReadDict(serialize_data, "angleRestorationConstraint");
     chain.angle_restoration_enabled =
         ReadBool(angle, "useAngleRestoration", chain.angle_restoration_enabled);
-    chain.angle_restoration_stiffness =
-        ReadCurveValue(angle, "stiffness", chain.angle_restoration_stiffness);
+    chain.angle_restoration_stiffness_curve =
+        ReadCurve(angle, "stiffness", chain.angle_restoration_stiffness);
+    chain.angle_restoration_stiffness = chain.angle_restoration_stiffness_curve.value;
     chain.angle_restoration_velocity_attenuation =
         ReadFloat(angle, "velocityAttenuation", chain.angle_restoration_velocity_attenuation);
     chain.drag = std::max(0.0f, std::min(1.0f, 1.0f - chain.angle_restoration_velocity_attenuation));
@@ -344,8 +375,12 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
     chain.spring_noise = ReadFloat(spring, "springNoise", chain.spring_noise);
 
     nb::dict collider = ReadDict(serialize_data, "colliderCollisionConstraint");
+    const std::string collider_mode = ReadString(collider, "mode", chain.collider_collision_mode);
+    chain.collider_collision_mode = collider_mode;
+    chain.collider_collision_enabled = collider_mode != "None";
     chain.collider_friction = ReadFloat(collider, "friction", chain.collider_friction);
-    chain.collider_limit_distance = ReadCurveValue(collider, "limitDistance", chain.collider_limit_distance);
+    chain.collider_limit_distance_curve = ReadCurve(collider, "limitDistance", chain.collider_limit_distance);
+    chain.collider_limit_distance = chain.collider_limit_distance_curve.value;
     if (collider.contains("colliderList")) {
         chain.collider_ids = ReadStringArray(collider, "colliderList");
     }
@@ -441,6 +476,8 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.spring_noise = ReadFloat(chain_dict, "spring_noise", 0.0f);
         chain.collider_friction = ReadFloat(chain_dict, "collider_friction", 0.5f);
         chain.collider_limit_distance = ReadFloat(chain_dict, "collider_limit_distance", 0.05f);
+        chain.collider_collision_enabled = ReadBool(chain_dict, "collider_collision_enabled", true);
+        chain.collider_collision_mode = ReadString(chain_dict, "collider_collision_mode", "Point");
         chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);
@@ -454,6 +491,11 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");
 
         ApplyClothSerializeData(chain, ReadDict(chain_dict, "serialize_data"));
+        if (!chain.collider_collision_enabled) {
+            chain.collider_ids.clear();
+            chain.collider_group_ids.clear();
+            chain.collision_binding_ids.clear();
+        }
 
         if (chain_dict.contains("bones")) {
             BuildJointsFromAuthoringBones(chain, chain_dict);
