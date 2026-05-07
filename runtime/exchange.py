@@ -13,6 +13,7 @@ QUATERNION_ORDER = "wxyz"
 
 PayloadType = Literal[
     "compiled_scene",
+    "build_output",
     "frame_inputs",
     "step_output",
     "runtime_debug",
@@ -108,6 +109,26 @@ def wrap_compiled_scene(compiled_scene_or_dict: Any) -> ExchangeEnvelope:
     )
 
 
+def empty_build_output() -> dict[str, Any]:
+    return {"particles": [], "lines": [], "baselines": [], "colliders": []}
+
+
+def wrap_build_output(build_output: dict[str, Any] | None) -> ExchangeEnvelope:
+    if is_exchange_envelope(build_output):
+        if build_output.get("payload_type") != "build_output":
+            raise ValueError(
+                f"Expected exchange payload 'build_output', got '{build_output.get('payload_type')}'."
+            )
+        return deepcopy(build_output)
+
+    payload = deepcopy(build_output or empty_build_output())
+    payload.setdefault("particles", [])
+    payload.setdefault("lines", [])
+    payload.setdefault("baselines", [])
+    payload.setdefault("colliders", [])
+    return make_envelope("build_output", payload)
+
+
 def empty_frame_inputs() -> dict[str, Any]:
     return {"bone_chains": [], "collision_objects": []}
 
@@ -154,6 +175,7 @@ def wrap_runtime_debug(
     runtime_inputs: dict[str, Any] | None,
     transforms: list[dict[str, Any]],
     mesh_outputs: list[dict[str, Any]] | None = None,
+    build_output: dict[str, Any] | None = None,
 ) -> ExchangeEnvelope:
     compiled_envelope = wrap_compiled_scene(compiled_scene) if compiled_scene is not None else None
     return make_envelope(
@@ -161,6 +183,7 @@ def wrap_runtime_debug(
         {
             "runtime_state": dict(runtime_state),
             "compiled_scene": compiled_envelope,
+            "build_output": wrap_build_output(build_output),
             "runtime_inputs": wrap_frame_inputs(runtime_inputs),
             "step_output": wrap_step_output(runtime_state, transforms, mesh_outputs),
         },

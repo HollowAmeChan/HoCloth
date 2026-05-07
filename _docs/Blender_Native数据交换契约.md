@@ -26,7 +26,7 @@ quaternion_order: wxyz
 {
     "schema": "hocloth.exchange",
     "schema_version": 1,
-    "payload_type": "compiled_scene | frame_inputs | step_output | runtime_debug",
+    "payload_type": "compiled_scene | build_output | frame_inputs | step_output | runtime_debug",
     "coordinate_space": "blender_world",
     "length_unit": "meter",
     "quaternion_order": "wxyz",
@@ -140,6 +140,64 @@ linear_velocity
 - 拓扑、约束参数、碰撞体结构、缓存目标等结构数据不在 frame inputs 里增删。
 - 扁平数组长度必须与 compiled scene 对应 chain 的 joint 数一致。
 
+## 4.1 Build Output
+
+`payload_type = "build_output"`
+
+`build_output` 是 native/backend 在 `build_scene()` 完成之后返回给 Blender 的构建结果视图。它的职责是给 Blender 绘制、检查、调试、后续写回映射使用；Blender authoring 层不再为了显示或模拟主动补 MC2 拓扑。
+
+当前 payload:
+```text
+particles
+lines
+baselines
+colliders
+```
+
+`particles[]`:
+```text
+component_id
+bone_name
+joint_index
+parent_index
+rest_head_local
+rest_tail_local
+radius
+```
+
+`lines[]`:
+```text
+component_id
+start_index
+end_index
+```
+
+`baselines[]`:
+```text
+joint_indices
+```
+
+`colliders[]`:
+```text
+collision_object_id
+owner_component_id
+shape_type
+world_translation
+world_rotation
+radius
+height
+capsule_direction
+capsule_aligned_on_center
+capsule_reverse_direction
+capsule_end_radius
+source_object_name
+```
+
+关键约定:
+- Blender 用户需要真实叶骨时自行在骨架中添加；HoCloth 不再自动追加尾端骨/尾端粒子。
+- Blender authoring 层只采集原始骨架、参数、碰撞体引用和逐帧 transform；可视化数据优先从 `build_output` 读。
+- 当前 `build_output` 先暴露 native 已解析的 joints/lines/baselines/colliders。后续 ParticleBuffer、VirtualMesh、proxy vertex、mapping、debug primitive 都继续扩展在这里。
+
 ## 5. Step Output
 
 `payload_type = "step_output"`
@@ -185,6 +243,7 @@ _build/runtime_debug_latest.json
 ```text
 runtime_state
 compiled_scene
+build_output
 runtime_inputs
 step_output
 ```

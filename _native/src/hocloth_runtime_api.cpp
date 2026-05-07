@@ -20,7 +20,6 @@ namespace hocloth {
 
 namespace {
 
-constexpr const char* kTailTipSuffix = "__hocloth_tail_tip__";
 constexpr float kPi = 3.14159265358979323846f;
 
 // From MC2: MagicaCloth2/Scripts/Core/Define/SystemDefine.cs
@@ -261,14 +260,6 @@ void QuaternionToAngleAxis(const Quat& q, float& angle, Vec3& axis)
     } else {
         axis = Vec3{normalized.x / s, normalized.y / s, normalized.z / s};
     }
-}
-
-bool EndsWith(const std::string& value, const std::string& suffix)
-{
-    if (suffix.size() > value.size()) {
-        return false;
-    }
-    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 std::vector<CompiledSpringLine> BuildLineIndices(const CompiledSpringBone& chain)
@@ -640,6 +631,58 @@ std::string RuntimeBackendStatus(const RuntimeModule::SceneState& scene)
            )
            << " mesh_writeback_targets=" << scene.compiled_scene.mesh_writeback_targets.size();
     return stream.str();
+}
+
+BuildSceneOutput MakeBuildSceneOutput(const RuntimeModule::SceneState& scene)
+{
+    BuildSceneOutput output;
+
+    for (const CompiledSpringBone& chain : scene.compiled_scene.spring_bones) {
+        for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+            const CompiledSpringJoint& joint = chain.joints[joint_index];
+            output.particles.push_back(BuildDrawParticle{
+                chain.component_id,
+                joint.name,
+                static_cast<int>(joint_index),
+                joint.parent_index,
+                joint.rest_head_local,
+                joint.rest_tail_local,
+                joint.radius,
+            });
+        }
+
+        const std::vector<CompiledSpringLine> lines = BuildLineIndices(chain);
+        for (const CompiledSpringLine& line : lines) {
+            output.lines.push_back(BuildDrawLine{
+                chain.component_id,
+                line.start_index,
+                line.end_index,
+            });
+        }
+
+        for (const CompiledSpringBaseline& baseline : chain.baselines) {
+            output.baselines.push_back(baseline);
+        }
+    }
+
+    for (const CompiledCollisionObject& collider : scene.compiled_scene.collision_objects) {
+        output.colliders.push_back(BuildDrawCollider{
+            collider.collision_object_id,
+            collider.owner_component_id,
+            collider.shape_type,
+            collider.world_translation,
+            collider.world_rotation,
+            collider.radius,
+            collider.height,
+            collider.capsule_direction,
+            collider.capsule_aligned_on_center,
+            collider.capsule_reverse_direction,
+            collider.capsule_end_radius,
+            collider.source_object_name,
+        });
+    }
+
+    return output;
 }
 
 std::vector<std::size_t> ResolveChainColliderIndices(
@@ -1437,6 +1480,7 @@ BuildSceneResult RuntimeModule::BuildScene(CompiledScene compiled_scene)
     result.backend = "native_mc2_particle_bridge";
     result.build_message = "HoCloth native MC2 particle/collider bridge active; BoneCloth chains use cloth gravity and non-spring teams.";
     result.backend_status = RuntimeBackendStatus(*scene);
+    result.build_output = MakeBuildSceneOutput(*scene);
 
     scenes_[handle] = std::move(scene);
     return result;
@@ -1507,7 +1551,7 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
         const ChainCache& cache = scene.chain_caches[chain_index];
         for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
             const CompiledSpringJoint& joint = chain.joints[joint_index];
-            if (joint.parent_index < 0 || EndsWith(joint.name, kTailTipSuffix)) {
+            if (joint.parent_index < 0) {
                 continue;
             }
 

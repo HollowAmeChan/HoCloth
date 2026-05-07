@@ -358,3 +358,13 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 - 旧 ColliderGroup/Binding 仅作为兼容/组织层保留，不再作为新交互主路径；新建链会默认接入已有 collider，新建 collider 会默认挂到已有链，但构建时不会强制全局自动绑定。
 - native runtime 已把骨骼粒子和 collider 统一到 `blender_world`：每帧 `basic_head_positions` 写入 MC2 particle base/step-basic position，collider 使用同一帧 world transform。
 - `joint_radius` 已接到 MC2 `radius_curve_data`，`collider_limit_distance` 已接到 `ColliderCollisionConstraint.limit_distance`，后续碰撞异常应优先从 collider list、世界坐标、radius/limit 参数和 manager lifecycle 四处定位。
+## 当前边界决策：Blender 不再补尾端骨
+
+从本阶段开始，Blender Python 侧只采集用户真实资产输入，不再主动追加 `append_tail_tip` / 虚拟尾端骨 / 虚拟尾端粒子。需要叶端粒子的链条由用户在 armature 中添加真实叶骨，native/backend 按真实骨架构建 MC2 数据。
+
+新的交换方向：
+- Blender 侧输入：真实骨架、root bone、参数、碰撞体引用、逐帧 transform。
+- Native/backend 构建：解析 joints/lines/baselines/colliders，并逐步接管 ParticleBuffer、VirtualMesh、mapping、debug primitive。
+- Blender 侧绘制/调试：优先读取 `build_output`，不再从 authoring 层反推 MC2 拓扑。
+
+`runtime_debug_latest.json` 已包含 `build_output` envelope，当前字段为 `particles / lines / baselines / colliders`。后续补全 VirtualMesh 与 ParticleBuffer 时继续扩展这个输出，而不是恢复 Blender 侧的自动拓扑加工。

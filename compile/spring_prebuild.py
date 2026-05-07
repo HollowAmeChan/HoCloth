@@ -5,9 +5,6 @@ from mathutils import Matrix, Quaternion, Vector
 from .compiled import CompiledSpringBaseline, CompiledSpringJoint, CompiledSpringLine
 
 
-_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
-
-
 @dataclass
 class SpringTopologyPrebuild:
     bone_names: list[str] = field(default_factory=list)
@@ -218,53 +215,11 @@ def _child_indices_by_joint(compiled_bones: list[CompiledSpringJoint]) -> dict[i
     return child_indices
 
 
-def append_tail_tip_joints(compiled_bones: list[CompiledSpringJoint], append_tail_tip: bool) -> list[CompiledSpringJoint]:
-    if not append_tail_tip or not compiled_bones:
-        return compiled_bones
-
-    joints = list(compiled_bones)
-    child_indices = _child_indices_by_joint(joints)
-    leaf_indices = [index for index in range(len(joints)) if not child_indices.get(index)]
-    for leaf_index in leaf_indices:
-        leaf_joint = joints[leaf_index]
-        head = Vector(leaf_joint.rest_head_local)
-        tail = Vector(leaf_joint.rest_tail_local)
-        direction = tail - head
-        if direction.length <= 1.0e-6:
-            continue
-
-        tip_head = tail
-        tip_tail = tail + direction
-        joints.append(
-            CompiledSpringJoint(
-                name=f"{leaf_joint.name}{_TAIL_TIP_SUFFIX}",
-                parent_index=leaf_index,
-                depth=leaf_joint.depth + 1,
-                length=float(leaf_joint.length),
-                radius=float(leaf_joint.radius),
-                stiffness=float(leaf_joint.stiffness),
-                damping=float(leaf_joint.damping),
-                drag=float(leaf_joint.drag),
-                gravity_scale=float(leaf_joint.gravity_scale),
-                rest_head_local=(float(tip_head.x), float(tip_head.y), float(tip_head.z)),
-                rest_tail_local=(float(tip_tail.x), float(tip_tail.y), float(tip_tail.z)),
-                rest_local_translation=(
-                    float(tip_head.x - head.x),
-                    float(tip_head.y - head.y),
-                    float(tip_head.z - head.z),
-                ),
-                rest_local_rotation=leaf_joint.rest_local_rotation,
-            )
-        )
-    return joints
-
-
 def build_topology_prebuild(
     armature_object,
     configured_joints: list[CompiledSpringJoint],
-    append_tail_tip: bool,
 ) -> SpringTopologyPrebuild:
-    final_joints = append_tail_tip_joints(configured_joints, append_tail_tip)
+    final_joints = list(configured_joints)
     lines = [
         CompiledSpringLine(start_index=joint.parent_index, end_index=index)
         for index, joint in enumerate(final_joints)

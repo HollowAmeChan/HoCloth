@@ -168,7 +168,6 @@ def compile_scene_from_components(scene) -> CompiledScene:
             topology_prebuild = build_topology_prebuild(
                 armature_object,
                 configured_bones,
-                bool(getattr(typed_item, "append_tail_tip", False)),
             )
             compiled.spring_bones.append(
                 CompiledSpringBone(

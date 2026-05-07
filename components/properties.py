@@ -616,10 +616,6 @@ class HoClothSpringBoneComponent(bpy.types.PropertyGroup):
         items=HOCLOTH_MC2_PRESET_ITEMS,
         default="MIDDLE_SPRING",
     )
-    append_tail_tip: bpy.props.BoolProperty(
-        name="Append Tail Tip Joint",
-        default=False,
-    )
     joint_radius: bpy.props.FloatProperty(name="粒子半径", default=0.02, min=0.0, update=_update_spring_defaults)
     collider_ids: bpy.props.StringProperty(name="MC2 Collider List")
     collider_group_ids: bpy.props.StringProperty(name="Legacy Collision Bindings")

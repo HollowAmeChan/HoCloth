@@ -192,12 +192,51 @@ struct MeshOutput {
     std::vector<Vec3> positions;
 };
 
+struct BuildDrawParticle {
+    std::string component_id;
+    std::string bone_name;
+    int joint_index = -1;
+    int parent_index = -1;
+    Vec3 rest_head_local;
+    Vec3 rest_tail_local;
+    float radius = 0.0f;
+};
+
+struct BuildDrawLine {
+    std::string component_id;
+    int start_index = -1;
+    int end_index = -1;
+};
+
+struct BuildDrawCollider {
+    std::string collision_object_id;
+    std::string owner_component_id;
+    std::string shape_type;
+    Vec3 world_translation;
+    Quat world_rotation;
+    float radius = 0.0f;
+    float height = 0.0f;
+    std::string capsule_direction = "Y";
+    bool capsule_aligned_on_center = true;
+    bool capsule_reverse_direction = false;
+    float capsule_end_radius = 0.0f;
+    std::string source_object_name;
+};
+
+struct BuildSceneOutput {
+    std::vector<BuildDrawParticle> particles;
+    std::vector<BuildDrawLine> lines;
+    std::vector<CompiledSpringBaseline> baselines;
+    std::vector<BuildDrawCollider> colliders;
+};
+
 struct BuildSceneResult {
     SceneHandle handle = 0;
     std::string summary;
     std::string backend;
     std::string build_message;
     std::string backend_status;
+    BuildSceneOutput build_output;
 };
 
 struct StepSceneResult {

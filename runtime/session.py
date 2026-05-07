@@ -3,6 +3,7 @@ import os
 
 from .bridge import load_bridge
 from .exchange import (
+    empty_build_output,
     empty_frame_inputs,
     frame_inputs_payload,
     schema_metadata,
@@ -27,6 +28,7 @@ _active_bridge = None
 _compiled_scene = None
 _last_transforms = []
 _last_mesh_outputs = []
+_last_build_output = empty_build_output()
 _pose_baseline = {}
 
 
@@ -48,6 +50,7 @@ def _write_runtime_debug_dump(
         runtime_inputs,
         transforms,
         mesh_outputs,
+        _last_build_output,
     )
     with open(_debug_dump_path(), "w", encoding="utf-8") as handle:
         json.dump(debug_payload, handle, indent=2, ensure_ascii=False)
@@ -61,14 +64,17 @@ def _current_bridge():
 
 
 def build_runtime(compiled_scene, use_native_backend: bool | None = None):
-    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs
+    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs, _last_build_output
     bridge = load_bridge(use_native_backend)
     _active_bridge = bridge
     _compiled_scene = compiled_scene
     _last_transforms = []
     _last_mesh_outputs = []
     result = bridge.build_scene(compiled_scene)
-    _runtime_state.update(result)
+    _last_build_output = result.get("build_output") or empty_build_output()
+    result_state = dict(result)
+    result_state.pop("build_output", None)
+    _runtime_state.update(result_state)
     _runtime_state["step_count"] = 0
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0
@@ -79,12 +85,13 @@ def build_runtime(compiled_scene, use_native_backend: bool | None = None):
 
 
 def destroy_runtime():
-    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs, _pose_baseline
+    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs, _last_build_output, _pose_baseline
     reset_runtime_state()
     _active_bridge = None
     _compiled_scene = None
     _last_transforms = []
     _last_mesh_outputs = []
+    _last_build_output = empty_build_output()
     _pose_baseline = {}
 
 
@@ -185,6 +192,10 @@ def get_last_transforms():
 
 def get_last_mesh_outputs():
     return list(_last_mesh_outputs)
+
+
+def get_last_build_output():
+    return dict(_last_build_output)
 
 
 def set_pose_baseline(baseline: dict):

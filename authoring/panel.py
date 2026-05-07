@@ -1,7 +1,7 @@
 import bpy
 
 from ..compile.compiler import resolve_bone_chain_branching_names, resolve_bone_chain_names
-from ..components.properties import _parse_component_id_list, find_component_by_id, list_component_display_names
+from ..components.properties import find_component_by_id
 from ..runtime.session import get_exchange_info
 
 
@@ -89,7 +89,6 @@ def _draw_spring_bone_details(layout, scene, item):
         else:
             params.prop(chain, "center_bone_name", text="中心骨骼")
     params.prop(chain, "joint_radius", text="粒子半径")
-    params.prop(chain, "append_tail_tip", text="追加尾端粒子")
     params.prop(chain.damping_curve, "value", text="阻尼")
     params.prop(chain.distance_constraint.stiffness, "value", text="距离刚度")
     params.prop(chain.tether_constraint, "distance_compression", text="系绳压缩")
@@ -165,12 +164,6 @@ def _draw_spring_bone_details(layout, scene, item):
     all_collider_op.component_id = item.component_id
     sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH", text="同步骨骼")
     sync_op.component_id = item.component_id
-
-    group_names = list_component_display_names(scene, _parse_component_id_list(chain.collider_group_ids))
-    if False and group_names:
-        body.label(text="碰撞绑定", icon="LINKED")
-        for group_name in group_names[:4]:
-            body.label(text=group_name, icon="DOT")
 
     if chain.joint_overrides and scene.hocloth_ui_details_expanded:
         joint_box = body.box()
@@ -257,35 +250,6 @@ def _draw_collider_details(layout, scene, item):
     else:
         body.label(text=f"变换源: {collider_object.name}", icon="OUTLINER_OB_EMPTY")
         body.label(text=f"类型: {collider_object.type}", icon="INFO")
-
-
-def _draw_collider_group_details(layout, scene, item):
-    group = _resolve_component(scene, item, "hocloth_collider_group_components")
-    if group is None:
-        return
-
-    collider_names = list_component_display_names(scene, _parse_component_id_list(group.collider_ids))
-
-    header = layout.row(align=True)
-    header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
-    title_col = header.column(align=True)
-    title_col.label(text=item.display_name, icon="GROUP")
-    title_col.label(text=f"{len(collider_names)} 个碰撞体", icon="MESH_UVSPHERE")
-    actions = header.row(align=True)
-    actions.prop(item, "enabled", text="")
-    remove_op = actions.operator("hocloth.remove_component", text="", icon="X")
-    remove_op.component_id = item.component_id
-
-    if not item.ui_expanded:
-        return
-
-    body = layout.box()
-    body.label(text="碰撞绑定")
-    body.prop(group, "collider_ids", text="碰撞体")
-    assign_op = body.operator("hocloth.assign_selected_colliders_to_group", icon="RESTRICT_SELECT_OFF", text="使用选中碰撞体")
-    assign_op.component_id = item.component_id
-    for collider_name in collider_names[:6]:
-        body.label(text=collider_name, icon="DOT")
 
 
 def _draw_cache_output_details(layout, scene, item):

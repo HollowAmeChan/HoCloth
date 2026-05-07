@@ -465,6 +465,67 @@ nb::tuple ToTuple(const Quat& value)
     return nb::make_tuple(value.w, value.x, value.y, value.z);
 }
 
+nb::dict ToPython(const BuildSceneOutput& output)
+{
+    nb::dict dict;
+    nb::list particles;
+    for (const BuildDrawParticle& particle : output.particles) {
+        nb::dict item;
+        item["component_id"] = particle.component_id;
+        item["bone_name"] = particle.bone_name;
+        item["joint_index"] = particle.joint_index;
+        item["parent_index"] = particle.parent_index;
+        item["rest_head_local"] = ToTuple(particle.rest_head_local);
+        item["rest_tail_local"] = ToTuple(particle.rest_tail_local);
+        item["radius"] = particle.radius;
+        particles.append(item);
+    }
+    dict["particles"] = particles;
+
+    nb::list lines;
+    for (const BuildDrawLine& line : output.lines) {
+        nb::dict item;
+        item["component_id"] = line.component_id;
+        item["start_index"] = line.start_index;
+        item["end_index"] = line.end_index;
+        lines.append(item);
+    }
+    dict["lines"] = lines;
+
+    nb::list baselines;
+    for (const CompiledSpringBaseline& baseline : output.baselines) {
+        nb::dict item;
+        nb::list indices;
+        for (int joint_index : baseline.joint_indices) {
+            indices.append(joint_index);
+        }
+        item["joint_indices"] = indices;
+        baselines.append(item);
+    }
+    dict["baselines"] = baselines;
+
+    nb::list colliders;
+    for (const BuildDrawCollider& collider : output.colliders) {
+        nb::dict item;
+        item["collision_object_id"] = collider.collision_object_id;
+        item["owner_component_id"] = collider.owner_component_id;
+        item["shape_type"] = collider.shape_type;
+        item["world_translation"] = ToTuple(collider.world_translation);
+        item["world_rotation"] = ToTuple(collider.world_rotation);
+        item["radius"] = collider.radius;
+        item["height"] = collider.height;
+        item["capsule_direction"] = collider.capsule_direction;
+        item["capsule_aligned_on_center"] = collider.capsule_aligned_on_center;
+        item["capsule_reverse_direction"] = collider.capsule_reverse_direction;
+        item["capsule_end_radius"] = collider.capsule_end_radius;
+        item["source_object_name"] = collider.source_object_name;
+        colliders.append(item);
+    }
+    dict["colliders"] = colliders;
+
+    return dict;
+}
+
 nb::dict ToPython(const BuildSceneResult& result)
 {
     nb::dict dict;
@@ -473,6 +534,7 @@ nb::dict ToPython(const BuildSceneResult& result)
     dict["backend"] = result.backend;
     dict["build_message"] = result.build_message;
     dict["backend_status"] = result.backend_status;
+    dict["build_output"] = ToPython(result.build_output);
     return dict;
 }
 

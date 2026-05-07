@@ -2,10 +2,9 @@ from importlib import import_module
 import math
 import os
 
-from .exchange import empty_frame_inputs, frame_inputs_payload, wrap_compiled_scene, wrap_frame_inputs
+from .exchange import empty_build_output, empty_frame_inputs, frame_inputs_payload, wrap_compiled_scene, wrap_frame_inputs
 
 
-_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
 _BOOTSTRAP_COLLIDER_PROJECTION_SCALE = 0.35
 _BOOTSTRAP_COLLIDER_PUSH_LIMIT = 0.18
 
@@ -151,6 +150,7 @@ class NativeBridgeStub:
             "backend": "stub",
             "build_message": self._import_error or "hocloth_native import failed; using Python stub backend.",
             "backend_status": self._backend_status(scene_state),
+            "build_output": self._make_build_output(compiled_scene),
         }
 
     def destroy_scene(self, handle):
@@ -205,7 +205,7 @@ class NativeBridgeStub:
         for chain_index, chain in enumerate(scene["compiled_scene"].bone_chains):
             chain_state = scene["chain_states"][chain_index]
             for bone_index, bone in enumerate(chain.bones):
-                if bone.name.endswith(_TAIL_TIP_SUFFIX) or bone.parent_index < 0:
+                if bone.parent_index < 0:
                     continue
                 bone_state = chain_state[bone_index]
                 pitch = bone_state["pitch"]
@@ -238,6 +238,52 @@ class NativeBridgeStub:
         if scene is None:
             return []
         return []
+
+    def _make_build_output(self, compiled_scene):
+        output = empty_build_output()
+        for chain in compiled_scene.bone_chains:
+            for joint_index, joint in enumerate(chain.bones):
+                output["particles"].append(
+                    {
+                        "component_id": chain.component_id,
+                        "bone_name": joint.name,
+                        "joint_index": joint_index,
+                        "parent_index": int(getattr(joint, "parent_index", -1)),
+                        "rest_head_local": tuple(joint.rest_head_local),
+                        "rest_tail_local": tuple(joint.rest_tail_local),
+                        "radius": float(joint.radius),
+                    }
+                )
+            for start_index, end_index in _chain_line_indices(chain):
+                output["lines"].append(
+                    {
+                        "component_id": chain.component_id,
+                        "start_index": int(start_index),
+                        "end_index": int(end_index),
+                    }
+                )
+            for baseline in getattr(chain, "baselines", []) or []:
+                output["baselines"].append(
+                    {"joint_indices": list(getattr(baseline, "joint_indices", []) or [])}
+                )
+        for collider in getattr(compiled_scene, "collision_objects", []) or []:
+            output["colliders"].append(
+                {
+                    "collision_object_id": collider.collision_object_id,
+                    "owner_component_id": collider.owner_component_id,
+                    "shape_type": collider.shape_type,
+                    "world_translation": tuple(collider.world_translation),
+                    "world_rotation": tuple(collider.world_rotation),
+                    "radius": float(collider.radius),
+                    "height": float(collider.height),
+                    "capsule_direction": collider.capsule_direction,
+                    "capsule_aligned_on_center": bool(collider.capsule_aligned_on_center),
+                    "capsule_reverse_direction": bool(collider.capsule_reverse_direction),
+                    "capsule_end_radius": float(collider.capsule_end_radius),
+                    "source_object_name": collider.source_object_name,
+                }
+            )
+        return output
 
     def _make_chain_states(self, compiled_scene):
         return [

@@ -11,7 +11,6 @@ from ..components.properties import _parse_component_id_list, find_component_by_
 
 _DRAW_HANDLER = None
 _LINE_SHADER = None
-_TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
 
 _SPRING_COLOR = (0.24, 0.78, 1.0, 1.0)
 _RADIUS_COLOR = (1.0, 0.72, 0.18, 1.0)
@@ -122,20 +121,6 @@ def _joint_world_positions(component):
         if parent_position is not None and child_position is not None:
             segments.append((bone.parent.name, bone_name))
 
-    if positions and getattr(component, "append_tail_tip", False):
-        for bone_name in bone_names:
-            bone = armature_object.data.bones.get(bone_name)
-            if bone is None:
-                continue
-            child_names = [child.name for child in bone.children if child.name in bone_name_set]
-            if child_names:
-                continue
-            pose_bone = armature_object.pose.bones.get(bone_name)
-            if pose_bone is None:
-                continue
-            tip_name = f"{bone_name}{_TAIL_TIP_SUFFIX}"
-            positions[tip_name] = (armature_object.matrix_world @ pose_bone.tail).copy()
-            segments.append((bone_name, tip_name))
     return positions, segments
 
 
