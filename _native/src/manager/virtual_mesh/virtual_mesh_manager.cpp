@@ -809,7 +809,10 @@ void VirtualMeshManager::PostProxyMeshUpdate(
                 parent_local_index >= 0
                     ? team_data.proxy_transform_chunk.start_index + parent_local_index
                     : -1;
-            if (parent_transform_index >= 0
+            const VertexAttribute attribute =
+                vertex_index < attributes_.Length() ? attributes_[vertex_index] : VertexAttribute::Invalid();
+            if (attribute.IsMove()
+                && parent_transform_index >= 0
                 && parent_transform_index < transform_data.position_array.Length()
                 && parent_transform_index < transform_data.rotation_array.Length()
                 && parent_transform_index < transform_data.scale_array.Length()) {

@@ -10,6 +10,7 @@ from ..runtime.pose_apply import (
     apply_runtime_mesh_outputs_to_scene,
     apply_runtime_transforms_to_scene,
     capture_pose_baseline,
+    capture_pose_state,
     clear_pose_transforms,
     restore_pose_state,
 )
@@ -97,6 +98,10 @@ def _build_runtime_from_scene(context, report=None) -> bool:
     scene.hocloth_runtime_backend = runtime_state.get("backend", "unknown")
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    scene.hocloth_runtime_non_identity_transform_count = runtime_state.get("non_identity_transform_count", 0)
+    scene.hocloth_runtime_max_rotation_degrees = runtime_state.get("max_rotation_degrees", 0.0)
+    scene.hocloth_runtime_max_translation = runtime_state.get("max_translation", 0.0)
+    scene.hocloth_runtime_write_mode_summary = runtime_state.get("write_mode_summary", "")
     scene.hocloth_runtime_applied_count = 0
     scene.hocloth_runtime_missing_bone_count = 0
     scene.hocloth_runtime_missing_armature_count = 0
@@ -365,6 +370,10 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
             set_pose_baseline(capture_pose_baseline(context.scene, authoring_snapshot))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        context.scene.hocloth_runtime_non_identity_transform_count = runtime_state.get("non_identity_transform_count", 0)
+        context.scene.hocloth_runtime_max_rotation_degrees = runtime_state.get("max_rotation_degrees", 0.0)
+        context.scene.hocloth_runtime_max_translation = runtime_state.get("max_translation", 0.0)
+        context.scene.hocloth_runtime_write_mode_summary = runtime_state.get("write_mode_summary", "")
         context.scene.hocloth_runtime_applied_count = 0
         context.scene.hocloth_runtime_missing_bone_count = 0
         context.scene.hocloth_runtime_missing_armature_count = 0
@@ -409,20 +418,30 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
     bl_description = "Execute one fixed simulation step through the runtime API"
 
     def execute(self, context):
+        if not context.scene.hocloth_runtime_handle:
+            if not _build_runtime_from_scene(context, self.report):
+                return {"CANCELLED"}
+
         authoring_snapshot = get_last_authoring_snapshot()
+        source_pose = capture_pose_state(context.scene, authoring_snapshot)
         try:
             result = step_runtime(
                 context.scene.hocloth_runtime_dt,
                 context.scene.hocloth_simulation_frequency,
                 build_runtime_inputs(context.scene, authoring_snapshot),
             )
-        except RuntimeError as exc:
+        except Exception as exc:
+            context.scene.hocloth_runtime_status = f"Step failed: {exc}"
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
         runtime_state = result["runtime_state"]
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        context.scene.hocloth_runtime_non_identity_transform_count = runtime_state.get("non_identity_transform_count", 0)
+        context.scene.hocloth_runtime_max_rotation_degrees = runtime_state.get("max_rotation_degrees", 0.0)
+        context.scene.hocloth_runtime_max_translation = runtime_state.get("max_translation", 0.0)
+        context.scene.hocloth_runtime_write_mode_summary = runtime_state.get("write_mode_summary", "")
         context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
         context.scene.hocloth_runtime_applied_count = 0
         context.scene.hocloth_runtime_missing_bone_count = 0
@@ -437,7 +456,7 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
             apply_result = apply_runtime_transforms_to_scene(
                 context.scene,
                 result["transforms"],
-                get_pose_baseline(),
+                source_pose,
             )
             context.view_layer.update()
             context.scene.hocloth_runtime_applied_count = apply_result["applied_count"]
@@ -455,7 +474,9 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_status = (
             f"Stepped {runtime_state['step_count']} fixed steps, "
             f"last={runtime_state.get('last_executed_steps', 0)}, "
-            f"transforms={runtime_state['bone_transform_count']}"
+            f"transforms={runtime_state['bone_transform_count']}, "
+            f"non_identity={runtime_state.get('non_identity_transform_count', 0)}, "
+            f"max_rot={runtime_state.get('max_rotation_degrees', 0.0):.3f}"
             f"{status_suffix}"
         )
         return {"FINISHED"}

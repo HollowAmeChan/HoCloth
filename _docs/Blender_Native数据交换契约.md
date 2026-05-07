@@ -101,6 +101,33 @@ mesh_outputs
 
 `transforms[]` 用于骨骼回写，`mesh_outputs[]` 用于 mesh/cache 写回。C++ 不直接操作 Blender 对象，只返回稳定的数据结构。
 
+### 5.1 BoneCloth 写回规则
+
+BoneCloth 写回必须按 MC2 的 `VirtualMeshManager.WriteTransformDataJob`、`WriteTransformLocalDataJob` 和 `TransformManager.WriteTransformJob` 语义处理，不能简单理解为“所有骨骼都写位移”。
+
+MC2 后端会在 `TransformData` 中保留完整结果：
+
+```text
+positionArray / rotationArray              // world position / world rotation
+localPositionArray / localRotationArray    // parent-local position / rotation
+flagArray                                  // Transform write mode
+```
+
+实际写回由 transform flag 分流：
+
+- `Flag_WorldRotWrite`：写世界旋转；MC2 只对 BoneSpring 额外写世界位置。BoneCloth 固定点/根通常属于这个路径。
+- `Flag_LocalPosRotWrite`：写 parent-local position + rotation；MC2 只对 `attr.IsMove()` 且存在父级的 transform 计算这组本地结果。
+- `Flag_Restore`：表示该 transform 参与恢复/写回生命周期，不等同于每帧都应写位移。
+
+Blender 侧连续骨链默认不应把所有 `localPosition` 写入 `pose_bone.location`，否则会把连骨链表现成断链/拉伸。默认策略是：
+
+- 普通 BoneCloth 子骨主要消费旋转结果。
+- `localPosition` 先作为诊断数据和未来“允许位移/断链骨/根位移”模式的输入保留。
+- 根或固定点按 MC2 的 `WorldRotWrite` 语义消费世界旋转相对当前动画姿态的 delta。
+- 可动子骨按 MC2 的 `LocalPosRotWrite` 语义消费本地旋转相对当前动画本地姿态的 delta。
+
+因此，后续任何跨端写回字段扩展，都要先标明它对应 MC2 的哪一种 Transform flag，而不是直接新增“全骨位移写回”。
+
 ## 6. Native 入口策略
 
 C++ nanobind 入口应优先接收 envelope：

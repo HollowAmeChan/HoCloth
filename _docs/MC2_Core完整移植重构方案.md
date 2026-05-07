@@ -413,6 +413,28 @@ Blender Python 侧不再负责：
 - 为实时视图刷新维护一套独立编译模型。
 - 把 ColliderGroup/Binding 作为新主路径。碰撞选择以链上 collider list 为主，旧组仅作为兼容导入数据。
 
+### BoneCloth 写回边界
+
+BoneCloth 的写回要严格对齐 MC2，而不是把 `TransformData.localPositionArray` 无条件写到 Blender `pose_bone.location`。
+
+MC2 写回链路是：
+
+```text
+VirtualMeshManager.PostProxyMeshUpdate
+  -> WriteTransformDataJob 写 TransformData.positionArray / rotationArray
+  -> WriteTransformLocalDataJob 只为 Move 且有父级的 transform 写 localPositionArray / localRotationArray
+TransformManager.WriteTransform
+  -> Flag_WorldRotWrite: 写世界旋转，BoneSpring 才额外写世界位置
+  -> Flag_LocalPosRotWrite: 写本地位置 + 本地旋转
+```
+
+Blender 连续骨链默认主要消费旋转：
+- 固定根/固定点按 `WorldRotWrite` 输出世界旋转 delta。
+- 可动子骨按 `LocalPosRotWrite` 输出本地旋转 delta。
+- `localPosition` 保留在 native 结果中用于诊断、根位移或未来显式“允许断链位移”模式；不要默认把所有子骨位移写回 Blender。
+
+这条规则是跨端协议的一部分。后续调试 BoneCloth 不动、过硬、卷曲时，优先检查 transform flag、world/local rotation delta、粒子/display/proxy 写回是否一致，不要用全骨位移写回去逼近视觉效果。
+
 ### C++ 侧新增边界：Blender Transfer Unit
 
 C++ 侧已经开始新增一个明确的 Blender 输入转换单元。当前落点是：

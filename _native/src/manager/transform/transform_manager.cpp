@@ -82,12 +82,17 @@ DataChunk TransformManager::AddTransform(const VirtualMeshContainer& container, 
 
     const int count = container.GetTransformCount();
     const DataChunk chunk = AddTransform(count, team_id);
-    BitFlag8 flag{FlagRead};
-    flag.SetFlag(FlagEnable, true);
-
     for (int i = 0; i < count; ++i) {
         const TransformRecord record = container.GetTransformRecordFromIndex(i);
         if (record.IsValid()) {
+            BitFlag8 flag{FlagRead};
+            flag.SetFlag(FlagEnable, true);
+            const VirtualMesh* mesh = container.SharedVirtualMesh();
+            if (mesh != nullptr && i < mesh->transform_data.flag_array.Count()) {
+                flag = mesh->transform_data.flag_array[i];
+                flag.SetFlag(FlagEnable, true);
+                flag.SetFlag(FlagRead, true);
+            }
             SetTransform(chunk.start_index + i, record, flag, team_id);
         }
     }

@@ -787,7 +787,9 @@ int TeamManager::AlwaysTeamUpdate(
         float time = team_data.time + add_time;
         const float interval = time - team_data.now_update_time;
         const int scheduled_update_count =
-            interval > 0.0f ? static_cast<int>(interval / simulation_delta_time) : 0;
+            interval > 0.0f
+                ? static_cast<int>((interval / simulation_delta_time) + 1.0e-4f)
+                : 0;
 
         team_data.update_count = std::min(scheduled_update_count, max_count);
         team_data.skip_count = scheduled_update_count - team_data.update_count;

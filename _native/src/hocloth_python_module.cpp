@@ -572,6 +572,8 @@ nb::list ToPython(const std::vector<BoneTransform>& transforms)
         item["bone_name"] = transform.bone_name;
         item["translation"] = ToTuple(transform.translation);
         item["rotation_quaternion"] = ToTuple(transform.rotation_quaternion);
+        item["write_mode"] = transform.write_mode;
+        item["transform_flags"] = transform.transform_flags;
         items.append(item);
     }
     return items;

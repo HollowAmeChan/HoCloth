@@ -7,6 +7,10 @@ SCENE_PROPERTIES = (
     "hocloth_runtime_handle",
     "hocloth_runtime_step_count",
     "hocloth_runtime_transform_count",
+    "hocloth_runtime_non_identity_transform_count",
+    "hocloth_runtime_max_rotation_degrees",
+    "hocloth_runtime_max_translation",
+    "hocloth_runtime_write_mode_summary",
     "hocloth_runtime_applied_count",
     "hocloth_runtime_missing_bone_count",
     "hocloth_runtime_missing_armature_count",
@@ -52,6 +56,27 @@ def register():
         name="Runtime Transforms",
         default=0,
         min=0,
+    )
+    bpy.types.Scene.hocloth_runtime_non_identity_transform_count = bpy.props.IntProperty(
+        name="Non Identity Transforms",
+        default=0,
+        min=0,
+    )
+    bpy.types.Scene.hocloth_runtime_max_rotation_degrees = bpy.props.FloatProperty(
+        name="Max Rotation Delta",
+        default=0.0,
+        min=0.0,
+        precision=3,
+    )
+    bpy.types.Scene.hocloth_runtime_max_translation = bpy.props.FloatProperty(
+        name="Max Translation Delta",
+        default=0.0,
+        min=0.0,
+        precision=5,
+    )
+    bpy.types.Scene.hocloth_runtime_write_mode_summary = bpy.props.StringProperty(
+        name="Write Mode Summary",
+        default="",
     )
     bpy.types.Scene.hocloth_runtime_applied_count = bpy.props.IntProperty(
         name="Applied Bones",

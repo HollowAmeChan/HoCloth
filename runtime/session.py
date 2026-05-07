@@ -16,6 +16,10 @@ _runtime_state = {
     "simulation_frequency": 90,
     "last_executed_steps": 0,
     "bone_transform_count": 0,
+    "non_identity_transform_count": 0,
+    "max_rotation_degrees": 0.0,
+    "max_translation": 0.0,
+    "write_mode_summary": "",
     "fixed_step_dt": 1.0 / 90.0,
     "accumulated_time": 0.0,
 }
@@ -25,6 +29,40 @@ _last_transforms = []
 _last_mesh_outputs = []
 _last_build_output = empty_build_output()
 _pose_baseline = {}
+
+
+def _summarize_transforms(transforms: list[dict]) -> dict:
+    import math
+
+    max_rotation_degrees = 0.0
+    max_translation = 0.0
+    non_identity_count = 0
+    write_modes = {}
+    for transform in transforms or []:
+        rotation = transform.get("rotation_quaternion", (1.0, 0.0, 0.0, 0.0))
+        if len(rotation) >= 4:
+            w = max(-1.0, min(1.0, abs(float(rotation[0]))))
+            angle = math.degrees(2.0 * math.acos(w))
+            if angle > 180.0:
+                angle = 360.0 - angle
+            max_rotation_degrees = max(max_rotation_degrees, angle)
+            if angle > 0.01:
+                non_identity_count += 1
+        translation = transform.get("translation", (0.0, 0.0, 0.0))
+        if len(translation) >= 3:
+            length = math.sqrt(sum(float(value) * float(value) for value in translation[:3]))
+            max_translation = max(max_translation, length)
+        write_mode = str(transform.get("write_mode", "unknown") or "unknown")
+        write_modes[write_mode] = write_modes.get(write_mode, 0) + 1
+
+    return {
+        "non_identity_transform_count": non_identity_count,
+        "max_rotation_degrees": max_rotation_degrees,
+        "max_translation": max_translation,
+        "write_mode_summary": ", ".join(
+            f"{key}:{value}" for key, value in sorted(write_modes.items())
+        ),
+    }
 
 
 def _current_bridge():
@@ -50,6 +88,10 @@ def build_runtime(build_input, force_native_backend: bool | None = None):
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["non_identity_transform_count"] = 0
+    _runtime_state["max_rotation_degrees"] = 0.0
+    _runtime_state["max_translation"] = 0.0
+    _runtime_state["write_mode_summary"] = ""
     _runtime_state["fixed_step_dt"] = 1.0 / max(int(_runtime_state["simulation_frequency"]), 1)
     _runtime_state["accumulated_time"] = 0.0
     return dict(_runtime_state)
@@ -77,6 +119,10 @@ def reset_runtime():
     _runtime_state["last_dt"] = 0.0
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["non_identity_transform_count"] = 0
+    _runtime_state["max_rotation_degrees"] = 0.0
+    _runtime_state["max_translation"] = 0.0
+    _runtime_state["write_mode_summary"] = ""
     _runtime_state["accumulated_time"] = 0.0
     _last_transforms = []
     _last_mesh_outputs = []
@@ -106,10 +152,11 @@ def step_runtime(
 
     fixed_step_dt = 1.0 / max(int(simulation_frequency), 1)
     _runtime_state["fixed_step_dt"] = fixed_step_dt
-    _runtime_state["accumulated_time"] += max(float(dt), 0.0)
+    frame_dt = max(float(dt), 0.0)
+    _runtime_state["accumulated_time"] += frame_dt
     result = bridge.step_scene(
         _runtime_state["handle"],
-        fixed_step_dt,
+        frame_dt,
         simulation_frequency,
     )
     transforms = bridge.get_bone_transforms(_runtime_state["handle"])
@@ -121,6 +168,7 @@ def step_runtime(
     _runtime_state["simulation_frequency"] = simulation_frequency
     _runtime_state["last_executed_steps"] = int(result.get("executed_steps", 0))
     _runtime_state["bone_transform_count"] = len(transforms)
+    _runtime_state.update(_summarize_transforms(transforms))
     _runtime_state["accumulated_time"] = max(
         0.0,
         _runtime_state["accumulated_time"] - (fixed_step_dt * _runtime_state["last_executed_steps"]),
@@ -144,6 +192,10 @@ def reset_runtime_state():
     _runtime_state["simulation_frequency"] = 90
     _runtime_state["last_executed_steps"] = 0
     _runtime_state["bone_transform_count"] = 0
+    _runtime_state["non_identity_transform_count"] = 0
+    _runtime_state["max_rotation_degrees"] = 0.0
+    _runtime_state["max_translation"] = 0.0
+    _runtime_state["write_mode_summary"] = ""
     _runtime_state["fixed_step_dt"] = 1.0 / 90.0
     _runtime_state["accumulated_time"] = 0.0
 

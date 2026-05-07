@@ -196,6 +196,8 @@ struct BoneTransform {
     std::string bone_name;
     Vec3 translation;
     Quat rotation_quaternion;
+    std::string write_mode;
+    int transform_flags = 0;
 };
 
 struct MeshOutput {

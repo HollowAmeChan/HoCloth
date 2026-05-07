@@ -205,6 +205,17 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                 f"applied={getattr(scene, 'hocloth_runtime_applied_count', 0)}"
             )
         )
+        if scene.hocloth_ui_details_expanded:
+            runtime.label(
+                text=(
+                    f"non_identity={getattr(scene, 'hocloth_runtime_non_identity_transform_count', 0)}, "
+                    f"max_rot={getattr(scene, 'hocloth_runtime_max_rotation_degrees', 0.0):.3f}, "
+                    f"max_pos={getattr(scene, 'hocloth_runtime_max_translation', 0.0):.5f}"
+                )
+            )
+            runtime.label(
+                text=f"write_modes={getattr(scene, 'hocloth_runtime_write_mode_summary', '')}"
+            )
 
         overlay = layout.box()
         overlay.label(text="Viewport")

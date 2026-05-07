@@ -200,6 +200,10 @@ def on_frame_change_post(scene, depsgraph):
     runtime_state = result["runtime_state"]
     scene.hocloth_runtime_step_count = runtime_state["step_count"]
     scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+    scene.hocloth_runtime_non_identity_transform_count = runtime_state.get("non_identity_transform_count", 0)
+    scene.hocloth_runtime_max_rotation_degrees = runtime_state.get("max_rotation_degrees", 0.0)
+    scene.hocloth_runtime_max_translation = runtime_state.get("max_translation", 0.0)
+    scene.hocloth_runtime_write_mode_summary = runtime_state.get("write_mode_summary", "")
     scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
     scene.hocloth_runtime_applied_count = 0
     scene.hocloth_runtime_missing_bone_count = 0
@@ -215,12 +219,14 @@ def on_frame_change_post(scene, depsgraph):
         apply_result = apply_runtime_transforms_to_scene(
             scene,
             result["transforms"],
-            get_pose_baseline(),
+            source_pose,
         )
         scene.hocloth_runtime_applied_count = apply_result["applied_count"]
         scene.hocloth_runtime_missing_bone_count = apply_result["missing_bone_count"]
         scene.hocloth_runtime_missing_armature_count = apply_result["missing_armature_count"]
         scene.hocloth_runtime_apply_armature_count = apply_result["armature_count"]
+        if bpy.context.view_layer is not None:
+            bpy.context.view_layer.update()
         status_suffix = (
             f", applied={apply_result['applied_count']}, "
             f"missing_bones={apply_result['missing_bone_count']}, "
@@ -233,7 +239,9 @@ def on_frame_change_post(scene, depsgraph):
         f"Live stepping on frame {scene.frame_current}, "
         f"steps={runtime_state['step_count']}, "
         f"fixed_steps={runtime_state.get('last_executed_steps', 0)}, "
-        f"transforms={runtime_state['bone_transform_count']}"
+        f"transforms={runtime_state['bone_transform_count']}, "
+        f"non_identity={runtime_state.get('non_identity_transform_count', 0)}, "
+        f"max_rot={runtime_state.get('max_rotation_degrees', 0.0):.3f}"
         f"{status_suffix}"
     )
 

@@ -360,3 +360,10 @@ Architecture direction update:
 - Python no longer has `runtime_scene_view_from_authoring_snapshot()` / `compiled_scene_from_authoring_snapshot()` / `runtime/compiled_scene.py`; frame inputs are generated directly from `authoring_snapshot`, and viewport/writeback data comes from native `build_output`.
 - `compiled_scene` remains only as a C++ legacy parser/native runtime struct while the C++ transfer unit comes online; new work should move toward `authoring_snapshot -> native transfer -> MC2 PreBuild/Build -> build_output`.
 - Viewport drawing and writeback inspection should consume `build_output` returned by native build, not Python-side real-time topology guesses.
+
+BoneCloth writeback rule:
+
+- Match MC2 `VirtualMeshManager.WriteTransformDataJob` / `WriteTransformLocalDataJob` / `TransformManager.WriteTransformJob`.
+- Native `TransformData` owns world position/rotation plus local position/rotation, but Blender continuous bones should not consume every local position as pose-bone translation.
+- `Flag_WorldRotWrite` maps to world rotation delta; MC2 only writes world position for BoneSpring.
+- `Flag_LocalPosRotWrite` maps to parent-local rotation delta by default. Keep local position available for diagnostics, root/special cases, or a future explicit disconnected-bone mode.

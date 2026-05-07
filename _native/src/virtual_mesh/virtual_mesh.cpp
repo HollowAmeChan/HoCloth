@@ -1260,6 +1260,17 @@ void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
 
     transform_data.Dispose();
     transform_data.Initialize(transform_count);
+    transform_data.flag_array.AddRange(transform_count);
+    transform_data.init_local_position_array.AddRange(transform_count);
+    transform_data.init_local_rotation_array.AddRange(transform_count);
+    transform_data.position_array.AddRange(transform_count);
+    transform_data.rotation_array.AddRange(transform_count);
+    transform_data.inverse_rotation_array.AddRange(transform_count);
+    transform_data.scale_array.AddRange(transform_count);
+    transform_data.local_position_array.AddRange(transform_count);
+    transform_data.local_rotation_array.AddRange(transform_count);
+    transform_data.local_to_world_matrix_array.AddRange(transform_count);
+    transform_data.team_id_array.AddRange(transform_count);
     transform_data.root_id_list = render_setup.root_transform_ids;
     for (int index = 0; index < transform_count; ++index) {
         const int id = index < static_cast<int>(render_setup.transform_ids.size())
