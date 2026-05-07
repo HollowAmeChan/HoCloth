@@ -914,6 +914,9 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
         const bool is_bone_spring = IsBoneSpring(chain);
         parameters.gravity = IsBoneCloth(chain) ? std::max(0.0f, chain.gravity_strength) : 0.0f;
         parameters.world_gravity_direction = ToMc2Float3(Normalize(chain.gravity_direction));
+        parameters.gravity_falloff = Clamp01(chain.gravity_falloff);
+        parameters.stabilization_time_after_reset = Clamp01(chain.stabilization_time_after_reset);
+        parameters.blend_weight = Clamp01(chain.blend_weight);
         parameters.radius_curve_data = ToCurveMatrix(chain.radius_curve, std::max(0.0001f, chain.joint_radius));
         parameters.damping_curve_data = ScaleCurveMatrix(
             ToCurveMatrix(chain.damping_curve, Clamp01(chain.damping), true),
@@ -927,16 +930,26 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
         parameters.tether_constraint.compression_limit = is_bone_spring
             ? kMc2BoneSpringTetherCompressionLimit
             : Clamp01(chain.tether_distance_compression);
+        parameters.triangle_bending_constraint.stiffness = Clamp01(chain.triangle_bending_stiffness);
         parameters.spring_constraint.spring_power =
             is_bone_spring && chain.use_spring ? Clamp(chain.spring_power, 0.001f, 1.0f) : 0.0f;
         parameters.spring_constraint.limit_distance = std::max(0.0f, chain.limit_distance);
         parameters.spring_constraint.normal_limit_ratio = Clamp01(chain.normal_limit_ratio);
         parameters.spring_constraint.spring_noise = Clamp01(chain.spring_noise);
         parameters.angle_constraint.use_angle_restoration = chain.angle_restoration_enabled ? 1 : 0;
-        parameters.angle_constraint.restoration_stiffness =
-            ToCurveMatrix(chain.angle_restoration_stiffness_curve, Clamp01(chain.angle_restoration_stiffness), true);
+        parameters.angle_constraint.restoration_stiffness = ScaleCurveMatrix(
+            ToCurveMatrix(chain.angle_restoration_stiffness_curve, Clamp01(chain.angle_restoration_stiffness), true),
+            0.2f,
+            true
+        );
         parameters.angle_constraint.restoration_velocity_attenuation =
             Clamp01(chain.angle_restoration_velocity_attenuation);
+        parameters.angle_constraint.restoration_gravity_falloff =
+            Clamp01(chain.angle_restoration_gravity_falloff);
+        parameters.angle_constraint.use_angle_limit = chain.angle_limit_enabled ? 1 : 0;
+        parameters.angle_constraint.limit_curve_data =
+            ToCurveMatrix(chain.angle_limit_angle_curve, Clamp(chain.angle_limit_angle, 0.0f, 180.0f));
+        parameters.angle_constraint.limit_stiffness = Clamp01(chain.angle_limit_stiffness);
         parameters.inertia_constraint.world_inertia = Clamp01(chain.inertia_world_inertia);
         parameters.inertia_constraint.movement_inertia_smoothing =
             Clamp01(chain.inertia_movement_inertia_smoothing);

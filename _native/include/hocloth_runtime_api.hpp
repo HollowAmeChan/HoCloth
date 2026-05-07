@@ -70,6 +70,9 @@ struct CompiledSpringBone {
     CompiledCurve damping_curve;
     float drag = 0.0f;
     float damping_curve_value = 0.0f;
+    float gravity_falloff = 0.0f;
+    float stabilization_time_after_reset = 0.1f;
+    float blend_weight = 1.0f;
     float inertia_world_inertia = 1.0f;
     float inertia_movement_inertia_smoothing = 0.4f;
     bool inertia_movement_speed_limit_enabled = false;
@@ -88,10 +91,16 @@ struct CompiledSpringBone {
     float tether_distance_compression = 0.8f;
     float distance_stiffness = 0.5f;
     CompiledCurve distance_stiffness_curve;
+    float triangle_bending_stiffness = 1.0f;
     bool angle_restoration_enabled = true;
     float angle_restoration_stiffness = 0.0f;
     CompiledCurve angle_restoration_stiffness_curve;
     float angle_restoration_velocity_attenuation = 0.6f;
+    float angle_restoration_gravity_falloff = 0.0f;
+    bool angle_limit_enabled = false;
+    float angle_limit_angle = 60.0f;
+    CompiledCurve angle_limit_angle_curve;
+    float angle_limit_stiffness = 1.0f;
     bool use_spring = true;
     float spring_power = 0.04f;
     float limit_distance = 0.1f;

@@ -222,6 +222,13 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         chain.damping = ReadFloat(chain_dict, "damping");
         chain.drag = ReadFloat(chain_dict, "drag");
         chain.damping_curve_value = ReadFloat(chain_dict, "damping_curve_value", chain.damping);
+        chain.gravity_falloff = ReadFloat(chain_dict, "gravity_falloff", chain.gravity_falloff);
+        chain.stabilization_time_after_reset = ReadFloat(
+            chain_dict,
+            "stabilization_time_after_reset",
+            chain.stabilization_time_after_reset
+        );
+        chain.blend_weight = ReadFloat(chain_dict, "blend_weight", chain.blend_weight);
         chain.inertia_world_inertia = ReadFloat(chain_dict, "inertia_world_inertia", 1.0f);
         chain.inertia_movement_inertia_smoothing = ReadFloat(chain_dict, "inertia_movement_inertia_smoothing", 0.4f);
         chain.inertia_movement_speed_limit_enabled = ReadInt(chain_dict, "inertia_movement_speed_limit_enabled", 0) != 0;
@@ -258,6 +265,11 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
             chain.tether_distance_compression
         );
         chain.distance_stiffness = ReadFloat(chain_dict, "distance_stiffness", chain.stiffness);
+        chain.triangle_bending_stiffness = ReadFloat(
+            chain_dict,
+            "triangle_bending_stiffness",
+            chain.triangle_bending_stiffness
+        );
         chain.angle_restoration_enabled = ReadInt(chain_dict, "angle_restoration_enabled", 1) != 0;
         if (chain_dict.contains("angle_restoration_enabled")) {
             chain.angle_restoration_enabled = nb::cast<bool>(chain_dict["angle_restoration_enabled"]);
@@ -271,6 +283,21 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
             chain_dict,
             "angle_restoration_velocity_attenuation",
             0.6f
+        );
+        chain.angle_restoration_gravity_falloff = ReadFloat(
+            chain_dict,
+            "angle_restoration_gravity_falloff",
+            chain.angle_restoration_gravity_falloff
+        );
+        chain.angle_limit_enabled = ReadInt(chain_dict, "angle_limit_enabled", 0) != 0;
+        if (chain_dict.contains("angle_limit_enabled")) {
+            chain.angle_limit_enabled = nb::cast<bool>(chain_dict["angle_limit_enabled"]);
+        }
+        chain.angle_limit_angle = ReadFloat(chain_dict, "angle_limit_angle", chain.angle_limit_angle);
+        chain.angle_limit_stiffness = ReadFloat(
+            chain_dict,
+            "angle_limit_stiffness",
+            chain.angle_limit_stiffness
         );
         chain.use_spring = ReadInt(chain_dict, "use_spring", 1) != 0;
         if (chain_dict.contains("use_spring")) {

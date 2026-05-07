@@ -20,17 +20,17 @@ HOCLOTH_MC2_PRESET_ITEMS = (
 )
 
 HOCLOTH_MC2_BONE_SPRING_PRESETS = {
-    "ACCESSORY": {"label": "MC2 Accessory", "gravity": 0.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.15, "angle_velocity": 0.6, "spring": 0.04, "spring_limit": 0.10, "tether": 0.40, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {}},
-    "CAPE": {"label": "MC2 Cape", "gravity": 7.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.15, "angle_velocity": 0.8, "spring": 0.04, "spring_limit": 0.10, "tether": 0.50, "friction": 0.10, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.0967835)}},
-    "FRONT_HAIR": {"label": "MC2 FrontHair", "gravity": 4.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.15, "angle_velocity": 0.7, "spring": 0.04, "spring_limit": 0.10, "tether": 0.10, "friction": 0.05, "movement_limit": 3.0, "rotation_limit": 360.0, "particle_limit": 2.0, "curves": {"angle": (1.0, 0.3)}},
-    "LONG_HAIR": {"label": "MC2 LongHair", "gravity": 5.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.20, "angle_velocity": 0.8, "spring": 0.06, "spring_limit": 0.05, "tether": 0.80, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 3.0, "curves": {"angle": (1.0, 0.106244)}},
-    "SHORT_HAIR": {"label": "MC2 ShortHair", "gravity": 2.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.15, "angle_velocity": 0.6, "spring": 0.03, "spring_limit": 0.05, "tether": 0.40, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.3)}},
-    "SKIRT": {"label": "MC2 Skirt", "gravity": 5.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.20, "angle_velocity": 0.7, "spring": 0.03, "spring_limit": 0.05, "tether": 0.70, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"distance": (1.0, 0.5), "angle": (1.0, 0.204475)}},
-    "SOFT_SKIRT": {"label": "MC2 SoftSkirt", "gravity": 3.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "angle": 0.14, "angle_velocity": 0.7, "spring": 0.03, "spring_limit": 0.05, "tether": 0.70, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"distance": (1.0, 0.0433655), "angle": (1.0, 0.0597)}},
-    "MIDDLE_SPRING": {"label": "MC2 MiddleSpring", "gravity": 0.0, "damping": 0.30, "radius": 0.02, "distance": 0.242, "angle": 0.40, "angle_velocity": 0.6, "spring": 0.03, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
-    "SOFT_SPRING": {"label": "MC2 SoftSpring", "gravity": 0.0, "damping": 0.20, "radius": 0.02, "distance": 0.242, "angle": 0.20, "angle_velocity": 0.8, "spring": 0.01, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
-    "HARD_SPRING": {"label": "MC2 HardSpring", "gravity": 0.0, "damping": 0.30, "radius": 0.02, "distance": 0.242, "angle": 0.60, "angle_velocity": 0.4, "spring": 0.06, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
-    "TAIL": {"label": "MC2 Tail", "gravity": 0.0, "damping": 0.05, "radius": 0.02, "distance": 1.0, "angle": 0.10, "angle_velocity": 0.5, "spring": 0.01, "spring_limit": 0.05, "tether": 0.80, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.0973314)}},
+    "ACCESSORY": {"label": "MC2 Accessory", "gravity": 0.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.15, "angle_velocity": 0.6, "angle_gravity_falloff": 0.0, "spring": 0.04, "spring_limit": 0.10, "tether": 0.40, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {}},
+    "CAPE": {"label": "MC2 Cape", "gravity": 7.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.15, "angle_velocity": 0.8, "angle_gravity_falloff": 0.0, "spring": 0.04, "spring_limit": 0.10, "tether": 0.50, "friction": 0.10, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.0967835)}},
+    "FRONT_HAIR": {"label": "MC2 FrontHair", "gravity": 4.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.15, "angle_velocity": 0.7, "angle_gravity_falloff": 0.0, "spring": 0.04, "spring_limit": 0.10, "tether": 0.10, "friction": 0.05, "movement_limit": 3.0, "rotation_limit": 360.0, "particle_limit": 2.0, "curves": {"angle": (1.0, 0.3)}},
+    "LONG_HAIR": {"label": "MC2 LongHair", "gravity": 5.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.20, "angle_velocity": 0.8, "angle_gravity_falloff": 0.5, "spring": 0.06, "spring_limit": 0.05, "tether": 0.80, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 3.0, "curves": {"angle": (1.0, 0.106244)}},
+    "SHORT_HAIR": {"label": "MC2 ShortHair", "gravity": 2.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.15, "angle_velocity": 0.6, "angle_gravity_falloff": 0.0, "spring": 0.03, "spring_limit": 0.05, "tether": 0.40, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.3)}},
+    "SKIRT": {"label": "MC2 Skirt", "gravity": 5.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 1.0, "angle": 0.20, "angle_velocity": 0.7, "angle_gravity_falloff": 0.0, "spring": 0.03, "spring_limit": 0.05, "tether": 0.70, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"distance": (1.0, 0.5), "angle": (1.0, 0.204475)}},
+    "SOFT_SKIRT": {"label": "MC2 SoftSkirt", "gravity": 3.0, "damping": 0.10, "radius": 0.02, "distance": 1.0, "triangle": 0.5, "angle": 0.14, "angle_velocity": 0.7, "angle_gravity_falloff": 0.0, "spring": 0.03, "spring_limit": 0.05, "tether": 0.70, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"distance": (1.0, 0.0433655), "angle": (1.0, 0.0597)}},
+    "MIDDLE_SPRING": {"label": "MC2 MiddleSpring", "gravity": 0.0, "damping": 0.30, "radius": 0.02, "distance": 0.242, "triangle": 0.241, "angle": 0.40, "angle_velocity": 0.6, "angle_gravity_falloff": 0.0, "spring": 0.03, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
+    "SOFT_SPRING": {"label": "MC2 SoftSpring", "gravity": 0.0, "damping": 0.20, "radius": 0.02, "distance": 0.242, "triangle": 0.241, "angle": 0.20, "angle_velocity": 0.8, "angle_gravity_falloff": 0.0, "spring": 0.01, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
+    "HARD_SPRING": {"label": "MC2 HardSpring", "gravity": 0.0, "damping": 0.30, "radius": 0.02, "distance": 0.242, "triangle": 0.241, "angle": 0.60, "angle_velocity": 0.4, "angle_gravity_falloff": 0.0, "spring": 0.06, "spring_limit": 0.05, "tether": 0.099, "friction": 0.20, "movement_limit": 1.0, "rotation_limit": 360.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.502322)}},
+    "TAIL": {"label": "MC2 Tail", "gravity": 0.0, "damping": 0.05, "radius": 0.02, "distance": 1.0, "triangle": 0.5, "angle": 0.10, "angle_velocity": 0.5, "angle_gravity_falloff": 0.0, "spring": 0.01, "spring_limit": 0.05, "tether": 0.80, "friction": 0.05, "movement_limit": 5.0, "rotation_limit": 720.0, "particle_limit": 4.0, "curves": {"angle": (1.0, 0.0973314)}},
 }
 
 
@@ -102,6 +102,17 @@ class HoClothBoneSpringAngleRestorationConstraint(bpy.types.PropertyGroup):
     use_angle_restoration: bpy.props.BoolProperty(name="Use Angle Restoration", default=True)
     stiffness: bpy.props.PointerProperty(name="Stiffness", type=HoClothCurveParameter)
     velocity_attenuation: bpy.props.FloatProperty(name="Velocity Attenuation", default=0.6, min=0.0, max=1.0)
+    gravity_falloff: bpy.props.FloatProperty(name="Gravity Falloff", default=0.0, min=0.0, max=1.0)
+
+
+class HoClothBoneSpringAngleLimitConstraint(bpy.types.PropertyGroup):
+    use_angle_limit: bpy.props.BoolProperty(name="Use Angle Limit", default=False)
+    limit_angle: bpy.props.PointerProperty(name="Limit Angle", type=HoClothCurveParameter)
+    stiffness: bpy.props.FloatProperty(name="Stiffness", default=1.0, min=0.0, max=1.0)
+
+
+class HoClothBoneSpringTriangleBendingConstraint(bpy.types.PropertyGroup):
+    stiffness: bpy.props.FloatProperty(name="Stiffness", default=1.0, min=0.0, max=1.0)
 
 def _poll_armature_object(_self, obj):
     return obj is not None and obj.type == "ARMATURE"
@@ -213,6 +224,14 @@ class HoClothMC2MagicaClothComponent(bpy.types.PropertyGroup):
         name="Angle Restoration",
         type=HoClothBoneSpringAngleRestorationConstraint,
     )
+    angle_limit_constraint: bpy.props.PointerProperty(
+        name="Angle Limit",
+        type=HoClothBoneSpringAngleLimitConstraint,
+    )
+    triangle_bending_constraint: bpy.props.PointerProperty(
+        name="Triangle Bending",
+        type=HoClothBoneSpringTriangleBendingConstraint,
+    )
     spring_constraint: bpy.props.PointerProperty(name="Spring", type=HoClothBoneSpringSpringConstraint)
     collider_collision_constraint: bpy.props.PointerProperty(
         name="Collider Collision",
@@ -280,6 +299,8 @@ CLASSES = (
     HoClothBoneSpringDistanceConstraint,
     HoClothBoneSpringTetherConstraint,
     HoClothBoneSpringAngleRestorationConstraint,
+    HoClothBoneSpringAngleLimitConstraint,
+    HoClothBoneSpringTriangleBendingConstraint,
     HoClothMC2ComponentItem,
     HoClothMC2ColliderReference,
     HoClothMC2MagicaClothComponent,
@@ -438,6 +459,11 @@ def apply_preset(cloth, preset_id: str | None = None) -> None:
     cloth.angle_restoration_constraint.use_angle_restoration = True
     _set_curve_parameter(cloth.angle_restoration_constraint.stiffness, preset["angle"], curves.get("angle"))
     cloth.angle_restoration_constraint.velocity_attenuation = preset["angle_velocity"]
+    cloth.angle_restoration_constraint.gravity_falloff = preset.get("angle_gravity_falloff", 0.0)
+    cloth.angle_limit_constraint.use_angle_limit = False
+    _set_curve_parameter(cloth.angle_limit_constraint.limit_angle, 15.0, None)
+    cloth.angle_limit_constraint.stiffness = 1.0
+    cloth.triangle_bending_constraint.stiffness = preset.get("triangle", 1.0)
     cloth.spring_constraint.use_spring = True
     cloth.spring_constraint.spring_power = preset["spring"]
     cloth.spring_constraint.limit_distance = preset["spring_limit"]

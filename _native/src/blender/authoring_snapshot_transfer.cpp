@@ -303,6 +303,13 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
     chain.cloth_type = ReadString(serialize_data, "clothType", chain.cloth_type);
     chain.component_type = chain.cloth_type == "BoneSpring" ? "SPRING_BONE" : "BONE_CLOTH";
     chain.gravity_strength = ReadFloat(serialize_data, "gravity", chain.gravity_strength);
+    chain.gravity_falloff = ReadFloat(serialize_data, "gravityFalloff", chain.gravity_falloff);
+    chain.stabilization_time_after_reset = ReadFloat(
+        serialize_data,
+        "stablizationTimeAfterReset",
+        chain.stabilization_time_after_reset
+    );
+    chain.blend_weight = ReadFloat(serialize_data, "blendWeight", chain.blend_weight);
     if (serialize_data.contains("gravityDirection")) {
         chain.gravity_direction = ReadVec3(serialize_data["gravityDirection"]);
     }
@@ -357,6 +364,10 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
     chain.distance_stiffness = chain.distance_stiffness_curve.value;
     chain.stiffness = chain.distance_stiffness;
 
+    nb::dict triangle = ReadDict(serialize_data, "triangleBendingConstraint");
+    chain.triangle_bending_stiffness =
+        ReadFloat(triangle, "stiffness", chain.triangle_bending_stiffness);
+
     nb::dict angle = ReadDict(serialize_data, "angleRestorationConstraint");
     chain.angle_restoration_enabled =
         ReadBool(angle, "useAngleRestoration", chain.angle_restoration_enabled);
@@ -365,7 +376,18 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
     chain.angle_restoration_stiffness = chain.angle_restoration_stiffness_curve.value;
     chain.angle_restoration_velocity_attenuation =
         ReadFloat(angle, "velocityAttenuation", chain.angle_restoration_velocity_attenuation);
+    chain.angle_restoration_gravity_falloff =
+        ReadFloat(angle, "gravityFalloff", chain.angle_restoration_gravity_falloff);
     chain.drag = std::max(0.0f, std::min(1.0f, 1.0f - chain.angle_restoration_velocity_attenuation));
+
+    nb::dict angle_limit = ReadDict(serialize_data, "angleLimitConstraint");
+    chain.angle_limit_enabled =
+        ReadBool(angle_limit, "useAngleLimit", chain.angle_limit_enabled);
+    chain.angle_limit_angle_curve =
+        ReadCurve(angle_limit, "limitAngle", chain.angle_limit_angle);
+    chain.angle_limit_angle = chain.angle_limit_angle_curve.value;
+    chain.angle_limit_stiffness =
+        ReadFloat(angle_limit, "stiffness", chain.angle_limit_stiffness);
 
     nb::dict spring = ReadDict(serialize_data, "springConstraint");
     chain.use_spring = ReadBool(spring, "useSpring", chain.use_spring);
@@ -445,6 +467,13 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.damping = ReadFloat(chain_dict, "damping");
         chain.drag = ReadFloat(chain_dict, "drag");
         chain.damping_curve_value = ReadFloat(chain_dict, "damping_curve_value", chain.damping);
+        chain.gravity_falloff = ReadFloat(chain_dict, "gravity_falloff", chain.gravity_falloff);
+        chain.stabilization_time_after_reset = ReadFloat(
+            chain_dict,
+            "stabilization_time_after_reset",
+            chain.stabilization_time_after_reset
+        );
+        chain.blend_weight = ReadFloat(chain_dict, "blend_weight", chain.blend_weight);
         chain.inertia_world_inertia = ReadFloat(chain_dict, "inertia_world_inertia", 1.0f);
         chain.inertia_movement_inertia_smoothing = ReadFloat(chain_dict, "inertia_movement_inertia_smoothing", 0.4f);
         chain.inertia_movement_speed_limit_enabled = ReadBool(chain_dict, "inertia_movement_speed_limit_enabled", false);
@@ -462,6 +491,11 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.inertia_particle_speed_limit = ReadFloat(chain_dict, "inertia_particle_speed_limit", 0.0f);
         chain.tether_distance_compression = ReadFloat(chain_dict, "tether_distance_compression", chain.tether_distance_compression);
         chain.distance_stiffness = ReadFloat(chain_dict, "distance_stiffness", chain.stiffness);
+        chain.triangle_bending_stiffness = ReadFloat(
+            chain_dict,
+            "triangle_bending_stiffness",
+            chain.triangle_bending_stiffness
+        );
         chain.angle_restoration_enabled = ReadBool(chain_dict, "angle_restoration_enabled", true);
         chain.angle_restoration_stiffness = ReadFloat(
             chain_dict,
@@ -469,6 +503,18 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
             chain.angle_restoration_stiffness
         );
         chain.angle_restoration_velocity_attenuation = ReadFloat(chain_dict, "angle_restoration_velocity_attenuation", 0.6f);
+        chain.angle_restoration_gravity_falloff = ReadFloat(
+            chain_dict,
+            "angle_restoration_gravity_falloff",
+            chain.angle_restoration_gravity_falloff
+        );
+        chain.angle_limit_enabled = ReadBool(chain_dict, "angle_limit_enabled", false);
+        chain.angle_limit_angle = ReadFloat(chain_dict, "angle_limit_angle", chain.angle_limit_angle);
+        chain.angle_limit_stiffness = ReadFloat(
+            chain_dict,
+            "angle_limit_stiffness",
+            chain.angle_limit_stiffness
+        );
         chain.use_spring = ReadBool(chain_dict, "use_spring", true);
         chain.spring_power = ReadFloat(chain_dict, "spring_power", 0.04f);
         chain.limit_distance = ReadFloat(chain_dict, "limit_distance", 0.1f);
