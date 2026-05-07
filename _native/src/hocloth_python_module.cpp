@@ -1,9 +1,12 @@
-#include "hocloth_runtime_api.hpp"
+﻿#include "hocloth_runtime_api.hpp"
+
+#include "hocloth/blender/authoring_snapshot_transfer.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 
 #include <cstddef>
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -119,50 +122,6 @@ std::vector<int> ReadIntArray(const nb::dict& dict, const char* key)
         result.push_back(nb::cast<int>(item));
     }
     return result;
-}
-
-void AppendUnique(std::vector<std::string>& values, const std::string& value)
-{
-    if (value.empty()) {
-        return;
-    }
-    for (const std::string& existing : values) {
-        if (existing == value) {
-            return;
-        }
-    }
-    values.push_back(value);
-}
-
-void BuildTopologyFromJoints(CompiledSpringBone& chain)
-{
-    chain.lines.clear();
-    chain.baselines.clear();
-
-    std::vector<std::vector<int>> children(chain.joints.size());
-    for (std::size_t index = 0; index < chain.joints.size(); ++index) {
-        const int parent_index = chain.joints[index].parent_index;
-        if (parent_index >= 0 && parent_index < static_cast<int>(chain.joints.size())) {
-            chain.lines.push_back(CompiledSpringLine{parent_index, static_cast<int>(index)});
-            children[static_cast<std::size_t>(parent_index)].push_back(static_cast<int>(index));
-        }
-    }
-
-    for (std::size_t index = 0; index < chain.joints.size(); ++index) {
-        if (!children[index].empty()) {
-            continue;
-        }
-
-        CompiledSpringBaseline baseline;
-        int current_index = static_cast<int>(index);
-        while (current_index >= 0 && current_index < static_cast<int>(chain.joints.size())) {
-            baseline.joint_indices.insert(baseline.joint_indices.begin(), current_index);
-            current_index = chain.joints[static_cast<std::size_t>(current_index)].parent_index;
-        }
-        if (!baseline.joint_indices.empty()) {
-            chain.baselines.push_back(std::move(baseline));
-        }
-    }
 }
 
 std::vector<Vec3> ReadVec3Array(const nb::dict& dict, const char* key)
@@ -439,212 +398,6 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
     return scene;
 }
 
-CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
-{
-    nb::dict data = ResolveExchangePayload(root, "authoring_snapshot");
-    CompiledScene scene;
-    std::unordered_map<std::string, std::string> collision_object_id_by_collider_id;
-    std::unordered_set<std::string> valid_collider_ids;
-
-    for (nb::handle item : ReadSequence(data, "bone_chains")) {
-        nb::dict chain_dict = nb::cast<nb::dict>(item);
-        CompiledSpringBone chain;
-        chain.component_id = ReadString(chain_dict, "component_id");
-        chain.component_type = ReadString(chain_dict, "component_type", "BONE_CLOTH");
-        chain.cloth_type = ReadString(
-            chain_dict,
-            "cloth_type",
-            chain.component_type == "BONE_CLOTH" ? "BoneCloth" : "BoneSpring"
-        );
-        chain.armature_name = ReadString(chain_dict, "armature_name");
-        chain.root_bone_name = ReadString(chain_dict, "root_bone_name");
-        chain.center_object_name = ReadString(chain_dict, "center_object_name");
-        chain.center_bone_name = ReadString(chain_dict, "center_bone_name");
-        chain.joint_radius = ReadFloat(chain_dict, "joint_radius");
-        chain.stiffness = ReadFloat(chain_dict, "stiffness");
-        chain.damping = ReadFloat(chain_dict, "damping");
-        chain.drag = ReadFloat(chain_dict, "drag");
-        chain.damping_curve_value = ReadFloat(chain_dict, "damping_curve_value", chain.damping);
-        chain.inertia_world_inertia = ReadFloat(chain_dict, "inertia_world_inertia", 1.0f);
-        chain.inertia_movement_inertia_smoothing = ReadFloat(chain_dict, "inertia_movement_inertia_smoothing", 0.4f);
-        chain.inertia_movement_speed_limit_enabled = ReadBool(chain_dict, "inertia_movement_speed_limit_enabled", false);
-        chain.inertia_movement_speed_limit = ReadFloat(chain_dict, "inertia_movement_speed_limit", 0.0f);
-        chain.inertia_rotation_speed_limit_enabled = ReadBool(chain_dict, "inertia_rotation_speed_limit_enabled", false);
-        chain.inertia_rotation_speed_limit = ReadFloat(chain_dict, "inertia_rotation_speed_limit", 0.0f);
-        chain.inertia_local_inertia = ReadFloat(chain_dict, "inertia_local_inertia", 1.0f);
-        chain.inertia_local_movement_speed_limit_enabled = ReadBool(chain_dict, "inertia_local_movement_speed_limit_enabled", false);
-        chain.inertia_local_movement_speed_limit = ReadFloat(chain_dict, "inertia_local_movement_speed_limit", 0.0f);
-        chain.inertia_local_rotation_speed_limit_enabled = ReadBool(chain_dict, "inertia_local_rotation_speed_limit_enabled", false);
-        chain.inertia_local_rotation_speed_limit = ReadFloat(chain_dict, "inertia_local_rotation_speed_limit", 0.0f);
-        chain.inertia_depth_inertia = ReadFloat(chain_dict, "inertia_depth_inertia", 0.0f);
-        chain.inertia_centrifugal_acceleration = ReadFloat(chain_dict, "inertia_centrifugal_acceleration", 0.0f);
-        chain.inertia_particle_speed_limit_enabled = ReadBool(chain_dict, "inertia_particle_speed_limit_enabled", false);
-        chain.inertia_particle_speed_limit = ReadFloat(chain_dict, "inertia_particle_speed_limit", 0.0f);
-        chain.tether_distance_compression = ReadFloat(chain_dict, "tether_distance_compression", chain.tether_distance_compression);
-        chain.distance_stiffness = ReadFloat(chain_dict, "distance_stiffness", chain.stiffness);
-        chain.angle_restoration_enabled = ReadBool(chain_dict, "angle_restoration_enabled", true);
-        chain.angle_restoration_stiffness = ReadFloat(
-            chain_dict,
-            "angle_restoration_stiffness",
-            chain.angle_restoration_stiffness
-        );
-        chain.angle_restoration_velocity_attenuation = ReadFloat(chain_dict, "angle_restoration_velocity_attenuation", 0.6f);
-        chain.use_spring = ReadBool(chain_dict, "use_spring", true);
-        chain.spring_power = ReadFloat(chain_dict, "spring_power", 0.04f);
-        chain.limit_distance = ReadFloat(chain_dict, "limit_distance", 0.1f);
-        chain.normal_limit_ratio = ReadFloat(chain_dict, "normal_limit_ratio", 1.0f);
-        chain.spring_noise = ReadFloat(chain_dict, "spring_noise", 0.0f);
-        chain.collider_friction = ReadFloat(chain_dict, "collider_friction", 0.5f);
-        chain.collider_limit_distance = ReadFloat(chain_dict, "collider_limit_distance", 0.05f);
-        chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
-        if (chain_dict.contains("gravity_direction")) {
-            chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);
-        }
-        if (chain_dict.contains("armature_scale")) {
-            chain.armature_scale = ReadVec3(chain_dict["armature_scale"]);
-        }
-        chain.collider_ids = ReadStringArray(chain_dict, "collider_ids");
-        chain.collider_group_ids = ReadStringArray(chain_dict, "collider_group_ids");
-        chain.collision_binding_ids = ReadStringArray(chain_dict, "collision_binding_ids");
-        chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");
-
-        for (nb::handle joint_item : ReadSequence(chain_dict, "joints")) {
-            nb::dict joint_dict = nb::cast<nb::dict>(joint_item);
-            CompiledSpringJoint joint;
-            joint.name = ReadString(joint_dict, "name");
-            joint.parent_index = ReadInt(joint_dict, "parent_index", -1);
-            joint.depth = ReadInt(joint_dict, "depth");
-            joint.length = ReadFloat(joint_dict, "length");
-            joint.radius = ReadFloat(joint_dict, "radius", chain.joint_radius);
-            joint.stiffness = ReadFloat(joint_dict, "stiffness", chain.stiffness);
-            joint.damping = ReadFloat(joint_dict, "damping", chain.damping);
-            joint.drag = ReadFloat(joint_dict, "drag", chain.drag);
-            joint.gravity_scale = ReadFloat(joint_dict, "gravity_scale", 1.0f);
-            if (joint_dict.contains("rest_head_local")) {
-                joint.rest_head_local = ReadVec3(joint_dict["rest_head_local"]);
-            }
-            if (joint_dict.contains("rest_tail_local")) {
-                joint.rest_tail_local = ReadVec3(joint_dict["rest_tail_local"]);
-            }
-            if (joint_dict.contains("rest_local_translation")) {
-                joint.rest_local_translation = ReadVec3(joint_dict["rest_local_translation"]);
-            }
-            if (joint_dict.contains("rest_local_rotation")) {
-                joint.rest_local_rotation = ReadQuat(joint_dict["rest_local_rotation"]);
-            }
-            chain.joints.push_back(std::move(joint));
-        }
-
-        BuildTopologyFromJoints(chain);
-        scene.spring_bones.push_back(std::move(chain));
-    }
-
-    for (nb::handle item : ReadSequence(data, "colliders")) {
-        nb::dict collider_dict = nb::cast<nb::dict>(item);
-        const std::string component_id = ReadString(collider_dict, "component_id");
-        if (component_id.empty()) {
-            continue;
-        }
-
-        CompiledCollisionObject collision_object;
-        collision_object.collision_object_id = std::string("collision::") + component_id;
-        collision_object.owner_component_id = component_id;
-        collision_object.motion_type = "KINEMATIC";
-        collision_object.shape_type = ReadString(collider_dict, "shape_type", "SPHERE");
-        collision_object.radius = ReadFloat(collider_dict, "radius");
-        collision_object.height = ReadFloat(collider_dict, "height");
-        collision_object.capsule_direction = ReadString(collider_dict, "capsule_direction", "Y");
-        collision_object.capsule_aligned_on_center = ReadBool(collider_dict, "capsule_aligned_on_center", true);
-        collision_object.capsule_reverse_direction = ReadBool(collider_dict, "capsule_reverse_direction", false);
-        collision_object.capsule_end_radius = ReadFloat(collider_dict, "capsule_end_radius", collision_object.radius);
-        collision_object.source_object_name = ReadString(collider_dict, "object_name");
-        if (collider_dict.contains("world_translation")) {
-            collision_object.world_translation = ReadVec3(collider_dict["world_translation"]);
-        }
-        if (collider_dict.contains("world_rotation")) {
-            collision_object.world_rotation = ReadQuat(collider_dict["world_rotation"]);
-        }
-        valid_collider_ids.insert(component_id);
-        collision_object_id_by_collider_id[component_id] = collision_object.collision_object_id;
-        scene.collision_objects.push_back(std::move(collision_object));
-    }
-
-    for (nb::handle item : ReadSequence(data, "collider_groups")) {
-        nb::dict group_dict = nb::cast<nb::dict>(item);
-        const std::string group_id = ReadString(group_dict, "component_id");
-        if (group_id.empty()) {
-            continue;
-        }
-
-        CompiledCollisionBinding binding;
-        binding.binding_id = group_id;
-        binding.owner_component_id = group_id;
-        binding.source_group_ids.push_back(group_id);
-        for (const std::string& collider_id : ReadStringArray(group_dict, "collider_ids")) {
-            auto it = collision_object_id_by_collider_id.find(collider_id);
-            if (it != collision_object_id_by_collider_id.end()) {
-                AppendUnique(binding.collision_object_ids, it->second);
-            }
-        }
-        scene.collision_bindings.push_back(std::move(binding));
-    }
-
-    std::unordered_set<std::string> binding_ids;
-    for (const CompiledCollisionBinding& binding : scene.collision_bindings) {
-        binding_ids.insert(binding.binding_id);
-    }
-
-    for (CompiledSpringBone& chain : scene.spring_bones) {
-        std::vector<std::string> resolved_group_bindings;
-        for (const std::string& group_id : chain.collider_group_ids) {
-            if (binding_ids.count(group_id) > 0) {
-                AppendUnique(resolved_group_bindings, group_id);
-            }
-        }
-
-        std::vector<std::string> direct_collider_ids;
-        for (const std::string& collider_id : chain.collider_ids) {
-            if (valid_collider_ids.count(collider_id) > 0) {
-                AppendUnique(direct_collider_ids, collider_id);
-            }
-        }
-        chain.collider_ids = std::move(direct_collider_ids);
-        chain.collision_binding_ids = std::move(resolved_group_bindings);
-
-        if (!chain.collider_ids.empty()) {
-            const std::string binding_id = std::string("chain::") + chain.component_id + "::colliders";
-            CompiledCollisionBinding binding;
-            binding.binding_id = binding_id;
-            binding.owner_component_id = chain.component_id;
-            for (const std::string& collider_id : chain.collider_ids) {
-                auto it = collision_object_id_by_collider_id.find(collider_id);
-                if (it != collision_object_id_by_collider_id.end()) {
-                    AppendUnique(binding.collision_object_ids, it->second);
-                }
-            }
-            if (!binding.collision_object_ids.empty()) {
-                scene.collision_bindings.push_back(std::move(binding));
-                AppendUnique(chain.collision_binding_ids, binding_id);
-            }
-        }
-    }
-
-    for (nb::handle item : ReadSequence(data, "mesh_writeback_targets")) {
-        nb::dict target_dict = nb::cast<nb::dict>(item);
-        CompiledMeshWritebackTarget target;
-        target.component_id = ReadString(target_dict, "component_id");
-        target.source_object_name = ReadString(target_dict, "source_object_name");
-        target.vertex_count = ReadInt(target_dict, "vertex_count");
-        target.edge_count = ReadInt(target_dict, "edge_count");
-        target.face_count = ReadInt(target_dict, "face_count");
-        target.topology_hash = ReadString(target_dict, "topology_hash");
-        target.space = ReadString(target_dict, "space", "object_local");
-        scene.mesh_writeback_targets.push_back(std::move(target));
-    }
-
-    return scene;
-}
-
 RuntimeInputs ParseRuntimeInputs(const nb::dict& root)
 {
     nb::dict data = ResolveExchangePayload(root, "frame_inputs");
@@ -846,7 +599,9 @@ NB_MODULE(hocloth_native, module)
         return hocloth::ToPython(hocloth::GetRuntimeModule().BuildScene(hocloth::ParseCompiledScene(compiled_scene)));
     });
     module.def("build_authoring_snapshot", [](const nb::dict& authoring_snapshot) {
-        return hocloth::ToPython(hocloth::GetRuntimeModule().BuildScene(hocloth::ParseAuthoringSnapshot(authoring_snapshot)));
+        return hocloth::ToPython(
+            hocloth::GetRuntimeModule().BuildScene(hocloth::blender::ParseAuthoringSnapshot(authoring_snapshot))
+        );
     });
     module.def("destroy_scene", [](hocloth::SceneHandle handle) {
         return hocloth::GetRuntimeModule().DestroyScene(handle);

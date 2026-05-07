@@ -415,11 +415,11 @@ Blender Python 侧不再负责：
 
 ### C++ 侧新增边界：Blender Transfer Unit
 
-C++ 侧需要新增或重命名一个明确的 Blender 输入转换单元，例如：
+C++ 侧已经开始新增一个明确的 Blender 输入转换单元。当前落点是：
 
 ```text
-_native/include/hocloth/api/blender_transfer.hpp
-_native/src/api/blender_transfer.cpp
+_native/include/hocloth/blender/authoring_snapshot_transfer.hpp
+_native/src/blender/authoring_snapshot_transfer.cpp
 ```
 
 它负责把 Blender authoring snapshot 转为 MC2 自己的数据：
@@ -433,9 +433,9 @@ _native/src/api/blender_transfer.cpp
 
 ### 迁移路线
 
-1. 保留当前 `compile/` 作为过渡兼容层，但禁止继续扩大它的 MC2 语义。
-2. 新增 `authoring_snapshot` exchange payload，用来传 Blender 原始组件和对象采样数据。
-3. C++ `build_scene()` 优先接受 `authoring_snapshot`，内部调用 Blender transfer unit，再走 MC2 PreBuild/Build。
+1. `compile/` 已从 active code 中移除；后续不再恢复 Python 侧重型预编译层。
+2. `authoring_snapshot` exchange payload 作为主构建输入，用来传 Blender 原始组件和对象采样数据。
+3. nanobind `build_authoring_snapshot()` 直接调用 C++ Blender transfer unit，再走 native runtime build；后续逐步替换为 MC2 PreBuild/Build。
 4. `compiled_scene` payload 降级为 legacy/debug 路径，直到 native Build 能覆盖 BoneSpring/BoneCloth/MeshCloth。
 5. 视口绘制切到 `build_output`，不再依赖 Python 编译层实时推导。
-6. 最后删除或瘦身 `compile/`：只保留导出、兼容迁移、极薄的数据快照辅助函数。
+6. Python 侧只保留 `authoring_snapshot` 采样、运行时帧输入、导出/调试和 build/step 调用胶水。

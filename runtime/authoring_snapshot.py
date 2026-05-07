@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .bone_sampling import build_spring_rest_joints, resolve_bone_chain_names
+from mathutils import Matrix, Quaternion, Vector
+
+from .bone_sampling import resolve_bone_chain_names
 from .compiled_scene import (
     CompiledCollisionBinding,
     CompiledCollisionObject,
@@ -31,32 +33,94 @@ def _joint_override_map(typed_item) -> dict[str, object]:
     }
 
 
-def _sample_chain_joints(scene, armature_object, typed_item) -> tuple[list[dict], tuple[float, float, float]]:
+def _vector_to_tuple(value: Vector) -> tuple[float, float, float]:
+    return (float(value.x), float(value.y), float(value.z))
+
+
+def _quaternion_to_tuple(value: Quaternion) -> tuple[float, float, float, float]:
+    return (float(value.w), float(value.x), float(value.y), float(value.z))
+
+
+def _transform_point(matrix: Matrix, point) -> Vector:
+    return (matrix @ Vector((float(point[0]), float(point[1]), float(point[2]), 1.0))).to_3d()
+
+
+def _scale_point(point: Vector, scale) -> tuple[float, float, float]:
+    return (
+        float(point.x) * float(scale[0]),
+        float(point.y) * float(scale[1]),
+        float(point.z) * float(scale[2]),
+    )
+
+
+def _scaled_distance(a, b, scale) -> float:
+    delta = (
+        (float(b[0]) - float(a[0])) * float(scale[0]),
+        (float(b[1]) - float(a[1])) * float(scale[1]),
+        (float(b[2]) - float(a[2])) * float(scale[2]),
+    )
+    return (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]) ** 0.5
+
+
+def _sample_chain_bones(scene, armature_object, typed_item) -> tuple[list[dict], tuple[float, float, float]]:
     bone_names = resolve_bone_chain_names(scene, armature_object, typed_item.root_bone_name)
-    joints, armature_scale = build_spring_rest_joints(armature_object, bone_names) if bone_names else ([], (1.0, 1.0, 1.0))
+    if not bone_names:
+        return [], (1.0, 1.0, 1.0)
+
+    armature_scale = tuple(float(axis) for axis in armature_object.matrix_world.to_scale())
+    name_to_index = {name: index for index, name in enumerate(bone_names)}
+    root_bone = armature_object.data.bones.get(bone_names[0])
+    root_matrix_inv = root_bone.matrix_local.inverted() if root_bone is not None else Matrix.Identity(4)
+    root_rotation_inv = root_bone.matrix_local.to_quaternion().conjugated() if root_bone is not None else Quaternion()
     overrides = _joint_override_map(typed_item)
     runtime_stiffness = float(typed_item.distance_constraint.stiffness.value)
     runtime_damping = float(typed_item.damping_curve.value)
     runtime_drag = max(0.0, min(1.0, 1.0 - float(typed_item.angle_restoration_constraint.velocity_attenuation)))
     sampled = []
-    for joint in joints:
-        override = overrides.get(joint.name)
+    for bone_name in bone_names:
+        bone = armature_object.data.bones.get(bone_name)
+        if bone is None:
+            continue
+
+        parent_name = bone.parent.name if bone.parent and bone.parent.name in name_to_index else ""
+        parent_index = name_to_index[parent_name] if parent_name else -1
+        depth = sampled[parent_index]["depth"] + 1 if parent_index >= 0 and parent_index < len(sampled) else 0
+        parent_bone = bone.parent if parent_index >= 0 else None
+        head_root = _transform_point(root_matrix_inv, bone.head_local)
+        tail_root = _transform_point(root_matrix_inv, bone.tail_local)
+        rest_head_local = _scale_point(head_root, armature_scale)
+        rest_tail_local = _scale_point(tail_root, armature_scale)
+        if parent_bone is not None:
+            parent_head_root = _transform_point(root_matrix_inv, parent_bone.head_local)
+            parent_head_local = Vector(_scale_point(parent_head_root, armature_scale))
+            rest_local_translation = _vector_to_tuple(Vector(rest_head_local) - parent_head_local)
+            parent_global = root_rotation_inv @ parent_bone.matrix_local.to_quaternion()
+            current_global = root_rotation_inv @ bone.matrix_local.to_quaternion()
+            rest_local_rotation = _quaternion_to_tuple(parent_global.conjugated() @ current_global)
+        else:
+            rest_local_translation = (0.0, 0.0, 0.0)
+            rest_local_rotation = _quaternion_to_tuple(root_rotation_inv @ bone.matrix_local.to_quaternion())
+
+        override = overrides.get(bone_name)
         use_override = override is not None and override.enabled
         sampled.append(
             {
-                "name": joint.name,
-                "parent_index": int(joint.parent_index),
-                "depth": int(joint.depth),
-                "length": float(joint.length),
+                "name": bone_name,
+                "parent_name": parent_name,
+                "parent_index": int(parent_index),
+                "depth": int(depth),
+                "length": _scaled_distance(bone.head_local, bone.tail_local, armature_scale),
                 "radius": float(override.radius) if use_override else float(typed_item.joint_radius),
                 "stiffness": float(override.stiffness) if use_override else runtime_stiffness,
                 "damping": float(override.damping) if use_override else runtime_damping,
                 "drag": float(override.drag) if use_override else runtime_drag,
                 "gravity_scale": float(override.gravity_scale) if use_override else 1.0,
-                "rest_head_local": tuple(joint.rest_head_local),
-                "rest_tail_local": tuple(joint.rest_tail_local),
-                "rest_local_translation": tuple(joint.rest_local_translation),
-                "rest_local_rotation": tuple(joint.rest_local_rotation),
+                "head_local": _vec3(bone.head_local),
+                "tail_local": _vec3(bone.tail_local),
+                "rest_head_local": rest_head_local,
+                "rest_tail_local": rest_tail_local,
+                "rest_local_translation": rest_local_translation,
+                "rest_local_rotation": rest_local_rotation,
             }
         )
     return sampled, tuple(float(axis) for axis in armature_scale)
@@ -67,7 +131,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
     if armature_object is None or armature_object.type != "ARMATURE":
         return None
 
-    joints, armature_scale = _sample_chain_joints(scene, armature_object, typed_item)
+    bones, armature_scale = _sample_chain_bones(scene, armature_object, typed_item)
     center_object_name = ""
     center_bone_name = ""
     if typed_item.center_source == "OBJECT" and typed_item.center_object is not None:
@@ -193,7 +257,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "gravity_strength": float(typed_item.gravity_strength),
         "gravity_direction": _vec3(typed_item.gravity_direction),
         "armature_scale": armature_scale,
-        "joints": joints,
+        "bones": bones,
     }
 
 
@@ -358,29 +422,37 @@ def _build_baselines(joints: list[CompiledSpringJoint]) -> list[CompiledSpringBa
     return baselines
 
 
-def compiled_scene_from_authoring_snapshot(authoring_snapshot: dict) -> CompiledScene:
+def runtime_scene_view_from_authoring_snapshot(authoring_snapshot: dict) -> CompiledScene:
+    """Build the thin Python runtime view used for frame input and stub fallback.
+
+    Native MC2 build authority lives in the C++ Blender transfer unit; this view
+    must stay a compatibility/runtime helper, not a Python prebuild layer.
+    """
     payload = _payload_from_snapshot(authoring_snapshot)
     compiled = CompiledScene()
     collision_object_id_by_collider_id: dict[str, str] = {}
 
     for chain_data in payload.get("bone_chains", []):
+        authored_bones = chain_data.get("bones")
+        if authored_bones is None:
+            authored_bones = chain_data.get("joints", [])
         joints = [
             CompiledSpringJoint(
-                name=joint.get("name", ""),
-                parent_index=int(joint.get("parent_index", -1)),
-                depth=int(joint.get("depth", 0)),
-                length=float(joint.get("length", 0.0)),
-                radius=float(joint.get("radius", chain_data.get("joint_radius", 0.02))),
-                stiffness=float(joint.get("stiffness", chain_data.get("stiffness", 0.0))),
-                damping=float(joint.get("damping", chain_data.get("damping", 0.0))),
-                drag=float(joint.get("drag", chain_data.get("drag", 0.0))),
-                gravity_scale=float(joint.get("gravity_scale", 1.0)),
-                rest_head_local=tuple(joint.get("rest_head_local", (0.0, 0.0, 0.0))),
-                rest_tail_local=tuple(joint.get("rest_tail_local", (0.0, 0.0, 0.0))),
-                rest_local_translation=tuple(joint.get("rest_local_translation", (0.0, 0.0, 0.0))),
-                rest_local_rotation=tuple(joint.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0))),
+                name=bone.get("name", ""),
+                parent_index=int(bone.get("parent_index", -1)),
+                depth=int(bone.get("depth", 0)),
+                length=float(bone.get("length", 0.0)),
+                radius=float(bone.get("radius", chain_data.get("joint_radius", 0.02))),
+                stiffness=float(bone.get("stiffness", chain_data.get("stiffness", 0.0))),
+                damping=float(bone.get("damping", chain_data.get("damping", 0.0))),
+                drag=float(bone.get("drag", chain_data.get("drag", 0.0))),
+                gravity_scale=float(bone.get("gravity_scale", 1.0)),
+                rest_head_local=tuple(bone.get("rest_head_local", (0.0, 0.0, 0.0))),
+                rest_tail_local=tuple(bone.get("rest_tail_local", (0.0, 0.0, 0.0))),
+                rest_local_translation=tuple(bone.get("rest_local_translation", (0.0, 0.0, 0.0))),
+                rest_local_rotation=tuple(bone.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0))),
             )
-            for joint in chain_data.get("joints", [])
+            for bone in authored_bones
         ]
         lines = _build_lines(joints)
         baselines = _build_baselines(joints)
@@ -490,3 +562,7 @@ def compiled_scene_from_authoring_snapshot(authoring_snapshot: dict) -> Compiled
         )
 
     return compiled
+
+
+def compiled_scene_from_authoring_snapshot(authoring_snapshot: dict) -> CompiledScene:
+    return runtime_scene_view_from_authoring_snapshot(authoring_snapshot)

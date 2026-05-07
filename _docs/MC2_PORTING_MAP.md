@@ -357,5 +357,7 @@ Architecture direction update:
 
 - The Blender Python `compile/` layer has been removed from active code. Python may still keep a runtime-only backend scene view for pose/frame-input compatibility, but it must not become the MC2 build authority again.
 - The active build input is `authoring_snapshot`: raw Blender components plus sampled armature/mesh/collider data. C++ owns the Blender transfer unit that converts this snapshot into MC2-style PreBuild/Build data.
+- Current transfer-unit files: `_native/include/hocloth/blender/authoring_snapshot_transfer.hpp` and `_native/src/blender/authoring_snapshot_transfer.cpp`. `hocloth_python_module.cpp` should only bind the native API and keep legacy `compiled_scene` / `frame_inputs` parsing, not rebuild authoring topology.
+- Python keeps `runtime_scene_view_from_authoring_snapshot()` only as a thin frame-input/stub/debug view. It is not the MC2 build authority; the old `compiled_scene_from_authoring_snapshot()` name is compatibility glue only.
 - `compiled_scene` remains only as a legacy/debug envelope name and native runtime structure while the C++ transfer unit comes online; new work should move toward `authoring_snapshot -> native transfer -> MC2 PreBuild/Build -> build_output`.
 - Viewport drawing and debug inspection should consume `build_output` returned by native build, not Python-side real-time topology guesses.

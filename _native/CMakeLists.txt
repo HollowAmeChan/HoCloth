@@ -113,6 +113,7 @@ if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     add_subdirectory("${HOCLOTH_NANOBIND_DIR}" "${CMAKE_BINARY_DIR}/nanobind")
 
     nanobind_add_module(hocloth_native
+        "${HOCLOTH_NATIVE_ROOT}/src/blender/authoring_snapshot_transfer.cpp"
         "${HOCLOTH_NATIVE_ROOT}/src/hocloth_python_module.cpp"
     )
     target_link_libraries(hocloth_native PRIVATE hocloth_runtime_core)

@@ -6,7 +6,7 @@ import bpy
 from ..components import mc2
 from ..runtime.authoring_snapshot import (
     build_authoring_snapshot,
-    compiled_scene_from_authoring_snapshot,
+    runtime_scene_view_from_authoring_snapshot,
 )
 from ..runtime.exchange import wrap_compiled_scene
 from ..runtime.inputs import build_runtime_inputs
@@ -99,7 +99,7 @@ def _mesh_writeback_status_suffix(scene) -> str:
 
 def _current_backend_scene_view(scene):
     authoring_snapshot = build_authoring_snapshot(scene)
-    return authoring_snapshot, compiled_scene_from_authoring_snapshot(authoring_snapshot)
+    return authoring_snapshot, runtime_scene_view_from_authoring_snapshot(authoring_snapshot)
 
 
 def _build_runtime_from_scene(context, report=None) -> bool:
