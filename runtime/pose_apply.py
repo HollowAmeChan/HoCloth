@@ -196,3 +196,69 @@ def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, compiled_scene, tr
         "missing_armature_count": missing_armature_count,
         "armature_count": len(touched_armatures),
     }
+
+
+def _mesh_output_object_name(mesh_output: dict) -> str:
+    return (
+        mesh_output.get("object_name")
+        or mesh_output.get("source_object_name")
+        or mesh_output.get("mesh_object_name")
+        or ""
+    )
+
+
+def _mesh_output_positions(mesh_output: dict) -> list:
+    positions = mesh_output.get("positions")
+    if positions is None:
+        positions = mesh_output.get("vertices")
+    if positions is None:
+        positions = mesh_output.get("local_positions")
+    return list(positions or [])
+
+
+def _coerce_vector3(value) -> Vector:
+    return Vector((float(value[0]), float(value[1]), float(value[2])))
+
+
+def apply_runtime_mesh_outputs_to_scene(scene: bpy.types.Scene, mesh_outputs: list[dict]) -> dict:
+    applied_vertex_count = 0
+    applied_mesh_count = 0
+    missing_object_count = 0
+    topology_mismatch_count = 0
+
+    for mesh_output in mesh_outputs or []:
+        object_name = _mesh_output_object_name(mesh_output)
+        if not object_name:
+            missing_object_count += 1
+            continue
+
+        obj = bpy.data.objects.get(object_name)
+        if obj is None or obj.type != "MESH" or obj.data is None:
+            missing_object_count += 1
+            continue
+
+        positions = _mesh_output_positions(mesh_output)
+        vertex_count = len(obj.data.vertices)
+        if len(positions) != vertex_count:
+            topology_mismatch_count += 1
+            continue
+
+        space = str(mesh_output.get("space", "object_local")).lower()
+        to_local = obj.matrix_world.inverted() if space in {"world", "blender_world"} else None
+        for vertex, position in zip(obj.data.vertices, positions):
+            local_position = _coerce_vector3(position)
+            if to_local is not None:
+                local_position = to_local @ local_position
+            vertex.co = local_position
+            applied_vertex_count += 1
+
+        obj.data.update()
+        obj.update_tag()
+        applied_mesh_count += 1
+
+    return {
+        "applied_mesh_count": applied_mesh_count,
+        "applied_vertex_count": applied_vertex_count,
+        "missing_object_count": missing_object_count,
+        "topology_mismatch_count": topology_mismatch_count,
+    }

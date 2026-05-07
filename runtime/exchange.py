@@ -133,12 +133,17 @@ def frame_inputs_payload(frame_inputs: dict[str, Any] | None) -> dict[str, Any]:
     return payload
 
 
-def wrap_step_output(runtime_state: dict[str, Any], transforms: list[dict[str, Any]]) -> ExchangeEnvelope:
+def wrap_step_output(
+    runtime_state: dict[str, Any],
+    transforms: list[dict[str, Any]],
+    mesh_outputs: list[dict[str, Any]] | None = None,
+) -> ExchangeEnvelope:
     return make_envelope(
         "step_output",
         {
             "runtime_state": dict(runtime_state),
             "transforms": list(transforms),
+            "mesh_outputs": list(mesh_outputs or []),
         },
     )
 
@@ -148,6 +153,7 @@ def wrap_runtime_debug(
     compiled_scene: Any,
     runtime_inputs: dict[str, Any] | None,
     transforms: list[dict[str, Any]],
+    mesh_outputs: list[dict[str, Any]] | None = None,
 ) -> ExchangeEnvelope:
     compiled_envelope = wrap_compiled_scene(compiled_scene) if compiled_scene is not None else None
     return make_envelope(
@@ -156,6 +162,6 @@ def wrap_runtime_debug(
             "runtime_state": dict(runtime_state),
             "compiled_scene": compiled_envelope,
             "runtime_inputs": wrap_frame_inputs(runtime_inputs),
-            "step_output": wrap_step_output(runtime_state, transforms),
+            "step_output": wrap_step_output(runtime_state, transforms, mesh_outputs),
         },
     )

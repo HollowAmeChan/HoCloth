@@ -20,6 +20,7 @@ namespace hocloth::mc2 {
 [[nodiscard]] float3 Project(const float3& value, const float3& normal);
 [[nodiscard]] float3 ProjectOnPlane(const float3& value, const float3& normal);
 [[nodiscard]] float3 ClampVector(const float3& value, float max_length);
+[[nodiscard]] float3 ClampVector(const float3& value, float min_length, float max_length);
 [[nodiscard]] float3 ClampDistance(const float3& from, const float3& to, float max_length);
 [[nodiscard]] float Distance(const float3& a, const float3& b);
 [[nodiscard]] float Abs(float value);
@@ -38,12 +39,21 @@ namespace hocloth::mc2 {
 [[nodiscard]] quaternion FromToRotation(const quaternion& from, const quaternion& to);
 [[nodiscard]] float Angle(const quaternion& a, const quaternion& b);
 [[nodiscard]] bool ClampAngle(const float3& direction, const float3& base_direction, float max_angle, float3& out_direction);
+[[nodiscard]] quaternion ClampAngle(const quaternion& from, const quaternion& to, float max_angle);
 void ToAngleAxis(const quaternion& value, float& angle, float3& axis);
 void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent);
+[[nodiscard]] float3 ToNormal(const quaternion& rotation);
+[[nodiscard]] float3 ToTangent(const quaternion& rotation);
+[[nodiscard]] float3 ToBinormal(const quaternion& rotation);
+[[nodiscard]] float3 Binormal(const float3& normal, const float3& tangent);
+[[nodiscard]] float3 AxisToEuler(const float3& axis);
+[[nodiscard]] quaternion AxisQuaternion(const float3& direction);
 [[nodiscard]] quaternion ToRotation(const float3& normal, const float3& tangent);
 [[nodiscard]] quaternion LookRotation(const float3& forward, const float3& up);
 [[nodiscard]] float3 Rotate(const quaternion& rotation, const float3& vector);
 [[nodiscard]] float4x4 TRS(const float3& position, const quaternion& rotation, const float3& scale);
+[[nodiscard]] float4x4 LocalToWorldMatrix(const float3& position, const quaternion& rotation, const float3& scale);
+[[nodiscard]] float4x4 WorldToLocalMatrix(const float3& position, const quaternion& rotation, const float3& scale);
 [[nodiscard]] float4x4 Multiply(const float4x4& a, const float4x4& b);
 [[nodiscard]] float4x4 InverseAffine(const float4x4& matrix);
 [[nodiscard]] float3 TransformPoint(const float3& position, const float4x4& matrix);
@@ -62,12 +72,33 @@ void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent
     const float4x4& matrix,
     const float3& normal_tangent_flip
 );
+void TransformPositionNormalTangent(
+    const float3& translation,
+    const quaternion& rotation,
+    const float3& scale,
+    float3& position,
+    float3& normal,
+    float3& tangent
+);
 [[nodiscard]] float3 InverseTransformPoint(const float3& position, const float4x4& world_to_local_matrix);
 [[nodiscard]] float3 InverseTransformPoint(
     const float3& position,
     const float3& world_position,
     const quaternion& world_rotation,
     const float3& world_scale
+);
+[[nodiscard]] float3 InverseTransformVector(const float3& vector, const float4x4& world_to_local_matrix);
+[[nodiscard]] float3 InverseTransformVector(const float3& vector, const quaternion& rotation);
+[[nodiscard]] float3 InverseTransformDirection(const float3& direction, const float4x4& world_to_local_matrix);
+[[nodiscard]] float4x4 Transform(const float4x4& from_local_to_world_matrix, const float4x4& to_world_to_local_matrix);
+[[nodiscard]] bool CompareMatrix(const float4x4& a, const float4x4& b);
+[[nodiscard]] bool CompareTransform(
+    const float3& position_a,
+    const quaternion& rotation_a,
+    const float3& scale_a,
+    const float3& position_b,
+    const quaternion& rotation_b,
+    const float3& scale_b
 );
 [[nodiscard]] float3 ShiftPosition(
     const float3& old_position,
@@ -91,6 +122,9 @@ void Encapsulate(AABB& bounds, const float3& point);
 void Encapsulate(AABB& bounds, const AABB& other);
 void Transform(AABB& bounds, const float4x4& matrix);
 [[nodiscard]] float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const float3& b);
+[[nodiscard]] float ClosestPtPointSegmentRatioNoClamp(const float3& point, const float3& a, const float3& b);
+[[nodiscard]] float3 ClosestPtPointSegment(const float3& point, const float3& a, const float3& b);
+[[nodiscard]] float3 ClosestPtPointSegmentNoClamp(const float3& point, const float3& a, const float3& b);
 [[nodiscard]] float ClosestPtSegmentSegment(
     const float3& p1,
     const float3& q1,
@@ -205,5 +239,9 @@ void GetTriangleSphere(
     const float3& position,
     float3& out_position
 );
+[[nodiscard]] float SqDistPointSegment(const float3& a, const float3& b, const float3& c);
+[[nodiscard]] bool IsNaN(const float3& value);
+[[nodiscard]] bool IsNaN(const float4& value);
+[[nodiscard]] bool IsNaN(const quaternion& value);
 
 }  // namespace hocloth::mc2

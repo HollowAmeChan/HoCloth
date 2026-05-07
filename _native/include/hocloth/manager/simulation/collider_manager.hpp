@@ -74,10 +74,23 @@ public:
         TeamManager& team_manager,
         TransformManager& transform_manager
     );
+    bool RemoveColliderData(
+        int team_id,
+        int local_collider_index,
+        TeamManager& team_manager,
+        TransformManager& transform_manager
+    );
     bool UpdateColliderData(
         int team_id,
         int local_collider_index,
         TeamManager& team_manager,
+        const ColliderData& data
+    );
+    bool UpdateColliderData(
+        int team_id,
+        int local_collider_index,
+        TeamManager& team_manager,
+        TransformManager& transform_manager,
         const ColliderData& data
     );
     bool EnableCollider(
@@ -88,6 +101,13 @@ public:
         bool enabled
     );
     void SetCollider(int collider_index, const ColliderData& data);
+    void SetColliderTransform(
+        int team_id,
+        int local_collider_index,
+        const TeamManager& team_manager,
+        TransformManager& transform_manager,
+        const ColliderData& data
+    ) const;
     void PreSimulationUpdate(const TeamManager& team_manager, const TransformManager& transform_manager);
     void CreateUpdateColliderList(int update_index, const TeamManager& team_manager, SimulationManager& simulation_manager) const;
     void StartSimulationStep(const TeamManager& team_manager, const SimulationManager& simulation_manager);

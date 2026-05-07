@@ -353,6 +353,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             debug_row.operator("hocloth.export_frame_inputs", icon="FILE_TEXT", text="导出帧输入")
             debug_row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置")
             debug_row.operator("hocloth.apply_runtime_pose", icon="CON_ARMATURE", text="应用姿态")
+            debug_row.operator("hocloth.apply_runtime_mesh_output", icon="MESH_DATA", text="应用网格")
             debug_row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁")
 
         box = layout.box()
@@ -384,7 +385,14 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         settings_col.prop(scene, "hocloth_simulation_frequency", text="模拟频率")
         settings_col.prop(scene, "hocloth_apply_pose_on_step", text="步进后写回姿态")
         runtime_box.label(text=f"状态: {scene.hocloth_runtime_status}")
-        runtime_box.label(text=f"步数: {scene.hocloth_runtime_step_count}, 返回: {scene.hocloth_runtime_transform_count}, 写回: {getattr(scene, 'hocloth_runtime_applied_count', 0)}")
+        runtime_box.label(
+            text=(
+                f"步数: {scene.hocloth_runtime_step_count}, "
+                f"骨骼返回: {scene.hocloth_runtime_transform_count}, "
+                f"姿态写回: {getattr(scene, 'hocloth_runtime_applied_count', 0)}, "
+                f"网格写回: {getattr(scene, 'hocloth_runtime_mesh_applied_count', 0)}"
+            )
+        )
         if scene.hocloth_ui_details_expanded:
             exchange_info = get_exchange_info()
             runtime_box.label(text=f"结构: {scene.hocloth_compile_summary}")
@@ -395,6 +403,19 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                 text=(
                     f"Missing: bones={getattr(scene, 'hocloth_runtime_missing_bone_count', 0)}, "
                     f"armatures={getattr(scene, 'hocloth_runtime_missing_armature_count', 0)}"
+                )
+            )
+            runtime_box.label(
+                text=(
+                    f"Mesh Output: outputs={getattr(scene, 'hocloth_runtime_mesh_output_count', 0)}, "
+                    f"meshes={getattr(scene, 'hocloth_runtime_mesh_applied_count', 0)}, "
+                    f"verts={getattr(scene, 'hocloth_runtime_mesh_vertex_count', 0)}"
+                )
+            )
+            runtime_box.label(
+                text=(
+                    f"Mesh Missing: objects={getattr(scene, 'hocloth_runtime_mesh_missing_object_count', 0)}, "
+                    f"topology={getattr(scene, 'hocloth_runtime_mesh_topology_mismatch_count', 0)}"
                 )
             )
             runtime_box.label(text=f"Exchange: {exchange_info['schema']} v{exchange_info['schema_version']}")

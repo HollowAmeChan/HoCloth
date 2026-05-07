@@ -84,36 +84,20 @@ DistanceConstraint::ConstraintData DistanceConstraint::CreateData(
     }
 
     const int triangle_count = proxy_mesh.TriangleCount();
-    for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
-        const int3 tri0 = proxy_mesh.triangles[triangle_index0];
-        const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
-        for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
-            const int3 tri1 = proxy_mesh.triangles[triangle_index1];
-            int common[2] = {-1, -1};
-            int common_count = 0;
-            const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
-            for (int value0 : tri0_values) {
-                for (int value1 : tri1_values) {
-                    if (value0 == value1 && common_count < 2) {
-                        common[common_count++] = value0;
-                    }
-                }
-            }
-            if (common_count != 2) {
-                continue;
+    auto add_shear_pair = [&](const int2& raw_edge, const int3& tri0, const int3& tri1) {
+            const int2 edge = data::PackInt2(raw_edge);
+            if (edge.x < 0 || edge.y < 0 || edge.x >= vertex_count || edge.y >= vertex_count) {
+                return;
             }
 
-            const int2 edge{common[0], common[1]};
-            const int3 packed_edge_tri0 = tri0;
-            const int3 packed_edge_tri1 = tri1;
-            const int2 diagonal = GetRestTriangleVertex(packed_edge_tri0, packed_edge_tri1, edge);
+            const int2 diagonal = GetRestTriangleVertex(tri0, tri1, edge);
             const int e3 = diagonal.x;
             const int e4 = diagonal.y;
             if (e3 < 0 || e4 < 0 || e3 >= vertex_count || e4 >= vertex_count) {
-                continue;
+                return;
             }
             if (connect_set.find(data::Pack32Sort(e3, e4)) != connect_set.end()) {
-                continue;
+                return;
             }
 
             const float3 p1 = proxy_mesh.local_positions[edge.x];
@@ -122,7 +106,7 @@ DistanceConstraint::ConstraintData DistanceConstraint::CreateData(
             const float3 p4 = proxy_mesh.local_positions[e4];
             const float edge_length1 = Distance(p1, p2);
             if (edge_length1 < define::system::Epsilon) {
-                continue;
+                return;
             }
 
             const VertexAttribute attr3 = proxy_mesh.attributes[e3];
@@ -130,12 +114,12 @@ DistanceConstraint::ConstraintData DistanceConstraint::CreateData(
             if ((attr3.IsMove() == false && attr4.IsMove() == false)
                 || attr3.IsInvalid()
                 || attr4.IsInvalid()) {
-                continue;
+                return;
             }
 
             const float dot = Abs(Dot(TriangleNormal(p1, p2, p3), TriangleNormal(p1, p2, p4)));
             if (dot < 0.9396926f) {
-                continue;
+                return;
             }
 
             const float edge_length2 = Distance(p3, p4);
@@ -144,6 +128,54 @@ DistanceConstraint::ConstraintData DistanceConstraint::CreateData(
                 connect_set.insert(data::Pack32Sort(e3, e4));
                 horizontal_connection.Add(e3, static_cast<std::uint16_t>(e4));
                 horizontal_connection.Add(e4, static_cast<std::uint16_t>(e3));
+            }
+        };
+
+    if (!proxy_mesh.edge_to_triangles.empty()) {
+        for (int edge_index = 0; edge_index < edge_count; ++edge_index) {
+            const int2 edge = data::PackInt2(proxy_mesh.edges[edge_index]);
+            const auto found = proxy_mesh.edge_to_triangles.find(data::Pack32(edge.x, edge.y));
+            if (found == proxy_mesh.edge_to_triangles.end() || found->second.size() < 2) {
+                continue;
+            }
+
+            const std::vector<std::uint16_t>& triangle_indices = found->second;
+            for (std::size_t i = 0; i + 1 < triangle_indices.size(); ++i) {
+                const int triangle_index0 = triangle_indices[i];
+                if (triangle_index0 < 0 || triangle_index0 >= triangle_count) {
+                    continue;
+                }
+                const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+                for (std::size_t j = i + 1; j < triangle_indices.size(); ++j) {
+                    const int triangle_index1 = triangle_indices[j];
+                    if (triangle_index1 < 0 || triangle_index1 >= triangle_count) {
+                        continue;
+                    }
+                    add_shear_pair(edge, tri0, proxy_mesh.triangles[triangle_index1]);
+                }
+            }
+        }
+    } else {
+        for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
+            const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+            const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
+            for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
+                const int3 tri1 = proxy_mesh.triangles[triangle_index1];
+                int common[2] = {-1, -1};
+                int common_count = 0;
+                const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
+                for (int value0 : tri0_values) {
+                    for (int value1 : tri1_values) {
+                        if (value0 == value1 && common_count < 2) {
+                            common[common_count++] = value0;
+                        }
+                    }
+                }
+                if (common_count != 2) {
+                    continue;
+                }
+
+                add_shear_pair(int2{common[0], common[1]}, tri0, tri1);
             }
         }
     }

@@ -104,6 +104,11 @@ public:
         TeamManager& team_manager,
         const VirtualMeshManager& virtual_mesh_manager
     );
+    void UpdateTeam(
+        int team_id,
+        TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
     void RemoveTeamPrimitives(int team_id, TeamManager& team_manager);
     void UpdatePrimitives(
         std::uint32_t kind,
@@ -152,6 +157,12 @@ private:
     int triangle_primitive_count_ = 0;
     int intersect_count_ = 0;
 
+    void UpdateTeam(
+        int team_id,
+        TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager,
+        int recursion_depth
+    );
     void InitPrimitive(
         int team_id,
         const TeamManager::TeamData& team_data,

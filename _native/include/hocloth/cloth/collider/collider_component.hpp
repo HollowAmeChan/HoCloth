@@ -4,10 +4,13 @@
 #include "hocloth/utility/math/math_types.hpp"
 
 #include <algorithm>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 namespace hocloth::mc2 {
+
+class TeamManager;
+class TransformManager;
 
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/Collider/ColliderComponent.cs
 class ColliderComponent {
@@ -40,29 +43,100 @@ public:
         return false;
     }
 
-    void Register(int team_id)
+    void Register(int team_id, int local_collider_index = -1)
     {
-        team_id_set_.insert(team_id);
+        team_slots_[team_id] = local_collider_index;
     }
 
     void Exit(int team_id)
     {
-        team_id_set_.erase(team_id);
+        team_slots_.erase(team_id);
     }
 
     void ClearTeams()
     {
-        team_id_set_.clear();
+        team_slots_.clear();
     }
 
     [[nodiscard]] bool IsRegistered(int team_id) const
     {
-        return team_id_set_.contains(team_id);
+        return team_slots_.contains(team_id);
+    }
+
+    [[nodiscard]] int GetLocalColliderIndex(int team_id) const
+    {
+        const auto iterator = team_slots_.find(team_id);
+        return iterator != team_slots_.end() ? iterator->second : -1;
     }
 
     [[nodiscard]] std::vector<int> RegisteredTeamIds() const
     {
-        return std::vector<int>(team_id_set_.begin(), team_id_set_.end());
+        std::vector<int> ids;
+        ids.reserve(team_slots_.size());
+        for (const auto& entry : team_slots_) {
+            ids.push_back(entry.first);
+        }
+        return ids;
+    }
+
+    void UpdateParameters(
+        ColliderManager& collider_manager,
+        TeamManager& team_manager,
+        TransformManager& transform_manager
+    )
+    {
+        DataValidate();
+        for (const auto& entry : team_slots_) {
+            if (entry.second < 0) {
+                continue;
+            }
+            collider_manager.UpdateColliderData(
+                entry.first,
+                entry.second,
+                team_manager,
+                transform_manager,
+                ToColliderData()
+            );
+        }
+    }
+
+    void SetEnabled(
+        bool enabled_value,
+        ColliderManager& collider_manager,
+        TeamManager& team_manager,
+        TransformManager& transform_manager
+    )
+    {
+        enabled = enabled_value;
+        for (const auto& entry : team_slots_) {
+            if (entry.second < 0) {
+                continue;
+            }
+            collider_manager.EnableCollider(
+                entry.first,
+                entry.second,
+                team_manager,
+                transform_manager,
+                enabled
+            );
+        }
+    }
+
+    void Destroy(ColliderManager& collider_manager, TeamManager& team_manager, TransformManager& transform_manager)
+    {
+        const auto slots = team_slots_;
+        for (const auto& entry : slots) {
+            if (entry.second < 0) {
+                continue;
+            }
+            collider_manager.RemoveColliderData(
+                entry.first,
+                entry.second,
+                team_manager,
+                transform_manager
+            );
+        }
+        ClearTeams();
     }
 
     [[nodiscard]] ColliderManager::ColliderData ToColliderData(
@@ -93,7 +167,7 @@ protected:
     float3 size_{};
 
 private:
-    std::unordered_set<int> team_id_set_;
+    std::unordered_map<int, int> team_slots_;
 };
 
 inline float ClampColliderSize(float value)

@@ -3,6 +3,7 @@ from .compiled import (
     CompiledCollisionObject,
     CompiledCollider,
     CompiledColliderGroup,
+    CompiledMeshWritebackTarget,
     CompiledScene,
     CompiledSpringBone,
     CompiledSpringJoint,
@@ -121,6 +122,21 @@ def _build_topology_hash(source_object) -> str:
     if source_object.type == "MESH" and mesh_data is not None:
         return f"{source_object.name}:{len(mesh_data.vertices)}:{len(mesh_data.edges)}:{len(mesh_data.polygons)}"
     return f"{source_object.name}:{source_object.type}"
+
+
+def _mesh_writeback_target_from_object(component_id: str, source_object):
+    if source_object is None or source_object.type != "MESH" or source_object.data is None:
+        return None
+    mesh_data = source_object.data
+    topology_hash = _build_topology_hash(source_object)
+    return CompiledMeshWritebackTarget(
+        component_id=component_id,
+        source_object_name=source_object.name,
+        vertex_count=len(mesh_data.vertices),
+        edge_count=len(mesh_data.edges),
+        face_count=len(mesh_data.polygons),
+        topology_hash=topology_hash,
+    )
 
 
 def compile_scene_from_components(scene) -> CompiledScene:
@@ -289,5 +305,8 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 cache_path=typed_item.cache_path,
             )
         )
+        writeback_target = _mesh_writeback_target_from_object(component_id, source_object)
+        if writeback_target is not None:
+            compiled.mesh_writeback_targets.append(writeback_target)
 
     return compiled

@@ -160,6 +160,28 @@ class SimulationCacheDescriptor:
 
 
 @dataclass
+class CompiledMeshWritebackTarget:
+    component_id: str
+    source_object_name: str
+    vertex_count: int
+    edge_count: int
+    face_count: int
+    topology_hash: str
+    space: str = "object_local"
+
+    def to_dict(self) -> dict:
+        return {
+            "component_id": self.component_id,
+            "source_object_name": self.source_object_name,
+            "vertex_count": self.vertex_count,
+            "edge_count": self.edge_count,
+            "face_count": self.face_count,
+            "topology_hash": self.topology_hash,
+            "space": self.space,
+        }
+
+
+@dataclass
 class CompiledScene:
     spring_bones: list[CompiledSpringBone] = field(default_factory=list)
     colliders: list[CompiledCollider] = field(default_factory=list)
@@ -167,6 +189,7 @@ class CompiledScene:
     collision_objects: list[CompiledCollisionObject] = field(default_factory=list)
     collision_bindings: list[CompiledCollisionBinding] = field(default_factory=list)
     cache_descriptors: list[SimulationCacheDescriptor] = field(default_factory=list)
+    mesh_writeback_targets: list[CompiledMeshWritebackTarget] = field(default_factory=list)
 
     def total_bone_count(self) -> int:
         return sum(len(chain.joints) for chain in self.spring_bones)
@@ -183,7 +206,8 @@ class CompiledScene:
             f"collider_groups={len(self.collider_groups)}, "
             f"collision_objects={len(self.collision_objects)}, "
             f"collision_bindings={len(self.collision_bindings)}, "
-            f"cache_outputs={len(self.cache_descriptors)}"
+            f"cache_outputs={len(self.cache_descriptors)}, "
+            f"mesh_writeback_targets={len(self.mesh_writeback_targets)}"
         )
 
     def to_dict(self) -> dict:
@@ -329,4 +353,8 @@ class CompiledScene:
         data["bone_chains"] = data["spring_bones"]
         if self.cache_descriptors:
             data["cache_descriptors"] = [descriptor.to_dict() for descriptor in self.cache_descriptors]
+        if self.mesh_writeback_targets:
+            data["mesh_writeback_targets"] = [
+                target.to_dict() for target in self.mesh_writeback_targets
+            ]
         return data

@@ -1,6 +1,7 @@
 #include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
 
 #include "hocloth/manager/transform/transform_data_serialization.hpp"
+#include "hocloth/utility/data/data_utility.hpp"
 #include "hocloth/utility/native_collection/native_array_extensions.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
@@ -152,9 +153,28 @@ VirtualMesh VirtualMeshSerializationData::ShareDeserialize(
     if (!data.center_fixed_list.empty()) {
         mesh.center_fixed_list.AddRange(data.center_fixed_list);
     }
+    const std::size_t edge_triangle_count =
+        std::min(data.edge_to_triangles_keys.size(), data.edge_to_triangles_values.size());
+    mesh.edge_to_triangles.clear();
+    mesh.edge_to_triangles.reserve(edge_triangle_count);
+    for (std::size_t index = 0; index < edge_triangle_count; ++index) {
+        const int2 edge = data.edge_to_triangles_keys[index];
+        mesh.edge_to_triangles[data::Pack32(edge.x, edge.y)].push_back(
+            data.edge_to_triangles_values[index]
+        );
+    }
+    mesh.custom_skinning_bone_indices = data.custom_skinning_bone_indices;
+    mesh.local_center_position = data.local_center_position;
+    mesh.center_world_position = data.center_world_position;
+    mesh.center_world_rotation = data.center_world_rotation;
+    mesh.center_world_scale = data.center_world_scale;
+
     if (mesh.edges.Count() <= 0 && mesh.lines.Count() > 0) {
         mesh.edges.AddRange(mesh.lines);
         mesh.edge_flags.AddRange(mesh.lines.Count(), BitFlag8{});
+    }
+    if (mesh.edge_to_triangles.empty() && mesh.TriangleCount() > 0) {
+        mesh.BuildEdgeToTriangles();
     }
     if (mesh.IsProxy() && mesh.base_line_start_data_indices.Count() <= 0) {
         if (mesh.is_bone_cloth) {

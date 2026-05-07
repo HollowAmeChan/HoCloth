@@ -2,6 +2,8 @@
 
 #include "hocloth/cloth/cloth_process.hpp"
 
+#include <algorithm>
+
 namespace hocloth::mc2 {
 
 Result MagicaManager::Initialize()
@@ -21,6 +23,7 @@ Result MagicaManager::Initialize()
 
 void MagicaManager::Dispose()
 {
+    cloth_processes_.clear();
     virtual_mesh_manager_.Dispose();
     prebuild_manager_.Dispose();
     cloth_manager_.Dispose();
@@ -83,6 +86,11 @@ int MagicaManager::StepFrame(
     time_manager_.SetGlobalTimeScale(global_time_scale);
     time_manager_.FrameUpdate(simulation_frequency);
     wind_manager_.AlwaysWindUpdate();
+    for (ClothProcess* process : cloth_processes_) {
+        if (process != nullptr) {
+            process->ApplyPendingManagerUpdates();
+        }
+    }
     const float simulation_delta_time = time_manager_.SimulationDeltaTime();
     const float4 simulation_power = time_manager_.SimulationPower();
     const int max_update_count = team_manager_.AlwaysTeamUpdate(
@@ -261,12 +269,23 @@ bool MagicaManager::RegisterClothProcess(ClothProcess& process)
     if (!initialized_) {
         Initialize();
     }
-    return process.RegisterToManagers(*this);
+    if (!process.RegisterToManagers(*this)) {
+        return false;
+    }
+    if (std::find(cloth_processes_.begin(), cloth_processes_.end(), &process)
+        == cloth_processes_.end()) {
+        cloth_processes_.push_back(&process);
+    }
+    return true;
 }
 
 void MagicaManager::UnregisterClothProcess(ClothProcess& process)
 {
     process.UnregisterFromManagers(*this);
+    cloth_processes_.erase(
+        std::remove(cloth_processes_.begin(), cloth_processes_.end(), &process),
+        cloth_processes_.end()
+    );
 }
 
 void MagicaManager::StartUse(ClothProcess& process)

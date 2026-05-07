@@ -134,6 +134,7 @@ void ClothProcess::SetSkipWriting(bool enabled)
 {
     SetState(StateSkipWriting, enabled);
     SetState(StateSkipWritingDirty, true);
+    ApplyPendingManagerUpdates();
 }
 
 ClothUpdateMode ClothProcess::GetClothUpdateMode() const
@@ -352,6 +353,11 @@ bool ClothProcess::RegisterToManagers(
         TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id_);
         team_data.proxy_mesh_type = proxy_mesh->mesh_type;
         team_data.init_scale = cloth_transform_record.scale;
+        team_data.flag.Set(
+            TeamManager::FlagSpring,
+            cloth_type_ == ClothType::BoneSpring
+                && parameters_.spring_constraint.spring_power > 0.0f
+        );
         team_manager.SetUpdateMode(team_id_, GetClothUpdateMode());
         team_manager.SetAnimationPoseRatio(team_id_, serialize_data.animation_pose_ratio);
         team_manager.SetTimeScale(team_id_, 1.0f);
@@ -373,6 +379,11 @@ bool ClothProcess::RegisterToManagers(
             team_id_,
             bending_constraint_data,
             team_manager
+        );
+        cloth_manager.SelfCollision().UpdateTeam(
+            team_id_,
+            team_manager,
+            virtual_mesh_manager
         );
 
         for (RenderMeshInfo& info : render_mesh_info_list) {
@@ -508,6 +519,12 @@ void ClothProcess::UnregisterFromManagers(
             info.mapping_chunk.Clear();
         }
 
+        team_manager.GetTeamData(team_id_).flag.Set(TeamManager::FlagExit, true);
+        cloth_manager.SelfCollision().UpdateTeam(
+            team_id_,
+            team_manager,
+            virtual_mesh_manager
+        );
         cloth_manager.TriangleBending().Exit(team_id_, team_manager);
         cloth_manager.Distance().Exit(team_id_, team_manager);
         cloth_manager.Inertia().Exit(team_id_, team_manager);
@@ -571,6 +588,58 @@ void ClothProcess::DataUpdate()
     serialize_data2.DataValidate();
     SyncParameters();
     SetState(StateParameterDirty, true);
+    ApplyPendingManagerUpdates();
+}
+
+void ClothProcess::ApplyPendingManagerUpdates()
+{
+    if (registered_team_manager_ == nullptr
+        || registered_virtual_mesh_manager_ == nullptr
+        || registered_cloth_manager_ == nullptr) {
+        return;
+    }
+    ApplyPendingManagerUpdates(
+        *registered_team_manager_,
+        *registered_virtual_mesh_manager_,
+        *registered_cloth_manager_
+    );
+}
+
+void ClothProcess::ApplyPendingManagerUpdates(
+    TeamManager& team_manager,
+    VirtualMeshManager& virtual_mesh_manager,
+    ClothManager& cloth_manager
+)
+{
+    if (!team_manager.IsValidTeam(team_id_)) {
+        SetState(StateParameterDirty, false);
+        SetState(StateSkipWritingDirty, false);
+        return;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id_);
+    if (IsState(StateParameterDirty)) {
+        SyncParameters();
+        team_manager.SetParameters(team_id_, parameters_);
+        team_data.update_mode = GetClothUpdateMode();
+        team_data.animation_pose_ratio = Clamp01(serialize_data.animation_pose_ratio);
+        team_data.flag.Set(
+            TeamManager::FlagSpring,
+            cloth_type_ == ClothType::BoneSpring
+                && parameters_.spring_constraint.spring_power > 0.0f
+        );
+        cloth_manager.SelfCollision().UpdateTeam(
+            team_id_,
+            team_manager,
+            virtual_mesh_manager
+        );
+        SetState(StateParameterDirty, false);
+    }
+
+    if (IsState(StateSkipWritingDirty)) {
+        team_data.flag.Set(TeamManager::FlagSkipWriting, IsSkipWriting());
+        SetState(StateSkipWritingDirty, false);
+    }
 }
 
 ClothProcess::RenderMeshInfo* ClothProcess::GetRenderMeshInfo(int index)

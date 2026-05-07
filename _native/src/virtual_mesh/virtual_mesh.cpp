@@ -6,14 +6,18 @@
 #include "hocloth/reduction/same_distance_reduction.hpp"
 #include "hocloth/reduction/shape_distance_reduction.hpp"
 #include "hocloth/reduction/simple_distance_reduction.hpp"
+#include "hocloth/manager/transform/transform_manager.hpp"
 #include "hocloth/utility/data/multi_data_builder.hpp"
+#include "hocloth/utility/grid/grid_map.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 #include "hocloth/utility/native_collection/ex_cost_sorted_list1.hpp"
+#include "hocloth/utility/native_collection/ex_cost_sorted_list4.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <limits>
+#include <queue>
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
@@ -67,6 +71,18 @@ std::uint64_t PackedEdgeKey(const int2& edge)
 void UniqueAdd(
     std::unordered_map<std::uint16_t, std::vector<std::uint16_t>>& map,
     std::uint16_t key,
+    std::uint16_t value
+)
+{
+    std::vector<std::uint16_t>& values = map[key];
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+void UniqueAdd(
+    VirtualMesh::EdgeToTrianglesMap& map,
+    std::uint32_t key,
     std::uint16_t value
 )
 {
@@ -437,6 +453,184 @@ void VirtualMesh::BuildVertexToTriangles()
     }
 }
 
+void VirtualMesh::BuildEdgeToTriangles()
+{
+    // Ported from MC2 Proxy_CalcEdgeToTriangleJob.
+    edge_to_triangles.clear();
+    const int vertex_count = VertexCount();
+    const int triangle_count = TriangleCount();
+    if (vertex_count <= 0 || triangle_count <= 0) {
+        return;
+    }
+
+    edge_to_triangles.reserve(static_cast<std::size_t>(triangle_count * 3));
+    for (int triangle_index = 0; triangle_index < triangle_count; ++triangle_index) {
+        const int3 triangle = triangles[triangle_index];
+        if (!IsValidVertexIndex(triangle.x, vertex_count)
+            || !IsValidVertexIndex(triangle.y, vertex_count)
+            || !IsValidVertexIndex(triangle.z, vertex_count)) {
+            continue;
+        }
+
+        const int2 edges_to_add[3] = {
+            data::PackInt2(triangle.x, triangle.y),
+            data::PackInt2(triangle.y, triangle.z),
+            data::PackInt2(triangle.z, triangle.x),
+        };
+        for (const int2& edge : edges_to_add) {
+            UniqueAdd(
+                edge_to_triangles,
+                data::Pack32(edge.x, edge.y),
+                static_cast<std::uint16_t>(triangle_index)
+            );
+        }
+    }
+}
+
+void VirtualMesh::BuildEdgeFlags()
+{
+    // Ported from MC2 Proxy_CreateEdgeFlagJob.
+    edge_flags.Dispose();
+    const int edge_count = edges.Count();
+    if (edge_count <= 0) {
+        return;
+    }
+
+    if (edge_to_triangles.empty() && TriangleCount() > 0) {
+        BuildEdgeToTriangles();
+    }
+
+    edge_flags.AddRange(edge_count, BitFlag8{});
+    for (int edge_index = 0; edge_index < edge_count; ++edge_index) {
+        const int2 edge = data::PackInt2(edges[edge_index]);
+        const auto found = edge_to_triangles.find(data::Pack32(edge.x, edge.y));
+        if (found == edge_to_triangles.end()) {
+            continue;
+        }
+
+        BitFlag8 flag;
+        if (found->second.size() <= 1) {
+            flag.SetFlag(EdgeFlagCut, true);
+        }
+        edge_flags[edge_index] = flag;
+    }
+}
+
+void VirtualMesh::ConvertInvalidToFixed()
+{
+    // Ported from MC2 Proxy_ConvertInvalidToFixedJob.
+    const int vertex_count = VertexCount();
+    if (vertex_count <= 0
+        || attributes.Count() < vertex_count
+        || vertex_to_vertex_index_array.Count() < vertex_count) {
+        return;
+    }
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        VertexAttribute attribute = attributes[vertex_index];
+        if (!attribute.IsInvalid()) {
+            continue;
+        }
+
+        int data_count = 0;
+        int data_start = 0;
+        data::Unpack12_20(vertex_to_vertex_index_array[vertex_index], data_count, data_start);
+        for (int offset = 0; offset < data_count; ++offset) {
+            const int data_index = data_start + offset;
+            if (data_index < 0 || data_index >= vertex_to_vertex_data_array.Count()) {
+                continue;
+            }
+            const int connected_vertex = vertex_to_vertex_data_array[data_index];
+            if (connected_vertex < 0 || connected_vertex >= attributes.Count()) {
+                continue;
+            }
+            if (!attributes[connected_vertex].IsMove()) {
+                continue;
+            }
+
+            attribute.Set(VertexAttribute::FlagInvalidMotion, true);
+            attribute.Set(VertexAttribute::FlagFixed, true);
+            attributes[vertex_index] = attribute;
+            break;
+        }
+    }
+}
+
+void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
+{
+    // Ported from MC2 Proxy_ApplySelectionJob + Proxy_BoneClothApplayTransformFlagJob.
+    if (!selection_data.IsValid() || VertexCount() <= 0 || attributes.Count() < VertexCount()) {
+        return;
+    }
+
+    float search_radius = std::max(average_vertex_distance, selection_data.max_connection_distance);
+    search_radius = std::max(search_radius, define::system::MinimumGridSize);
+    const float grid_size = search_radius * 1.5f;
+
+    GridMap<int> grid_map(selection_data.Count());
+    auto& map = grid_map.GetMap();
+    for (int selection_index = 0; selection_index < selection_data.Count(); ++selection_index) {
+        GridMap<int>::AddGrid(
+            selection_data.positions[static_cast<std::size_t>(selection_index)],
+            selection_index,
+            map,
+            grid_size
+        );
+    }
+
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        if (vertex_index >= local_positions.Count()) {
+            break;
+        }
+
+        const float3 position = local_positions[vertex_index];
+        float min_distance = std::numeric_limits<float>::max();
+        VertexAttribute nearest_attribute = VertexAttribute::Invalid();
+        for (const int3& grid : GridMap<int>::GetArea(position, search_radius, grid_size)) {
+            const auto found = map.find(grid);
+            if (found == map.end()) {
+                continue;
+            }
+            for (int selection_index : found->second) {
+                if (selection_index < 0 || selection_index >= selection_data.Count()) {
+                    continue;
+                }
+                const float distance = Distance(
+                    position,
+                    selection_data.positions[static_cast<std::size_t>(selection_index)]
+                );
+                if (distance > search_radius || distance > min_distance) {
+                    continue;
+                }
+                min_distance = distance;
+                nearest_attribute =
+                    selection_data.attributes[static_cast<std::size_t>(selection_index)];
+            }
+        }
+
+        VertexAttribute attribute = attributes[vertex_index];
+        attribute.Set(nearest_attribute, true);
+        attributes[vertex_index] = attribute;
+    }
+
+    if (!is_bone_cloth || transform_data.flag_array.Count() < VertexCount()) {
+        return;
+    }
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        const VertexAttribute attribute = attributes[vertex_index];
+        BitFlag8 flag = transform_data.flag_array[vertex_index];
+        if (attribute.IsMove()) {
+            flag.SetFlag(TransformManager::FlagLocalPosRotWrite, true);
+        } else if (attribute.IsFixed()) {
+            flag.SetFlag(TransformManager::FlagWorldRotWrite, true);
+        }
+        if (!attribute.IsInvalid()) {
+            flag.SetFlag(TransformManager::FlagRestore, true);
+        }
+        transform_data.flag_array[vertex_index] = flag;
+    }
+}
+
 void VirtualMesh::BuildMeshBaseLinesFromEdges()
 {
     // Ported from Magica Cloth 2: Scripts/Core/VirtualMesh/Function/VirtualMeshProxy.cs
@@ -708,6 +902,180 @@ void VirtualMesh::CalcAverageAndMaxVertexDistanceRun()
             std::sqrt(sum_squared_length / static_cast<float>(count));
         max_vertex_distance = std::sqrt(max_squared_length);
     }
+}
+
+GridMap<int> VirtualMesh::CreateVertexIndexGridMapRun(float grid_size) const
+{
+    // Ported from MC2 VirtualMeshWork.CreateVertexIndexGridMapRun().
+    GridMap<int> grid_map(VertexCount());
+    auto& map = grid_map.GetMap();
+    if (grid_size <= define::system::Epsilon) {
+        return grid_map;
+    }
+
+    const int vertex_count = VertexCount();
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        if (vertex_index >= local_positions.Count()) {
+            break;
+        }
+        GridMap<int>::AddGrid(local_positions[vertex_index], vertex_index, map, grid_size);
+    }
+    return grid_map;
+}
+
+VirtualMeshRaycastHit VirtualMesh::IntersectRayMesh(
+    const float3& ray_position,
+    const float3& ray_direction,
+    bool double_side,
+    float point_radius
+) const
+{
+    // Ported from MC2 VirtualMeshWork.IntersectRayMesh(). Native callers pass local mesh-space rays.
+    std::vector<VirtualMeshRaycastHit> hits;
+    hits.reserve(100);
+
+    const float3 local_ray_position = ray_position;
+    const float3 local_ray_direction = Normalize(ray_direction, float3{0.0f, 0.0f, 1.0f});
+    const float3 local_ray_end_position =
+        Add(local_ray_position, Scale(local_ray_direction, 1000.0f));
+    const float local_point_radius = std::max(point_radius, 0.0f);
+
+    const int vertex_count = VertexCount();
+    for (int triangle_index = 0; triangle_index < TriangleCount(); ++triangle_index) {
+        const int3 triangle = triangles[triangle_index];
+        if (!IsValidVertexIndex(triangle.x, vertex_count)
+            || !IsValidVertexIndex(triangle.y, vertex_count)
+            || !IsValidVertexIndex(triangle.z, vertex_count)) {
+            continue;
+        }
+
+        const float3 p0 = local_positions[triangle.x];
+        const float3 p1 = local_positions[triangle.y];
+        const float3 p2 = local_positions[triangle.z];
+        float3 sphere_center{};
+        float sphere_radius = 0.0f;
+        GetTriangleSphere(p0, p1, p2, sphere_center, sphere_radius);
+
+        float sphere_t = 0.0f;
+        float3 sphere_hit{};
+        if (!IntersectRaySphere(
+                local_ray_position,
+                local_ray_direction,
+                sphere_center,
+                sphere_radius,
+                sphere_t,
+                sphere_hit
+            )) {
+            continue;
+        }
+
+        float u = 0.0f;
+        float v = 0.0f;
+        float w = 0.0f;
+        float t = 0.0f;
+        if (!IntersectSegmentTriangle(
+                local_ray_position,
+                local_ray_end_position,
+                p0,
+                p1,
+                p2,
+                double_side,
+                u,
+                v,
+                w,
+                t
+            )) {
+            continue;
+        }
+
+        VirtualMeshRaycastHit hit;
+        hit.type = VirtualMeshPrimitive::Triangle;
+        hit.index = triangle_index;
+        hit.position = Lerp(local_ray_position, local_ray_end_position, t);
+        hit.normal = TriangleNormal(p0, p1, p2);
+        hit.distance = t;
+        hits.push_back(hit);
+    }
+
+    const EdgeToTrianglesMap* edge_to_triangles_lookup = &edge_to_triangles;
+    EdgeToTrianglesMap built_edge_to_triangles;
+    if (edge_to_triangles_lookup->empty() && TriangleCount() > 0) {
+        const int triangle_count = TriangleCount();
+        built_edge_to_triangles.reserve(static_cast<std::size_t>(triangle_count * 3));
+        for (int triangle_index = 0; triangle_index < triangle_count; ++triangle_index) {
+            const int3 triangle = triangles[triangle_index];
+            if (!IsValidVertexIndex(triangle.x, vertex_count)
+                || !IsValidVertexIndex(triangle.y, vertex_count)
+                || !IsValidVertexIndex(triangle.z, vertex_count)) {
+                continue;
+            }
+            const int2 triangle_edges[3] = {
+                data::PackInt2(triangle.x, triangle.y),
+                data::PackInt2(triangle.y, triangle.z),
+                data::PackInt2(triangle.z, triangle.x),
+            };
+            for (const int2& edge : triangle_edges) {
+                UniqueAdd(
+                    built_edge_to_triangles,
+                    data::Pack32(edge.x, edge.y),
+                    static_cast<std::uint16_t>(triangle_index)
+                );
+            }
+        }
+        edge_to_triangles_lookup = &built_edge_to_triangles;
+    }
+
+    for (int edge_index = 0; edge_index < edges.Count(); ++edge_index) {
+        const int2 edge = edges[edge_index];
+        if (!IsValidVertexIndex(edge.x, vertex_count)
+            || !IsValidVertexIndex(edge.y, vertex_count)) {
+            continue;
+        }
+        const int2 packed_edge = data::PackInt2(edge);
+        if (edge_to_triangles_lookup->find(data::Pack32(packed_edge.x, packed_edge.y))
+            != edge_to_triangles_lookup->end()) {
+            continue;
+        }
+
+        const float3 p0 = local_positions[edge.x];
+        const float3 p1 = local_positions[edge.y];
+        float s = 0.0f;
+        float t = 0.0f;
+        float3 c1{};
+        float3 c2{};
+        const float distance_sq = ClosestPtSegmentSegment(
+            p0,
+            p1,
+            local_ray_position,
+            local_ray_end_position,
+            s,
+            t,
+            c1,
+            c2
+        );
+        if (std::sqrt(distance_sq) > local_point_radius) {
+            continue;
+        }
+
+        VirtualMeshRaycastHit hit;
+        hit.type = VirtualMeshPrimitive::Edge;
+        hit.index = edge_index;
+        hit.position = c2;
+        hit.normal = Scale(local_ray_direction, -1.0f);
+        hit.distance = t;
+        hits.push_back(hit);
+    }
+
+    if (hits.empty()) {
+        return VirtualMeshRaycastHit{};
+    }
+    return *std::min_element(
+        hits.begin(),
+        hits.end(),
+        [](const VirtualMeshRaycastHit& lhs, const VirtualMeshRaycastHit& rhs) {
+            return lhs.distance < rhs.distance;
+        }
+    );
 }
 
 void VirtualMesh::Optimization()
@@ -1244,6 +1612,7 @@ void VirtualMesh::Dispose()
     lines.Dispose();
     edges.Dispose();
     edge_flags.Dispose();
+    edge_to_triangles.clear();
     skin_bone_transform_indices.Dispose();
     skin_bone_bind_poses.Dispose();
     transform_data.Dispose();
@@ -1263,6 +1632,11 @@ void VirtualMesh::Dispose()
     base_line_data.Dispose();
     normal_adjustment_rotations.Dispose();
     vertex_to_transform_rotations.Dispose();
+    custom_skinning_bone_indices.clear();
+    local_center_position = float3{};
+    center_world_position = float3{};
+    center_world_rotation = quaternion{};
+    center_world_scale = float3{1.0f, 1.0f, 1.0f};
     result = Result::Ok();
     is_managed = false;
     mesh_type = MeshType::NormalMesh;
@@ -1486,6 +1860,423 @@ void VirtualMesh::BuildBaseLinesFromParents()
     }
 }
 
+bool VirtualMesh::CompareSpace(const VirtualMesh& target) const
+{
+    constexpr float eps = 1.0e-5f;
+    return Distance(local_center_position, target.local_center_position) <= eps
+        && std::abs(init_scale.x - target.init_scale.x) <= eps
+        && std::abs(init_scale.y - target.init_scale.y) <= eps
+        && std::abs(init_scale.z - target.init_scale.z) <= eps;
+}
+
+float4x4 VirtualMesh::CenterTransformTo(const VirtualMesh& target) const
+{
+    // Ported from Magica Cloth 2: Scripts/Core/VirtualMesh/Function/VirtualMeshInputOutput.cs
+    if (CompareSpace(target)) {
+        return float4x4{};
+    }
+    return Multiply(target.init_world_to_local, init_local_to_world);
+}
+
+float4 VirtualMesh::CalcMappingVertexWeights(float4 distances)
+{
+    // Ported from Magica Cloth 2: Scripts/Core/VirtualMesh/Function/VirtualMeshMapping.cs
+    distances.x = std::max(distances.x, 0.0f);
+    distances.y = std::max(distances.y, 0.0f);
+    distances.z = std::max(distances.z, 0.0f);
+    distances.w = std::max(distances.w, 0.0f);
+
+    constexpr float pow_value = 4.0f;
+    distances.x = std::pow(distances.x, pow_value);
+    distances.y = std::pow(distances.y, pow_value);
+    distances.z = std::pow(distances.z, pow_value);
+    distances.w = std::pow(distances.w, pow_value);
+
+    const float minimum = distances.x;
+    distances.x = distances.x > 0.0f ? minimum / distances.x : 0.0f;
+    distances.y = distances.y > 0.0f ? minimum / distances.y : 0.0f;
+    distances.z = distances.z > 0.0f ? minimum / distances.z : 0.0f;
+    distances.w = distances.w > 0.0f ? minimum / distances.w : 0.0f;
+
+    float sum = distances.x + distances.y + distances.z + distances.w;
+    if (sum <= 0.0f) {
+        return float4{1.0f, 0.0f, 0.0f, 0.0f};
+    }
+    distances.x /= sum;
+    distances.y /= sum;
+    distances.z /= sum;
+    distances.w /= sum;
+
+    constexpr float remove_weight = 0.01f;
+    if (distances.w < remove_weight) {
+        distances.w = 0.0f;
+    }
+    if (distances.z < remove_weight) {
+        distances.z = 0.0f;
+    }
+    if (distances.y < remove_weight) {
+        distances.y = 0.0f;
+    }
+
+    sum = distances.x + distances.y + distances.z + distances.w;
+    if (sum > 0.0f) {
+        distances.x /= sum;
+        distances.y /= sum;
+        distances.z /= sum;
+        distances.w /= sum;
+    }
+    return distances;
+}
+
+void VirtualMesh::DirectMapping(
+    VirtualMesh& proxy_mesh,
+    const float4x4& to_proxy,
+    std::vector<MappingWorkData>& mapping_work_data
+)
+{
+    // Ported from MC2 Mapping_DirectConnectionVertexDataJob.
+    const int vertex_count = VertexCount();
+    if (!merge_chunk.IsValid() || proxy_mesh.reference_indices.Count() <= 0) {
+        return;
+    }
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const int join_index = merge_chunk.start_index + vertex_index;
+        if (join_index < 0 || join_index >= proxy_mesh.reference_indices.Count()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        const int proxy_vertex_index = proxy_mesh.reference_indices[join_index];
+        if (proxy_vertex_index < 0 || proxy_vertex_index >= proxy_mesh.VertexCount()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        const VertexAttribute proxy_attr = proxy_mesh.attributes[proxy_vertex_index];
+        if (proxy_attr.IsInvalid()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        const float3 position = TransformPoint(local_positions[vertex_index], to_proxy);
+        const float3 proxy_position = proxy_mesh.local_positions[proxy_vertex_index];
+        mapping_work_data[static_cast<std::size_t>(vertex_index)] = MappingWorkData{
+            position,
+            vertex_index,
+            proxy_vertex_index,
+            Distance(position, proxy_position),
+        };
+        attributes[vertex_index] = proxy_attr;
+    }
+}
+
+void VirtualMesh::CalcDirectMappingWeights(
+    VirtualMesh& proxy_mesh,
+    const std::vector<MappingWorkData>& mapping_work_data,
+    float weight_length
+)
+{
+    // Ported from MC2 Mapping_CalcDirectWeightJob.
+    weight_length = std::max(weight_length, define::system::Epsilon);
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        if (attributes[vertex_index].IsInvalid()) {
+            continue;
+        }
+
+        const MappingWorkData& work_data = mapping_work_data[static_cast<std::size_t>(vertex_index)];
+        const int proxy_vertex_index = work_data.proxy_vertex_index;
+        if (proxy_vertex_index < 0 || proxy_vertex_index >= proxy_mesh.VertexCount()) {
+            continue;
+        }
+
+        ExCostSortedList4 weights{-1.0f};
+        std::queue<int> queue;
+        std::unordered_set<int> used;
+        queue.push(proxy_vertex_index);
+        while (!queue.empty()) {
+            const int current = queue.front();
+            queue.pop();
+            if (current < 0 || current >= proxy_mesh.VertexCount() || used.contains(current)) {
+                continue;
+            }
+            used.insert(current);
+
+            float distance = Distance(work_data.position, proxy_mesh.local_positions[current]);
+            if (distance > weight_length) {
+                continue;
+            }
+
+            constexpr float weight_pow = 3.0f;
+            float weight = Clamp01(1.0f - distance / weight_length);
+            weight = std::pow(weight, weight_pow);
+            weights.Add(1.0f - weight, current);
+
+            int data_count = 0;
+            int data_start = 0;
+            if (current < proxy_mesh.vertex_to_vertex_index_array.Count()) {
+                data::Unpack12_20(proxy_mesh.vertex_to_vertex_index_array[current], data_count, data_start);
+            }
+            for (int offset = 0; offset < data_count; ++offset) {
+                const int data_index = data_start + offset;
+                if (data_index < 0 || data_index >= proxy_mesh.vertex_to_vertex_data_array.Count()) {
+                    continue;
+                }
+                const int neighbor = proxy_mesh.vertex_to_vertex_data_array[data_index];
+                if (used.contains(neighbor)) {
+                    continue;
+                }
+                distance = Distance(work_data.position, proxy_mesh.local_positions[neighbor]);
+                if (distance <= weight_length) {
+                    queue.push(neighbor);
+                }
+            }
+        }
+
+        if (weights.Count() == 0) {
+            weights.Add(1.0f, proxy_vertex_index);
+        }
+
+        const int weight_count = weights.Count();
+        float4 weight_values{};
+        int4 indices{};
+        for (int index = 0; index < 4; ++index) {
+            if (index < weight_count) {
+                weight_values[index] = 1.0f - weights.costs[index];
+                indices[index] = weights.data[index];
+            }
+        }
+
+        const float total = weight_values.x + weight_values.y + weight_values.z + weight_values.w;
+        if (total == 0.0f && weight_count > 0) {
+            const float uniform = 1.0f / static_cast<float>(weight_count);
+            for (int index = 0; index < weight_count; ++index) {
+                weight_values[index] = uniform;
+            }
+        } else if (total > 0.0f) {
+            weight_values.x = Clamp01(weight_values.x / total);
+            weight_values.y = Clamp01(weight_values.y / total);
+            weight_values.z = Clamp01(weight_values.z / total);
+            weight_values.w = Clamp01(weight_values.w / total);
+        }
+        bone_weights[vertex_index] = VirtualMeshBoneWeight(indices, weight_values);
+    }
+}
+
+void VirtualMesh::SearchMapping(
+    VirtualMesh& proxy_mesh,
+    const float4x4& to_proxy,
+    std::vector<MappingWorkData>& mapping_work_data
+)
+{
+    // Ported from MC2 Mapping_CalcConnectionVertexDataJob.
+    float average_distance = TransformLength(average_vertex_distance, to_proxy);
+    average_distance = std::max(average_distance, define::system::MinimumGridSize);
+    const float search_radius = average_distance * 2.5f;
+    const float grid_size = average_distance * 1.5f;
+
+    GridMap<int> grid_map(proxy_mesh.VertexCount());
+    auto& map = grid_map.GetMap();
+    for (int proxy_index = 0; proxy_index < proxy_mesh.VertexCount(); ++proxy_index) {
+        GridMap<int>::AddGrid(proxy_mesh.local_positions[proxy_index], proxy_index, map, grid_size);
+    }
+
+    const auto& transform_ids = transform_data.id_array;
+    const auto& proxy_transform_ids = proxy_mesh.transform_data.id_array;
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        const float3 position = TransformPoint(local_positions[vertex_index], to_proxy);
+        const VirtualMeshBoneWeight& bone_weight = bone_weights[vertex_index];
+        const int bone_index = bone_weight.bone_indices[0];
+        const int bone_id = bone_index >= 0 && bone_index < static_cast<int>(transform_ids.size())
+            ? transform_ids[static_cast<std::size_t>(bone_index)]
+            : 0;
+
+        ExCostSortedList1 near_vertex{-1.0f};
+        ExCostSortedList1 weighted_vertex{-1.0f};
+        for (const int3& grid : GridMap<int>::GetArea(position, search_radius, grid_size)) {
+            const auto found = map.find(grid);
+            if (found == map.end()) {
+                continue;
+            }
+            for (int proxy_index : found->second) {
+                const float distance = Distance(position, proxy_mesh.local_positions[proxy_index]);
+                if (distance > search_radius) {
+                    continue;
+                }
+                near_vertex.Add(distance, proxy_index);
+
+                const VirtualMeshBoneWeight& proxy_weight = proxy_mesh.bone_weights[proxy_index];
+                bool has_bone = false;
+                const int count = proxy_weight.Count();
+                for (int index = 0; index < count && !has_bone; ++index) {
+                    const int proxy_bone_index = proxy_weight.bone_indices[static_cast<std::size_t>(index)];
+                    const int proxy_bone_id =
+                        proxy_bone_index >= 0 && proxy_bone_index < static_cast<int>(proxy_transform_ids.size())
+                            ? proxy_transform_ids[static_cast<std::size_t>(proxy_bone_index)]
+                            : 0;
+                    has_bone = proxy_bone_id != 0 && proxy_bone_id == bone_id;
+                }
+                if (has_bone) {
+                    weighted_vertex.Add(distance, proxy_index);
+                }
+            }
+        }
+
+        ExCostSortedList1 connection_vertex = near_vertex;
+        if (weighted_vertex.IsValid()
+            && (!near_vertex.IsValid() || weighted_vertex.Cost() < near_vertex.Cost() * 3.0f)) {
+            connection_vertex = weighted_vertex;
+        }
+        if (!connection_vertex.IsValid()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        const VertexAttribute connection_attr = proxy_mesh.attributes[connection_vertex.Data()];
+        if (connection_attr.IsInvalid()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        mapping_work_data[static_cast<std::size_t>(vertex_index)] = MappingWorkData{
+            position,
+            vertex_index,
+            connection_vertex.Data(),
+            connection_vertex.Cost(),
+        };
+        attributes[vertex_index] = connection_attr;
+    }
+}
+
+void VirtualMesh::CalcSearchMappingWeights(
+    VirtualMesh& proxy_mesh,
+    const std::vector<MappingWorkData>& mapping_work_data
+)
+{
+    // Ported from MC2 Mapping_CalcWeightJob.
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        if (attributes[vertex_index].IsInvalid()) {
+            continue;
+        }
+
+        const MappingWorkData& work_data = mapping_work_data[static_cast<std::size_t>(vertex_index)];
+        const int proxy_index = work_data.proxy_vertex_index;
+        if (proxy_index < 0 || proxy_index >= proxy_mesh.VertexCount()) {
+            attributes[vertex_index] = VertexAttribute::Invalid();
+            continue;
+        }
+
+        float3 position = work_data.position;
+        const float3 proxy_position = proxy_mesh.local_positions[proxy_index];
+        const float3 proxy_normal = proxy_index < proxy_mesh.local_normals.Count()
+            ? proxy_mesh.local_normals[proxy_index]
+            : float3{0.0f, 1.0f, 0.0f};
+        const float3 vector = Subtract(position, proxy_position);
+        position = Subtract(position, Project(vector, proxy_normal));
+        const float vertex_distance = Distance(position, proxy_position);
+        const float weight_radius = vertex_distance * 4.0f;
+
+        ExCostSortedList4 vertex_distances{-1.0f};
+        vertex_distances.Add(vertex_distance, proxy_index);
+        int count = 0;
+        int start = 0;
+        if (proxy_index < proxy_mesh.vertex_to_vertex_index_array.Count()) {
+            data::Unpack12_20(proxy_mesh.vertex_to_vertex_index_array[proxy_index], count, start);
+        }
+        for (int offset = 0; offset < count; ++offset) {
+            const int data_index = start + offset;
+            if (data_index < 0 || data_index >= proxy_mesh.vertex_to_vertex_data_array.Count()) {
+                continue;
+            }
+            const int neighbor = proxy_mesh.vertex_to_vertex_data_array[data_index];
+            if (vertex_distances.Contains(neighbor)) {
+                continue;
+            }
+
+            float distance = Distance(position, proxy_mesh.local_positions[neighbor]);
+            if (distance <= weight_radius) {
+                vertex_distances.Add(distance, neighbor);
+            }
+
+            int count2 = 0;
+            int start2 = 0;
+            if (neighbor < proxy_mesh.vertex_to_vertex_index_array.Count()) {
+                data::Unpack12_20(proxy_mesh.vertex_to_vertex_index_array[neighbor], count2, start2);
+            }
+            for (int offset2 = 0; offset2 < count2; ++offset2) {
+                const int data_index2 = start2 + offset2;
+                if (data_index2 < 0 || data_index2 >= proxy_mesh.vertex_to_vertex_data_array.Count()) {
+                    continue;
+                }
+                const int neighbor2 = proxy_mesh.vertex_to_vertex_data_array[data_index2];
+                if (neighbor2 == proxy_index
+                    || neighbor2 == neighbor
+                    || vertex_distances.Contains(neighbor2)) {
+                    continue;
+                }
+
+                distance = Distance(position, proxy_mesh.local_positions[neighbor2]);
+                if (distance <= weight_radius) {
+                    vertex_distances.Add(distance, neighbor2);
+                }
+            }
+        }
+
+        const float4 weights = CalcMappingVertexWeights(vertex_distances.costs);
+        bone_weights[vertex_index] = VirtualMeshBoneWeight(vertex_distances.data, weights);
+
+        float fixed_value = 0.0f;
+        float move_value = 0.0f;
+        const VirtualMeshBoneWeight& weight = bone_weights[vertex_index];
+        const int weight_count = weight.Count();
+        for (int index = 0; index < weight_count; ++index) {
+            const int weighted_proxy_index = weight.bone_indices[static_cast<std::size_t>(index)];
+            if (weighted_proxy_index < 0 || weighted_proxy_index >= proxy_mesh.attributes.Count()) {
+                continue;
+            }
+            const VertexAttribute attr = proxy_mesh.attributes[weighted_proxy_index];
+            if (attr.IsMove()) {
+                move_value += weight.weights[static_cast<std::size_t>(index)];
+            } else if (attr.IsFixed()) {
+                fixed_value += weight.weights[static_cast<std::size_t>(index)];
+            }
+        }
+        attributes[vertex_index] =
+            move_value > fixed_value ? VertexAttribute::Move() : VertexAttribute::Fixed();
+    }
+}
+
+void VirtualMesh::Mapping(VirtualMesh& proxy_mesh)
+{
+    // Ported from Magica Cloth 2: Scripts/Core/VirtualMesh/Function/VirtualMeshMapping.cs
+    if (!IsValid() || !proxy_mesh.IsValid()) {
+        result = Result::Error(
+            ResultCode::MappingMesh_ProxyError,
+            "VirtualMesh mapping proxy error."
+        );
+        return;
+    }
+
+    const float4x4 to_proxy = CenterTransformTo(proxy_mesh);
+    std::vector<MappingWorkData> mapping_work_data(static_cast<std::size_t>(VertexCount()));
+    if (merge_chunk.IsValid()) {
+        DirectMapping(proxy_mesh, to_proxy, mapping_work_data);
+        CalcDirectMappingWeights(
+            proxy_mesh,
+            mapping_work_data,
+            proxy_mesh.average_vertex_distance * 1.5f
+        );
+    } else {
+        SearchMapping(proxy_mesh, to_proxy, mapping_work_data);
+        CalcSearchMappingWeights(proxy_mesh, mapping_work_data);
+    }
+
+    to_proxy_matrix = to_proxy;
+    to_proxy_rotation = Multiply(proxy_mesh.init_inverse_rotation, init_rotation);
+    mesh_type = MeshType::Mapping;
+    result = Result::Ok();
+}
+
 bool VirtualMesh::IsValid() const
 {
     return result.Succeeded();
@@ -1514,6 +2305,11 @@ int VirtualMesh::SkinBoneCount() const
 int VirtualMesh::TransformCount() const
 {
     return transform_data.Count();
+}
+
+int VirtualMesh::CustomSkinningBoneCount() const
+{
+    return static_cast<int>(custom_skinning_bone_indices.size());
 }
 
 int VirtualMesh::CenterFixedPointCount() const

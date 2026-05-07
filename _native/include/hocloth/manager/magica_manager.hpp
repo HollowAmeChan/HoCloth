@@ -68,6 +68,7 @@ public:
 private:
     bool initialized_ = false;
     InitializationLocation initialization_location_ = InitializationLocation::Start;
+    std::vector<ClothProcess*> cloth_processes_;
     TimeManager time_manager_;
     TeamManager team_manager_;
     TransformManager transform_manager_;

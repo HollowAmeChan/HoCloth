@@ -373,6 +373,19 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         scene.collision_bindings.push_back(std::move(binding));
     }
 
+    for (nb::handle item : ReadSequence(data, "mesh_writeback_targets")) {
+        nb::dict target_dict = nb::cast<nb::dict>(item);
+        CompiledMeshWritebackTarget target;
+        target.component_id = ReadString(target_dict, "component_id");
+        target.source_object_name = ReadString(target_dict, "source_object_name");
+        target.vertex_count = ReadInt(target_dict, "vertex_count");
+        target.edge_count = ReadInt(target_dict, "edge_count");
+        target.face_count = ReadInt(target_dict, "face_count");
+        target.topology_hash = ReadString(target_dict, "topology_hash");
+        target.space = ReadString(target_dict, "space", "object_local");
+        scene.mesh_writeback_targets.push_back(std::move(target));
+    }
+
     return scene;
 }
 
@@ -486,6 +499,25 @@ nb::list ToPython(const std::vector<BoneTransform>& transforms)
     return items;
 }
 
+nb::list ToPython(const std::vector<MeshOutput>& outputs)
+{
+    nb::list items;
+    for (const MeshOutput& output : outputs) {
+        nb::dict item;
+        item["component_id"] = output.component_id;
+        item["object_name"] = output.object_name;
+        item["source_object_name"] = output.source_object_name;
+        item["space"] = output.space;
+        nb::list positions;
+        for (const Vec3& position : output.positions) {
+            positions.append(ToTuple(position));
+        }
+        item["positions"] = positions;
+        items.append(item);
+    }
+    return items;
+}
+
 }  // namespace
 
 }  // namespace hocloth
@@ -509,5 +541,8 @@ NB_MODULE(hocloth_native, module)
     });
     module.def("get_bone_transforms", [](hocloth::SceneHandle handle) {
         return hocloth::ToPython(hocloth::GetRuntimeModule().GetBoneTransforms(handle));
+    });
+    module.def("get_mesh_outputs", [](hocloth::SceneHandle handle) {
+        return hocloth::ToPython(hocloth::GetRuntimeModule().GetMeshOutputs(handle));
     });
 }

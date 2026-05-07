@@ -122,10 +122,21 @@ struct CompiledCollisionBinding {
     std::vector<std::string> collision_object_ids;
 };
 
+struct CompiledMeshWritebackTarget {
+    std::string component_id;
+    std::string source_object_name;
+    int vertex_count = 0;
+    int edge_count = 0;
+    int face_count = 0;
+    std::string topology_hash;
+    std::string space = "object_local";
+};
+
 struct CompiledScene {
     std::vector<CompiledSpringBone> spring_bones;
     std::vector<CompiledCollisionObject> collision_objects;
     std::vector<CompiledCollisionBinding> collision_bindings;
+    std::vector<CompiledMeshWritebackTarget> mesh_writeback_targets;
 
     [[nodiscard]] std::string Summary() const;
 };
@@ -169,6 +180,14 @@ struct BoneTransform {
     Quat rotation_quaternion;
 };
 
+struct MeshOutput {
+    std::string component_id;
+    std::string object_name;
+    std::string source_object_name;
+    std::string space = "object_local";
+    std::vector<Vec3> positions;
+};
+
 struct BuildSceneResult {
     SceneHandle handle = 0;
     std::string summary;
@@ -207,6 +226,7 @@ public:
     bool SetRuntimeInputs(SceneHandle handle, RuntimeInputs runtime_inputs);
     StepSceneResult StepScene(SceneHandle handle, float dt, int simulation_frequency);
     std::vector<BoneTransform> GetBoneTransforms(SceneHandle handle) const;
+    std::vector<MeshOutput> GetMeshOutputs(SceneHandle handle) const;
 
 private:
     SceneState& RequireScene(SceneHandle handle);

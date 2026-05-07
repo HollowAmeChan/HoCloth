@@ -226,6 +226,12 @@ class NativeBridgeStub:
                 )
         return transforms
 
+    def get_mesh_outputs(self, handle):
+        scene = self._scenes.get(handle)
+        if scene is None:
+            return []
+        return []
+
     def _make_chain_states(self, compiled_scene):
         return [
             [
@@ -563,6 +569,11 @@ class NativeModuleBridge:
 
     def get_bone_transforms(self, handle):
         return self._module.get_bone_transforms(handle)
+
+    def get_mesh_outputs(self, handle):
+        if hasattr(self._module, "get_mesh_outputs"):
+            return self._module.get_mesh_outputs(handle)
+        return []
 
 
 def load_bridge(use_native: bool | None = None):

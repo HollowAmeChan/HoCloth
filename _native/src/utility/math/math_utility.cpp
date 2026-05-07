@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace hocloth::mc2 {
 
@@ -100,6 +101,21 @@ float3 ClampVector(const float3& value, float max_length)
         return value;
     }
     return Scale(value, max_length / length);
+}
+
+float3 ClampVector(const float3& value, float min_length, float max_length)
+{
+    const float length = Length(value);
+    if (length <= define::system::Epsilon) {
+        return value;
+    }
+    if (length > max_length) {
+        return Scale(value, max_length / length);
+    }
+    if (length < min_length) {
+        return Scale(value, min_length / length);
+    }
+    return value;
 }
 
 float3 ClampDistance(const float3& from, const float3& to, float max_length)
@@ -338,6 +354,18 @@ bool ClampAngle(
     return true;
 }
 
+quaternion ClampAngle(const quaternion& from, const quaternion& to, float max_angle)
+{
+    const float angle = Angle(from, to);
+    if (angle <= max_angle) {
+        return to;
+    }
+    if (angle <= define::system::Epsilon) {
+        return to;
+    }
+    return Slerp(from, to, max_angle / angle);
+}
+
 void ToAngleAxis(const quaternion& value, float& angle, float3& axis)
 {
     const quaternion q = Normalize(value);
@@ -355,6 +383,51 @@ void ToNormalTangent(const quaternion& rotation, float3& normal, float3& tangent
 {
     normal = Rotate(rotation, float3{0.0f, 1.0f, 0.0f});
     tangent = Rotate(rotation, float3{0.0f, 0.0f, 1.0f});
+}
+
+float3 ToNormal(const quaternion& rotation)
+{
+    return Rotate(rotation, float3{0.0f, 1.0f, 0.0f});
+}
+
+float3 ToTangent(const quaternion& rotation)
+{
+    return Rotate(rotation, float3{0.0f, 0.0f, 1.0f});
+}
+
+float3 ToBinormal(const quaternion& rotation)
+{
+    return Rotate(rotation, float3{1.0f, 0.0f, 0.0f});
+}
+
+float3 Binormal(const float3& normal, const float3& tangent)
+{
+    return Cross(normal, tangent);
+}
+
+float3 AxisToEuler(const float3& axis)
+{
+    const float angle_y = std::atan2(axis.x, axis.z);
+    const float3 axis_y{0.0f, axis.y, 0.0f};
+    const float angle_x = std::atan2(-axis.y, Length(Subtract(axis, axis_y)));
+    return float3{angle_x, angle_y, 0.0f};
+}
+
+namespace {
+
+quaternion QuaternionEulerXYZ(const float3& euler)
+{
+    const quaternion qx = AxisAngle(float3{1.0f, 0.0f, 0.0f}, euler.x);
+    const quaternion qy = AxisAngle(float3{0.0f, 1.0f, 0.0f}, euler.y);
+    const quaternion qz = AxisAngle(float3{0.0f, 0.0f, 1.0f}, euler.z);
+    return Multiply(Multiply(qz, qy), qx);
+}
+
+}  // namespace
+
+quaternion AxisQuaternion(const float3& direction)
+{
+    return QuaternionEulerXYZ(AxisToEuler(direction));
 }
 
 quaternion ToRotation(const float3& normal, const float3& tangent)
@@ -456,6 +529,16 @@ float4x4 TRS(const float3& position, const quaternion& rotation, const float3& s
     };
     matrix.c3 = float4{position.x, position.y, position.z, 1.0f};
     return matrix;
+}
+
+float4x4 LocalToWorldMatrix(const float3& position, const quaternion& rotation, const float3& scale)
+{
+    return TRS(position, rotation, scale);
+}
+
+float4x4 WorldToLocalMatrix(const float3& position, const quaternion& rotation, const float3& scale)
+{
+    return InverseAffine(TRS(position, rotation, scale));
 }
 
 float4x4 Multiply(const float4x4& a, const float4x4& b)
@@ -592,6 +675,20 @@ quaternion TransformRotation(
     return LookRotation(tangent, normal);
 }
 
+void TransformPositionNormalTangent(
+    const float3& translation,
+    const quaternion& rotation,
+    const float3& scale,
+    float3& position,
+    float3& normal,
+    float3& tangent
+)
+{
+    position = Add(Rotate(rotation, float3{position.x * scale.x, position.y * scale.y, position.z * scale.z}), translation);
+    normal = Rotate(rotation, normal);
+    tangent = Rotate(rotation, tangent);
+}
+
 float3 InverseTransformPoint(const float3& position, const float4x4& world_to_local_matrix)
 {
     return TransformPoint(position, world_to_local_matrix);
@@ -610,6 +707,53 @@ float3 InverseTransformPoint(
         std::abs(world_scale.y) > define::system::Epsilon ? local.y / world_scale.y : 0.0f,
         std::abs(world_scale.z) > define::system::Epsilon ? local.z / world_scale.z : 0.0f,
     };
+}
+
+float3 InverseTransformVector(const float3& vector, const float4x4& world_to_local_matrix)
+{
+    return TransformVector(vector, world_to_local_matrix);
+}
+
+float3 InverseTransformVector(const float3& vector, const quaternion& rotation)
+{
+    return Rotate(Inverse(rotation), vector);
+}
+
+float3 InverseTransformDirection(const float3& direction, const float4x4& world_to_local_matrix)
+{
+    const float length = Length(direction);
+    if (length <= define::system::Epsilon) {
+        return direction;
+    }
+    return Scale(Normalize(InverseTransformVector(direction, world_to_local_matrix)), length);
+}
+
+float4x4 Transform(const float4x4& from_local_to_world_matrix, const float4x4& to_world_to_local_matrix)
+{
+    return Multiply(to_world_to_local_matrix, from_local_to_world_matrix);
+}
+
+bool CompareMatrix(const float4x4& a, const float4x4& b)
+{
+    return a.c0.x == b.c0.x && a.c0.y == b.c0.y && a.c0.z == b.c0.z && a.c0.w == b.c0.w
+        && a.c1.x == b.c1.x && a.c1.y == b.c1.y && a.c1.z == b.c1.z && a.c1.w == b.c1.w
+        && a.c2.x == b.c2.x && a.c2.y == b.c2.y && a.c2.z == b.c2.z && a.c2.w == b.c2.w
+        && a.c3.x == b.c3.x && a.c3.y == b.c3.y && a.c3.z == b.c3.z && a.c3.w == b.c3.w;
+}
+
+bool CompareTransform(
+    const float3& position_a,
+    const quaternion& rotation_a,
+    const float3& scale_a,
+    const float3& position_b,
+    const quaternion& rotation_b,
+    const float3& scale_b
+)
+{
+    return position_a.x == position_b.x && position_a.y == position_b.y && position_a.z == position_b.z
+        && rotation_a.w == rotation_b.w && rotation_a.x == rotation_b.x
+        && rotation_a.y == rotation_b.y && rotation_a.z == rotation_b.z
+        && scale_a.x == scale_b.x && scale_a.y == scale_b.y && scale_a.z == scale_b.z;
 }
 
 float3 ShiftPosition(
@@ -709,6 +853,38 @@ float ClosestPtPointSegmentRatio(const float3& point, const float3& a, const flo
         return 0.0f;
     }
     return Clamp01(Dot(Subtract(point, a), ab) / denominator);
+}
+
+float ClosestPtPointSegmentRatioNoClamp(const float3& point, const float3& a, const float3& b)
+{
+    const float3 ab = Subtract(b, a);
+    const float denominator = Dot(ab, ab);
+    if (denominator <= define::system::Epsilon) {
+        return 0.0f;
+    }
+    return Dot(Subtract(point, a), ab) / denominator;
+}
+
+float3 ClosestPtPointSegment(const float3& point, const float3& a, const float3& b)
+{
+    const float3 ab = Subtract(b, a);
+    const float denominator = Dot(ab, ab);
+    if (denominator <= define::system::Epsilon) {
+        return a;
+    }
+    const float t = Clamp01(Dot(Subtract(point, a), ab) / denominator);
+    return Add(a, Scale(ab, t));
+}
+
+float3 ClosestPtPointSegmentNoClamp(const float3& point, const float3& a, const float3& b)
+{
+    const float3 ab = Subtract(b, a);
+    const float denominator = Dot(ab, ab);
+    if (denominator <= define::system::Epsilon) {
+        return a;
+    }
+    const float t = Dot(Subtract(point, a), ab) / denominator;
+    return Add(a, Scale(ab, t));
 }
 
 float ClosestPtSegmentSegment(
@@ -1250,6 +1426,40 @@ float IntersectPointPlaneDist(
 
     out_position = position;
     return length;
+}
+
+float SqDistPointSegment(const float3& a, const float3& b, const float3& c)
+{
+    const float3 ab = Subtract(b, a);
+    const float3 ac = Subtract(c, a);
+    const float3 bc = Subtract(c, b);
+    const float e = Dot(ac, ab);
+    if (e <= 0.0f) {
+        return Dot(ac, ac);
+    }
+    const float f = Dot(ab, ab);
+    if (e >= f) {
+        return Dot(bc, bc);
+    }
+    if (f <= define::system::Epsilon) {
+        return Dot(ac, ac);
+    }
+    return Dot(ac, ac) - e * e / f;
+}
+
+bool IsNaN(const float3& value)
+{
+    return std::isnan(value.x) || std::isnan(value.y) || std::isnan(value.z);
+}
+
+bool IsNaN(const float4& value)
+{
+    return std::isnan(value.x) || std::isnan(value.y) || std::isnan(value.z) || std::isnan(value.w);
+}
+
+bool IsNaN(const quaternion& value)
+{
+    return std::isnan(value.w) || std::isnan(value.x) || std::isnan(value.y) || std::isnan(value.z);
 }
 
 }  // namespace hocloth::mc2

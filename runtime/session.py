@@ -26,6 +26,7 @@ _runtime_state = {
 _active_bridge = None
 _compiled_scene = None
 _last_transforms = []
+_last_mesh_outputs = []
 _pose_baseline = {}
 
 
@@ -36,8 +37,18 @@ def _debug_dump_path() -> str:
     return os.path.join(build_dir, "runtime_debug_latest.json")
 
 
-def _write_runtime_debug_dump(runtime_inputs: dict | None, transforms: list[dict]):
-    debug_payload = wrap_runtime_debug(_runtime_state, _compiled_scene, runtime_inputs, transforms)
+def _write_runtime_debug_dump(
+    runtime_inputs: dict | None,
+    transforms: list[dict],
+    mesh_outputs: list[dict] | None = None,
+):
+    debug_payload = wrap_runtime_debug(
+        _runtime_state,
+        _compiled_scene,
+        runtime_inputs,
+        transforms,
+        mesh_outputs,
+    )
     with open(_debug_dump_path(), "w", encoding="utf-8") as handle:
         json.dump(debug_payload, handle, indent=2, ensure_ascii=False)
 
@@ -50,11 +61,12 @@ def _current_bridge():
 
 
 def build_runtime(compiled_scene, use_native_backend: bool | None = None):
-    global _active_bridge, _compiled_scene, _last_transforms
+    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs
     bridge = load_bridge(use_native_backend)
     _active_bridge = bridge
     _compiled_scene = compiled_scene
     _last_transforms = []
+    _last_mesh_outputs = []
     result = bridge.build_scene(compiled_scene)
     _runtime_state.update(result)
     _runtime_state["step_count"] = 0
@@ -67,16 +79,17 @@ def build_runtime(compiled_scene, use_native_backend: bool | None = None):
 
 
 def destroy_runtime():
-    global _active_bridge, _compiled_scene, _last_transforms, _pose_baseline
+    global _active_bridge, _compiled_scene, _last_transforms, _last_mesh_outputs, _pose_baseline
     reset_runtime_state()
     _active_bridge = None
     _compiled_scene = None
     _last_transforms = []
+    _last_mesh_outputs = []
     _pose_baseline = {}
 
 
 def reset_runtime():
-    global _last_transforms
+    global _last_transforms, _last_mesh_outputs
     if not _runtime_state["handle"]:
         return dict(_runtime_state)
 
@@ -88,6 +101,7 @@ def reset_runtime():
     _runtime_state["bone_transform_count"] = 0
     _runtime_state["accumulated_time"] = 0.0
     _last_transforms = []
+    _last_mesh_outputs = []
     return dict(_runtime_state)
 
 
@@ -104,7 +118,7 @@ def step_runtime(
     simulation_frequency: int = 90,
     runtime_inputs: dict | None = None,
 ):
-    global _last_transforms
+    global _last_transforms, _last_mesh_outputs
     if not _runtime_state["handle"]:
         raise RuntimeError("Runtime has not been built yet.")
 
@@ -121,7 +135,9 @@ def step_runtime(
         simulation_frequency,
     )
     transforms = bridge.get_bone_transforms(_runtime_state["handle"])
+    mesh_outputs = bridge.get_mesh_outputs(_runtime_state["handle"])
     _last_transforms = transforms
+    _last_mesh_outputs = mesh_outputs
     _runtime_state["step_count"] = result["steps"]
     _runtime_state["last_dt"] = dt
     _runtime_state["simulation_frequency"] = simulation_frequency
@@ -132,12 +148,13 @@ def step_runtime(
         _runtime_state["accumulated_time"] - (fixed_step_dt * _runtime_state["last_executed_steps"]),
     )
     frame_inputs = frame_inputs_payload(runtime_inputs) if runtime_inputs is not None else empty_frame_inputs()
-    _write_runtime_debug_dump(runtime_inputs, transforms)
+    _write_runtime_debug_dump(runtime_inputs, transforms, mesh_outputs)
     return {
         "runtime_state": dict(_runtime_state),
         "transforms": transforms,
+        "mesh_outputs": mesh_outputs,
         "frame_inputs": frame_inputs,
-        "exchange": wrap_step_output(_runtime_state, transforms),
+        "exchange": wrap_step_output(_runtime_state, transforms, mesh_outputs),
     }
 
 
@@ -164,6 +181,10 @@ def get_compiled_scene():
 
 def get_last_transforms():
     return list(_last_transforms)
+
+
+def get_last_mesh_outputs():
+    return list(_last_mesh_outputs)
 
 
 def set_pose_baseline(baseline: dict):

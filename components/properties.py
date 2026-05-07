@@ -979,6 +979,31 @@ def register():
         default=0,
         options={"HIDDEN"},
     )
+    bpy.types.Scene.hocloth_runtime_mesh_output_count = bpy.props.IntProperty(
+        name="Runtime Mesh Output Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_mesh_applied_count = bpy.props.IntProperty(
+        name="Runtime Mesh Applied Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_mesh_vertex_count = bpy.props.IntProperty(
+        name="Runtime Mesh Vertex Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_mesh_missing_object_count = bpy.props.IntProperty(
+        name="Runtime Mesh Missing Object Count",
+        default=0,
+        options={"HIDDEN"},
+    )
+    bpy.types.Scene.hocloth_runtime_mesh_topology_mismatch_count = bpy.props.IntProperty(
+        name="Runtime Mesh Topology Mismatch Count",
+        default=0,
+        options={"HIDDEN"},
+    )
     bpy.types.Scene.hocloth_runtime_missing_bone_count = bpy.props.IntProperty(
         name="Runtime Missing Bone Count",
         default=0,
@@ -1047,6 +1072,11 @@ def unregister():
     del bpy.types.Scene.hocloth_runtime_apply_armature_count
     del bpy.types.Scene.hocloth_runtime_missing_armature_count
     del bpy.types.Scene.hocloth_runtime_missing_bone_count
+    del bpy.types.Scene.hocloth_runtime_mesh_topology_mismatch_count
+    del bpy.types.Scene.hocloth_runtime_mesh_missing_object_count
+    del bpy.types.Scene.hocloth_runtime_mesh_vertex_count
+    del bpy.types.Scene.hocloth_runtime_mesh_applied_count
+    del bpy.types.Scene.hocloth_runtime_mesh_output_count
     del bpy.types.Scene.hocloth_runtime_applied_count
     del bpy.types.Scene.hocloth_runtime_transform_count
     del bpy.types.Scene.hocloth_runtime_last_fixed_steps

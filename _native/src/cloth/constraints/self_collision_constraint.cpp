@@ -312,6 +312,182 @@ void SelfCollisionConstraint::RegisterTeamPrimitives(
     RecalculateIntersectCount(team_manager);
 }
 
+void SelfCollisionConstraint::UpdateTeam(
+    int team_id,
+    TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager
+)
+{
+    UpdateTeam(team_id, team_manager, virtual_mesh_manager, 0);
+}
+
+void SelfCollisionConstraint::UpdateTeam(
+    int team_id,
+    TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager,
+    int recursion_depth
+)
+{
+    // Ported from MC2 SelfCollisionConstraint.UpdateTeam().
+    if (!team_manager.IsValidTeam(team_id)) {
+        return;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    const bool exit = team_data.flag.IsSet(TeamManager::FlagExit);
+    const ClothParameters& parameters = team_manager.GetParameters(team_id);
+    const SelfCollisionMode self_mode =
+        exit ? SelfCollisionMode::None : parameters.self_collision_constraint.self_mode;
+    const SelfCollisionMode sync_mode =
+        exit ? SelfCollisionMode::None : parameters.self_collision_constraint.sync_mode;
+
+    bool use_point_primitive = false;
+    bool use_edge_primitive = false;
+    bool use_triangle_primitive = false;
+
+    bool self_edge_edge = false;
+    bool self_point_triangle = false;
+    bool self_triangle_point = false;
+    bool self_edge_triangle_intersect = false;
+    bool self_triangle_edge_intersect = false;
+
+    bool sync_edge_edge = false;
+    bool sync_point_triangle = false;
+    bool sync_triangle_point = false;
+    bool sync_edge_triangle_intersect = false;
+    bool sync_triangle_edge_intersect = false;
+
+    bool parent_sync_edge_edge = false;
+    bool parent_sync_point_triangle = false;
+    bool parent_sync_triangle_point = false;
+    bool parent_sync_edge_triangle_intersect = false;
+    bool parent_sync_triangle_edge_intersect = false;
+
+    if (self_mode == SelfCollisionMode::FullMesh) {
+        if (team_data.EdgeCount() > 0) {
+            self_edge_edge = true;
+            use_edge_primitive = true;
+        }
+        if (team_data.TriangleCount() > 0) {
+            self_point_triangle = true;
+            self_triangle_point = true;
+            use_point_primitive = true;
+            use_triangle_primitive = true;
+        }
+        if (team_data.EdgeCount() > 0 && team_data.TriangleCount() > 0) {
+            self_edge_triangle_intersect = true;
+            self_triangle_edge_intersect = true;
+        }
+    }
+
+    if (sync_mode != SelfCollisionMode::None
+        && team_manager.IsValidTeam(team_data.sync_team_id)) {
+        const TeamManager::TeamData& sync_team_data =
+            team_manager.GetTeamData(team_data.sync_team_id);
+        if (sync_mode == SelfCollisionMode::FullMesh) {
+            if (team_data.EdgeCount() > 0 && sync_team_data.EdgeCount() > 0) {
+                sync_edge_edge = true;
+                use_edge_primitive = true;
+            }
+            if (team_data.TriangleCount() > 0) {
+                sync_triangle_point = true;
+                use_triangle_primitive = true;
+            }
+            if (sync_team_data.TriangleCount() > 0) {
+                sync_point_triangle = true;
+                use_point_primitive = true;
+            }
+            if (team_data.EdgeCount() > 0 && sync_team_data.TriangleCount() > 0) {
+                sync_edge_triangle_intersect = true;
+            }
+            if (team_data.TriangleCount() > 0 && sync_team_data.EdgeCount() > 0) {
+                sync_triangle_edge_intersect = true;
+            }
+        }
+    }
+
+    if (!exit) {
+        for (int parent_index = 0; parent_index < team_data.sync_parent_team_ids.Length();
+             ++parent_index) {
+            const int parent_team_id = team_data.sync_parent_team_ids[parent_index];
+            if (!team_manager.IsValidTeam(parent_team_id)) {
+                continue;
+            }
+            const TeamManager::TeamData& parent_team_data =
+                team_manager.GetTeamData(parent_team_id);
+            const ClothParameters& parent_parameters =
+                team_manager.GetParameters(parent_team_id);
+            if (parent_parameters.self_collision_constraint.sync_mode
+                != SelfCollisionMode::FullMesh) {
+                continue;
+            }
+
+            if (parent_team_data.EdgeCount() > 0 && team_data.EdgeCount() > 0) {
+                parent_sync_edge_edge = true;
+                use_edge_primitive = true;
+            }
+            if (parent_team_data.TriangleCount() > 0) {
+                parent_sync_point_triangle = true;
+                use_point_primitive = true;
+            }
+            if (team_data.TriangleCount() > 0) {
+                parent_sync_triangle_point = true;
+                use_triangle_primitive = true;
+            }
+            if (team_data.EdgeCount() > 0 && parent_team_data.TriangleCount() > 0) {
+                parent_sync_edge_triangle_intersect = true;
+            }
+            if (team_data.TriangleCount() > 0 && parent_team_data.EdgeCount() > 0) {
+                parent_sync_triangle_edge_intersect = true;
+            }
+        }
+    }
+
+    team_data.flag.Set(TeamManager::FlagSelfPointPrimitive, use_point_primitive);
+    team_data.flag.Set(TeamManager::FlagSelfEdgePrimitive, use_edge_primitive);
+    team_data.flag.Set(TeamManager::FlagSelfTrianglePrimitive, use_triangle_primitive);
+
+    team_data.flag.Set(TeamManager::FlagSelfEdgeEdge, self_edge_edge);
+    team_data.flag.Set(TeamManager::FlagSelfPointTriangle, self_point_triangle);
+    team_data.flag.Set(TeamManager::FlagSelfTrianglePoint, self_triangle_point);
+    team_data.flag.Set(TeamManager::FlagSelfEdgeTriangleIntersect, self_edge_triangle_intersect);
+    team_data.flag.Set(TeamManager::FlagSelfTriangleEdgeIntersect, self_triangle_edge_intersect);
+
+    team_data.flag.Set(TeamManager::FlagSyncEdgeEdge, sync_edge_edge);
+    team_data.flag.Set(TeamManager::FlagSyncPointTriangle, sync_point_triangle);
+    team_data.flag.Set(TeamManager::FlagSyncTrianglePoint, sync_triangle_point);
+    team_data.flag.Set(TeamManager::FlagSyncEdgeTriangleIntersect, sync_edge_triangle_intersect);
+    team_data.flag.Set(TeamManager::FlagSyncTriangleEdgeIntersect, sync_triangle_edge_intersect);
+
+    team_data.flag.Set(TeamManager::FlagPSyncEdgeEdge, parent_sync_edge_edge);
+    team_data.flag.Set(TeamManager::FlagPSyncPointTriangle, parent_sync_point_triangle);
+    team_data.flag.Set(TeamManager::FlagPSyncTrianglePoint, parent_sync_triangle_point);
+    team_data.flag.Set(
+        TeamManager::FlagPSyncEdgeTriangleIntersect,
+        parent_sync_edge_triangle_intersect
+    );
+    team_data.flag.Set(
+        TeamManager::FlagPSyncTriangleEdgeIntersect,
+        parent_sync_triangle_edge_intersect
+    );
+
+    RegisterTeamPrimitives(
+        team_id,
+        use_point_primitive,
+        use_edge_primitive,
+        use_triangle_primitive,
+        team_manager,
+        virtual_mesh_manager
+    );
+
+    if (sync_mode != SelfCollisionMode::None
+        && team_manager.IsValidTeam(team_data.sync_team_id)
+        && recursion_depth < TeamManager::TeamSyncParentList::Capacity) {
+        const int sync_team_id = team_data.sync_team_id;
+        UpdateTeam(sync_team_id, team_manager, virtual_mesh_manager, recursion_depth + 1);
+    }
+}
+
 void SelfCollisionConstraint::RemoveTeamPrimitives(int team_id, TeamManager& team_manager)
 {
     if (!team_manager.IsValidTeam(team_id)) {

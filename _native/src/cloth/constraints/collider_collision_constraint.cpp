@@ -120,16 +120,28 @@ void ColliderCollisionConstraint::WorkBufferUpdate(
     int edge_collider_collision_count
 )
 {
-    if (edge_collider_collision_count <= 0) {
+    if (particle_count <= 0 || edge_collider_collision_count <= 0) {
+        temp_friction_array_.Dispose();
+        temp_normal_array_.Dispose();
         return;
     }
 
-    temp_friction_array_.Dispose();
-    temp_normal_array_.Dispose();
-    temp_friction_array_ = ExNativeArray<int>(particle_count);
-    temp_normal_array_ = ExNativeArray<int>(particle_count * 3);
-    temp_friction_array_.AddRange(particle_count, 0);
-    temp_normal_array_.AddRange(particle_count * 3, 0);
+    if (temp_friction_array_.Length() < particle_count) {
+        temp_friction_array_.Dispose();
+        temp_friction_array_ = ExNativeArray<int>(particle_count);
+        temp_friction_array_.AddRange(particle_count, 0);
+    } else {
+        temp_friction_array_.Fill(0);
+    }
+
+    const int normal_count = particle_count * 3;
+    if (temp_normal_array_.Length() < normal_count) {
+        temp_normal_array_.Dispose();
+        temp_normal_array_ = ExNativeArray<int>(normal_count);
+        temp_normal_array_.AddRange(normal_count, 0);
+    } else {
+        temp_normal_array_.Fill(0);
+    }
 }
 
 void ColliderCollisionConstraint::Solve(

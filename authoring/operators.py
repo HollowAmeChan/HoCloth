@@ -16,6 +16,7 @@ from ..components.properties import (
     sync_runtime_compat_fields,
 )
 from ..runtime.pose_apply import (
+    apply_runtime_mesh_outputs_to_scene,
     apply_runtime_transforms_to_scene,
     capture_pose_baseline,
     clear_pose_transforms,
@@ -28,6 +29,7 @@ from ..runtime.session import (
     build_runtime,
     destroy_runtime,
     get_compiled_scene,
+    get_last_mesh_outputs,
     get_last_transforms,
     get_pose_baseline,
     reset_runtime,
@@ -36,6 +38,39 @@ from ..runtime.session import (
     step_runtime,
 )
 from .extract import extract_active_bone_chain
+
+
+def _clear_runtime_mesh_writeback_stats(scene):
+    scene.hocloth_runtime_mesh_output_count = 0
+    scene.hocloth_runtime_mesh_applied_count = 0
+    scene.hocloth_runtime_mesh_vertex_count = 0
+    scene.hocloth_runtime_mesh_missing_object_count = 0
+    scene.hocloth_runtime_mesh_topology_mismatch_count = 0
+
+
+def _store_runtime_mesh_writeback_stats(scene, mesh_outputs, apply_result: dict):
+    scene.hocloth_runtime_mesh_output_count = len(mesh_outputs or [])
+    scene.hocloth_runtime_mesh_applied_count = int(apply_result.get("applied_mesh_count", 0))
+    scene.hocloth_runtime_mesh_vertex_count = int(apply_result.get("applied_vertex_count", 0))
+    scene.hocloth_runtime_mesh_missing_object_count = int(apply_result.get("missing_object_count", 0))
+    scene.hocloth_runtime_mesh_topology_mismatch_count = int(
+        apply_result.get("topology_mismatch_count", 0)
+    )
+
+
+def _mesh_writeback_status_suffix(scene) -> str:
+    if scene.hocloth_runtime_mesh_output_count <= 0:
+        return ""
+    suffix = (
+        f", mesh_outputs={scene.hocloth_runtime_mesh_output_count}, "
+        f"meshes={scene.hocloth_runtime_mesh_applied_count}, "
+        f"verts={scene.hocloth_runtime_mesh_vertex_count}"
+    )
+    if scene.hocloth_runtime_mesh_missing_object_count:
+        suffix += f", missing_mesh_objects={scene.hocloth_runtime_mesh_missing_object_count}"
+    if scene.hocloth_runtime_mesh_topology_mismatch_count:
+        suffix += f", mesh_topology_mismatch={scene.hocloth_runtime_mesh_topology_mismatch_count}"
+    return suffix
 
 
 def _find_spring_bone_component(scene, component_id: str):
@@ -86,6 +121,7 @@ def _build_runtime_from_scene(context, report=None) -> bool:
     scene.hocloth_runtime_missing_bone_count = 0
     scene.hocloth_runtime_missing_armature_count = 0
     scene.hocloth_runtime_apply_armature_count = 0
+    _clear_runtime_mesh_writeback_stats(scene)
     scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
     build_message = runtime_state.get("build_message", "")
     solver_ready = runtime_state.get("physics_scene_ready", False)
@@ -430,6 +466,7 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_missing_bone_count = 0
         context.scene.hocloth_runtime_missing_armature_count = 0
         context.scene.hocloth_runtime_apply_armature_count = 0
+        _clear_runtime_mesh_writeback_stats(context.scene)
         context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
         if runtime_state["handle"]:
             context.scene.hocloth_runtime_status = "Runtime reset"
@@ -471,6 +508,7 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
             context.scene.hocloth_runtime_missing_bone_count = 0
             context.scene.hocloth_runtime_missing_armature_count = 0
             context.scene.hocloth_runtime_apply_armature_count = 0
+            _clear_runtime_mesh_writeback_stats(context.scene)
             context.scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
             context.scene.hocloth_runtime_status = (
                 f"Returned to frame {target_frame} and cleared simulated pose ({cleared_count} bones)"
@@ -483,6 +521,7 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
         context.scene.hocloth_runtime_missing_bone_count = 0
         context.scene.hocloth_runtime_missing_armature_count = 0
         context.scene.hocloth_runtime_apply_armature_count = 0
+        _clear_runtime_mesh_writeback_stats(context.scene)
         context.scene.hocloth_runtime_last_fixed_steps = 0
         context.scene.hocloth_runtime_status = (
             f"Returned to frame {target_frame}"
@@ -517,6 +556,9 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_missing_bone_count = 0
         context.scene.hocloth_runtime_missing_armature_count = 0
         context.scene.hocloth_runtime_apply_armature_count = 0
+        mesh_outputs = result.get("mesh_outputs", [])
+        mesh_apply_result = apply_runtime_mesh_outputs_to_scene(context.scene, mesh_outputs)
+        _store_runtime_mesh_writeback_stats(context.scene, mesh_outputs, mesh_apply_result)
         status_suffix = ", not applied"
         if context.scene.hocloth_apply_pose_on_step:
             apply_result = apply_runtime_transforms_to_scene(
@@ -535,6 +577,9 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
                 f"missing_bones={apply_result['missing_bone_count']}, "
                 f"missing_armatures={apply_result['missing_armature_count']}"
             )
+        if mesh_apply_result["applied_mesh_count"] and context.view_layer is not None:
+            context.view_layer.update()
+        status_suffix += _mesh_writeback_status_suffix(context.scene)
         context.scene.hocloth_runtime_status = (
             f"Stepped {runtime_state['step_count']} fixed steps, "
             f"last={runtime_state.get('last_executed_steps', 0)}, "
@@ -602,6 +647,30 @@ class HOCLOTH_OT_apply_runtime_pose(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_apply_runtime_mesh_output(bpy.types.Operator):
+    bl_idname = "hocloth.apply_runtime_mesh_output"
+    bl_label = "Apply Runtime Mesh Output"
+    bl_description = "Apply the most recently fetched runtime mesh output back onto Blender mesh vertices"
+
+    def execute(self, context):
+        mesh_outputs = get_last_mesh_outputs()
+        if not mesh_outputs:
+            self.report({"INFO"}, "No runtime mesh outputs are available yet.")
+            return {"CANCELLED"}
+
+        apply_result = apply_runtime_mesh_outputs_to_scene(context.scene, mesh_outputs)
+        _store_runtime_mesh_writeback_stats(context.scene, mesh_outputs, apply_result)
+        if apply_result["applied_mesh_count"] and context.view_layer is not None:
+            context.view_layer.update()
+        context.scene.hocloth_runtime_status = (
+            f"Applied mesh output to {apply_result['applied_mesh_count']} meshes, "
+            f"verts={apply_result['applied_vertex_count']}, "
+            f"missing_objects={apply_result['missing_object_count']}, "
+            f"topology_mismatch={apply_result['topology_mismatch_count']}"
+        )
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
     bl_idname = "hocloth.destroy_runtime"
     bl_label = "Destroy Runtime"
@@ -621,6 +690,7 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
         context.scene.hocloth_runtime_missing_bone_count = 0
         context.scene.hocloth_runtime_missing_armature_count = 0
         context.scene.hocloth_runtime_apply_armature_count = 0
+        _clear_runtime_mesh_writeback_stats(context.scene)
         context.scene.hocloth_runtime_last_fixed_steps = 0
         context.scene.hocloth_runtime_status = "Runtime destroyed"
         return {"FINISHED"}
@@ -645,6 +715,7 @@ CLASSES = (
     HOCLOTH_OT_step_runtime,
     HOCLOTH_OT_toggle_live_runtime,
     HOCLOTH_OT_apply_runtime_pose,
+    HOCLOTH_OT_apply_runtime_mesh_output,
     HOCLOTH_OT_destroy_runtime,
 )
 

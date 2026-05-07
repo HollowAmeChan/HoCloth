@@ -54,26 +54,12 @@ TriangleBendingConstraint::ConstraintData TriangleBendingConstraint::CreateData(
     data::MultiDataBuilder<std::uint8_t> write_builder(vertex_count, vertex_count * 2);
     std::unordered_set<std::uint64_t> volume_set;
 
-    for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
-        const int3 tri0 = proxy_mesh.triangles[triangle_index0];
-        const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
-        for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
-            const int3 tri1 = proxy_mesh.triangles[triangle_index1];
-            const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
-            int common[2] = {-1, -1};
-            int common_count = 0;
-            for (int value0 : tri0_values) {
-                for (int value1 : tri1_values) {
-                    if (value0 == value1 && common_count < 2) {
-                        common[common_count++] = value0;
-                    }
-                }
-            }
-            if (common_count != 2) {
-                continue;
+    auto add_triangle_pair = [&](const int2& raw_edge, const int3& tri0, const int3& tri1) {
+            const int2 edge = data::PackInt2(raw_edge);
+            if (edge.x < 0 || edge.y < 0 || edge.x >= vertex_count || edge.y >= vertex_count) {
+                return;
             }
 
-            const int2 edge{common[0], common[1]};
             const int2 diagonal = GetRestTriangleVertex(tri0, tri1, edge);
             const int4 vertices{diagonal.x, diagonal.y, edge.x, edge.y};
             bool valid = true;
@@ -92,7 +78,7 @@ TriangleBendingConstraint::ConstraintData TriangleBendingConstraint::CreateData(
                 all_fixed = all_fixed && attr.IsDontMove();
             }
             if (!valid || all_fixed) {
-                continue;
+                return;
             }
 
             const float3 pos0 = proxy_mesh.local_positions[vertices.x];
@@ -154,6 +140,54 @@ TriangleBendingConstraint::ConstraintData TriangleBendingConstraint::CreateData(
                 write_builder.Add(vertices.y, 0);
                 write_builder.Add(vertices.z, 0);
                 write_builder.Add(vertices.w, 0);
+            }
+        };
+
+    if (!proxy_mesh.edge_to_triangles.empty()) {
+        for (int edge_index = 0; edge_index < proxy_mesh.edges.Count(); ++edge_index) {
+            const int2 edge = data::PackInt2(proxy_mesh.edges[edge_index]);
+            const auto found = proxy_mesh.edge_to_triangles.find(data::Pack32(edge.x, edge.y));
+            if (found == proxy_mesh.edge_to_triangles.end() || found->second.size() < 2) {
+                continue;
+            }
+
+            const std::vector<std::uint16_t>& triangle_indices = found->second;
+            for (std::size_t i = 0; i + 1 < triangle_indices.size(); ++i) {
+                const int triangle_index0 = triangle_indices[i];
+                if (triangle_index0 < 0 || triangle_index0 >= triangle_count) {
+                    continue;
+                }
+                const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+                for (std::size_t j = i + 1; j < triangle_indices.size(); ++j) {
+                    const int triangle_index1 = triangle_indices[j];
+                    if (triangle_index1 < 0 || triangle_index1 >= triangle_count) {
+                        continue;
+                    }
+                    add_triangle_pair(edge, tri0, proxy_mesh.triangles[triangle_index1]);
+                }
+            }
+        }
+    } else {
+        for (int triangle_index0 = 0; triangle_index0 < triangle_count; ++triangle_index0) {
+            const int3 tri0 = proxy_mesh.triangles[triangle_index0];
+            const int tri0_values[3] = {tri0.x, tri0.y, tri0.z};
+            for (int triangle_index1 = triangle_index0 + 1; triangle_index1 < triangle_count; ++triangle_index1) {
+                const int3 tri1 = proxy_mesh.triangles[triangle_index1];
+                const int tri1_values[3] = {tri1.x, tri1.y, tri1.z};
+                int common[2] = {-1, -1};
+                int common_count = 0;
+                for (int value0 : tri0_values) {
+                    for (int value1 : tri1_values) {
+                        if (value0 == value1 && common_count < 2) {
+                            common[common_count++] = value0;
+                        }
+                    }
+                }
+                if (common_count != 2) {
+                    continue;
+                }
+
+                add_triangle_pair(int2{common[0], common[1]}, tri0, tri1);
             }
         }
     }

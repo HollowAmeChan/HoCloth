@@ -503,7 +503,8 @@ std::string CompiledScene::Summary() const
            << ", collider_groups=0"
            << ", collision_objects=" << collision_objects.size()
            << ", collision_bindings=" << collision_bindings.size()
-           << ", cache_outputs=0";
+           << ", cache_outputs=0"
+           << ", mesh_writeback_targets=" << mesh_writeback_targets.size();
     return stream.str();
 }
 
@@ -518,7 +519,8 @@ std::string RuntimeBackendStatus(const RuntimeModule::SceneState& scene)
            << " mc2_collider_work=" << scene.mc2_collider_manager.WorkDataArray().Count()
            << " mc2_particles=" << scene.mc2_simulation_manager.ParticleCount()
            << " mc2_proxy_vertices=" << scene.mc2_virtual_mesh_manager.ProxyVertexCount()
-           << " mc2_step_particles=" << scene.mc2_simulation_manager.ProcessingStepParticles().Count();
+           << " mc2_step_particles=" << scene.mc2_simulation_manager.ProcessingStepParticles().Count()
+           << " mesh_writeback_targets=" << scene.compiled_scene.mesh_writeback_targets.size();
     return stream.str();
 }
 
@@ -615,6 +617,7 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
     }
 
     mesh->BuildVertexToTriangles();
+    mesh->BuildEdgeToTriangles();
     mesh->BuildBaseLinesFromParents();
 
     return mesh;
@@ -935,6 +938,7 @@ void ApplyCollisionObjectInputs(RuntimeModule::SceneState& scene)
                 team_id,
                 static_cast<int>(local_index),
                 scene.mc2_team_manager,
+                scene.mc2_transform_manager,
                 scene.mc2_collision_data[collider_index]
             );
         }
@@ -1358,6 +1362,31 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
     }
 
     return transforms;
+}
+
+std::vector<MeshOutput> RuntimeModule::GetMeshOutputs(SceneHandle handle) const
+{
+    const SceneState& scene = RequireScene(handle);
+    std::vector<MeshOutput> outputs;
+    outputs.reserve(scene.compiled_scene.mesh_writeback_targets.size());
+
+    for (const CompiledMeshWritebackTarget& target : scene.compiled_scene.mesh_writeback_targets) {
+        if (target.source_object_name.empty() || target.vertex_count <= 0) {
+            continue;
+        }
+
+        MeshOutput output;
+        output.component_id = target.component_id;
+        output.object_name = target.source_object_name;
+        output.source_object_name = target.source_object_name;
+        output.space = target.space.empty() ? "object_local" : target.space;
+        if (static_cast<int>(output.positions.size()) != target.vertex_count) {
+            continue;
+        }
+        outputs.push_back(std::move(output));
+    }
+
+    return outputs;
 }
 
 RuntimeModule::SceneState& RuntimeModule::RequireScene(SceneHandle handle)

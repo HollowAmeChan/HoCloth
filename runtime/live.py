@@ -2,6 +2,7 @@ import bpy
 
 from .inputs import build_runtime_inputs, reset_runtime_input_tracking
 from .pose_apply import (
+    apply_runtime_mesh_outputs_to_scene,
     apply_runtime_transforms_to_scene,
     capture_pose_baseline,
     capture_pose_state,
@@ -23,6 +24,39 @@ _LIVE_STATE = {
     "last_frame": None,
     "last_source_pose": {},
 }
+
+
+def _clear_runtime_mesh_writeback_stats(scene: bpy.types.Scene) -> None:
+    scene.hocloth_runtime_mesh_output_count = 0
+    scene.hocloth_runtime_mesh_applied_count = 0
+    scene.hocloth_runtime_mesh_vertex_count = 0
+    scene.hocloth_runtime_mesh_missing_object_count = 0
+    scene.hocloth_runtime_mesh_topology_mismatch_count = 0
+
+
+def _store_runtime_mesh_writeback_stats(scene: bpy.types.Scene, mesh_outputs, apply_result: dict) -> None:
+    scene.hocloth_runtime_mesh_output_count = len(mesh_outputs or [])
+    scene.hocloth_runtime_mesh_applied_count = int(apply_result.get("applied_mesh_count", 0))
+    scene.hocloth_runtime_mesh_vertex_count = int(apply_result.get("applied_vertex_count", 0))
+    scene.hocloth_runtime_mesh_missing_object_count = int(apply_result.get("missing_object_count", 0))
+    scene.hocloth_runtime_mesh_topology_mismatch_count = int(
+        apply_result.get("topology_mismatch_count", 0)
+    )
+
+
+def _mesh_writeback_status_suffix(scene: bpy.types.Scene) -> str:
+    if scene.hocloth_runtime_mesh_output_count <= 0:
+        return ""
+    suffix = (
+        f", mesh_outputs={scene.hocloth_runtime_mesh_output_count}, "
+        f"meshes={scene.hocloth_runtime_mesh_applied_count}, "
+        f"verts={scene.hocloth_runtime_mesh_vertex_count}"
+    )
+    if scene.hocloth_runtime_mesh_missing_object_count:
+        suffix += f", missing_mesh_objects={scene.hocloth_runtime_mesh_missing_object_count}"
+    if scene.hocloth_runtime_mesh_topology_mismatch_count:
+        suffix += f", mesh_topology_mismatch={scene.hocloth_runtime_mesh_topology_mismatch_count}"
+    return suffix
 
 
 def _reset_runtime_tracking():
@@ -170,8 +204,12 @@ def on_frame_change_post(scene, depsgraph):
     scene.hocloth_runtime_missing_bone_count = 0
     scene.hocloth_runtime_missing_armature_count = 0
     scene.hocloth_runtime_apply_armature_count = 0
+    _clear_runtime_mesh_writeback_stats(scene)
 
     status_suffix = ", not applied"
+    mesh_outputs = result.get("mesh_outputs", [])
+    mesh_apply_result = apply_runtime_mesh_outputs_to_scene(scene, mesh_outputs)
+    _store_runtime_mesh_writeback_stats(scene, mesh_outputs, mesh_apply_result)
     if scene.hocloth_apply_pose_on_step:
         apply_result = apply_runtime_transforms_to_scene(
             scene,
@@ -188,6 +226,7 @@ def on_frame_change_post(scene, depsgraph):
             f"missing_bones={apply_result['missing_bone_count']}, "
             f"missing_armatures={apply_result['missing_armature_count']}"
         )
+    status_suffix += _mesh_writeback_status_suffix(scene)
     _LIVE_STATE["last_source_pose"] = source_pose
 
     scene.hocloth_runtime_status = (

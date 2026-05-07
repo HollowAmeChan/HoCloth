@@ -152,6 +152,7 @@ public:
     void EndUse(TeamManager& team_manager);
     void EndUse(MagicaManager& manager);
     void DataUpdate();
+    void ApplyPendingManagerUpdates();
 
     [[nodiscard]] RenderMeshInfo* GetRenderMeshInfo(int index);
     [[nodiscard]] const RenderMeshInfo* GetRenderMeshInfo(int index) const;
@@ -171,6 +172,11 @@ public:
     TriangleBendingConstraint::ConstraintData bending_constraint_data;
 
 private:
+    void ApplyPendingManagerUpdates(
+        TeamManager& team_manager,
+        VirtualMeshManager& virtual_mesh_manager,
+        ClothManager& cloth_manager
+    );
     void DisposeInternal();
 
     std::string name_ = "(none)";

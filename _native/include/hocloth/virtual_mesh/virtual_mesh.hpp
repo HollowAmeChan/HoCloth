@@ -1,7 +1,9 @@
 #pragma once
 
 #include "hocloth/manager/transform/transform_data.hpp"
+#include "hocloth/cloth/selection_data.hpp"
 #include "hocloth/utility/math/math_types.hpp"
+#include "hocloth/utility/grid/grid_map.hpp"
 #include "hocloth/utility/native_collection/bit_flag.hpp"
 #include "hocloth/utility/native_collection/data_chunk.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
@@ -9,10 +11,13 @@
 #include "hocloth/utility/result_code/result_code.hpp"
 #include "hocloth/virtual_mesh/vertex_attribute.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_bone_weight.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_raycast_hit.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace hocloth::mc2 {
 
@@ -22,7 +27,11 @@ struct ReductionWorkData;
 // Port target for Magica Cloth 2: Scripts/Core/VirtualMesh/VirtualMesh.cs
 class VirtualMesh {
 public:
+    static constexpr std::uint8_t EdgeFlagCut = 0x01;
+
     using VertexTriangleList = FixedList<std::uint32_t, 7>;
+    using EdgeToTrianglesMap =
+        std::unordered_map<std::uint32_t, std::vector<std::uint16_t>>;
     using ShareSerializationData = VirtualMeshSerializationData::ShareSerializationData;
     using UniqueSerializationData = VirtualMeshSerializationData::UniqueSerializationData;
 
@@ -54,6 +63,7 @@ public:
     ExSimpleNativeArray<int2> lines;
     ExSimpleNativeArray<int2> edges;
     ExSimpleNativeArray<BitFlag8> edge_flags;
+    EdgeToTrianglesMap edge_to_triangles;
 
     int center_transform_index = -1;
     float4x4 init_local_to_world{};
@@ -90,16 +100,32 @@ public:
     ExSimpleNativeArray<std::uint16_t> base_line_data;
     ExSimpleNativeArray<quaternion> normal_adjustment_rotations;
     ExSimpleNativeArray<quaternion> vertex_to_transform_rotations;
+    std::vector<int> custom_skinning_bone_indices;
+    float3 local_center_position{};
+    float3 center_world_position{};
+    quaternion center_world_rotation{};
+    float3 center_world_scale{1.0f, 1.0f, 1.0f};
 
     void Dispose();
     void CreateProxyFixedListAndAABB();
     void CreateVertexBindPose();
     void CreateVertexToTransformRotations();
     void BuildVertexToTriangles();
+    void BuildEdgeToTriangles();
+    void BuildEdgeFlags();
+    void ConvertInvalidToFixed();
+    void ApplySelectionAttribute(const SelectionData& selection_data);
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();
     void CalcAverageAndMaxVertexDistanceRun();
+    [[nodiscard]] GridMap<int> CreateVertexIndexGridMapRun(float grid_size) const;
+    [[nodiscard]] VirtualMeshRaycastHit IntersectRayMesh(
+        const float3& ray_position,
+        const float3& ray_direction,
+        bool double_side,
+        float point_radius
+    ) const;
     void Optimization();
     void RemoveDuplicateTriangles();
     void Reduction(const ReductionSettings& settings);
@@ -110,6 +136,7 @@ public:
     void OrganizationCreateBasicData(ReductionWorkData& work_data);
     void OrganizationCreateLineTriangle(ReductionWorkData& work_data);
     void OrganizeStoreVirtualMesh(ReductionWorkData& work_data);
+    void Mapping(VirtualMesh& proxy_mesh);
 
     [[nodiscard]] bool IsValid() const;
     [[nodiscard]] int VertexCount() const;
@@ -117,10 +144,27 @@ public:
     [[nodiscard]] int LineCount() const;
     [[nodiscard]] int SkinBoneCount() const;
     [[nodiscard]] int TransformCount() const;
+    [[nodiscard]] int CustomSkinningBoneCount() const;
     [[nodiscard]] int CenterFixedPointCount() const;
     [[nodiscard]] int BaseLineCount() const;
     [[nodiscard]] bool IsProxy() const;
     [[nodiscard]] bool IsMapping() const;
+    [[nodiscard]] bool CompareSpace(const VirtualMesh& target) const;
+    [[nodiscard]] float4x4 CenterTransformTo(const VirtualMesh& target) const;
+
+private:
+    struct MappingWorkData {
+        float3 position{};
+        int vertex_index = -1;
+        int proxy_vertex_index = -1;
+        float proxy_vertex_distance = 0.0f;
+    };
+
+    static float4 CalcMappingVertexWeights(float4 distances);
+    void DirectMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);
+    void SearchMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);
+    void CalcDirectMappingWeights(VirtualMesh& proxy_mesh, const std::vector<MappingWorkData>& mapping_work_data, float weight_length);
+    void CalcSearchMappingWeights(VirtualMesh& proxy_mesh, const std::vector<MappingWorkData>& mapping_work_data);
 };
 
 }  // namespace hocloth::mc2

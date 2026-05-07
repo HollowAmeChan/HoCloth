@@ -203,7 +203,15 @@ DataChunk ColliderManager::RegisterColliderDataRange(
     team_data.collider_count = collider_count;
 
     for (int offset = 0; offset < collider_count; ++offset) {
-        SetCollider(collider_chunk.start_index + offset, colliders[static_cast<std::size_t>(offset)]);
+        const ColliderData& collider_data = colliders[static_cast<std::size_t>(offset)];
+        SetCollider(collider_chunk.start_index + offset, collider_data);
+        SetColliderTransform(
+            team_id,
+            offset,
+            team_manager,
+            transform_manager,
+            collider_data
+        );
     }
     return collider_chunk;
 }
@@ -224,6 +232,60 @@ void ColliderManager::RemoveTeamColliderDataRange(
     team_data.collider_chunk.Clear();
     team_data.collider_transform_chunk.Clear();
     team_data.collider_count = 0;
+}
+
+bool ColliderManager::RemoveColliderData(
+    int team_id,
+    int local_collider_index,
+    TeamManager& team_manager,
+    TransformManager& transform_manager
+)
+{
+    if (!team_manager.IsValidTeam(team_id) || local_collider_index < 0) {
+        return false;
+    }
+
+    TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    if (!team_data.collider_chunk.IsValid()
+        || local_collider_index >= team_data.collider_chunk.data_length) {
+        return false;
+    }
+
+    const int collider_index = team_data.collider_chunk.start_index + local_collider_index;
+    if (collider_index < 0 || collider_index >= flag_array_.Length()) {
+        return false;
+    }
+
+    flag_array_[collider_index] = BitFlag8{};
+    team_id_array_[collider_index] = 0;
+    center_array_[collider_index] = float3{};
+    size_array_[collider_index] = float3{};
+    frame_positions_[collider_index] = float3{};
+    frame_rotations_[collider_index] = quaternion{};
+    frame_scales_[collider_index] = float3{1.0f, 1.0f, 1.0f};
+    now_positions_[collider_index] = float3{};
+    now_rotations_[collider_index] = quaternion{};
+    old_frame_positions_[collider_index] = float3{};
+    old_frame_rotations_[collider_index] = quaternion{};
+    old_positions_[collider_index] = float3{};
+    old_rotations_[collider_index] = quaternion{};
+    work_data_array_[collider_index] = WorkData{};
+
+    const int transform_index =
+        team_data.collider_transform_chunk.start_index + local_collider_index;
+    transform_manager.ClearTransform(transform_index);
+
+    int active_extent = 0;
+    for (int offset = 0; offset < team_data.collider_chunk.data_length; ++offset) {
+        const int index = team_data.collider_chunk.start_index + offset;
+        if (index >= 0
+            && index < flag_array_.Length()
+            && flag_array_[index].IsSet(FlagValid)) {
+            active_extent = offset + 1;
+        }
+    }
+    team_data.collider_count = active_extent;
+    return true;
 }
 
 bool ColliderManager::UpdateColliderData(
@@ -249,6 +311,27 @@ bool ColliderManager::UpdateColliderData(
     }
 
     SetCollider(collider_index, data);
+    return true;
+}
+
+bool ColliderManager::UpdateColliderData(
+    int team_id,
+    int local_collider_index,
+    TeamManager& team_manager,
+    TransformManager& transform_manager,
+    const ColliderData& data
+)
+{
+    if (!UpdateColliderData(team_id, local_collider_index, team_manager, data)) {
+        return false;
+    }
+    SetColliderTransform(
+        team_id,
+        local_collider_index,
+        team_manager,
+        transform_manager,
+        data
+    );
     return true;
 }
 
@@ -305,6 +388,46 @@ void ColliderManager::SetCollider(int collider_index, const ColliderData& data)
     old_frame_rotations_[collider_index] = data.frame_rotation;
     old_positions_[collider_index] = data.frame_position;
     old_rotations_[collider_index] = data.frame_rotation;
+}
+
+void ColliderManager::SetColliderTransform(
+    int team_id,
+    int local_collider_index,
+    const TeamManager& team_manager,
+    TransformManager& transform_manager,
+    const ColliderData& data
+) const
+{
+    if (!team_manager.IsValidTeam(team_id) || local_collider_index < 0) {
+        return;
+    }
+
+    const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+    if (!team_data.collider_transform_chunk.IsValid()
+        || local_collider_index >= team_data.collider_transform_chunk.data_length) {
+        return;
+    }
+
+    const int transform_index =
+        team_data.collider_transform_chunk.start_index + local_collider_index;
+    if (transform_index < 0) {
+        return;
+    }
+
+    TransformRecord record;
+    record.id = -1000000 - transform_index;
+    record.name = "mc2_runtime_collider";
+    record.position = data.frame_position;
+    record.rotation = data.frame_rotation;
+    record.scale = data.frame_scale;
+    record.local_position = data.frame_position;
+    record.local_rotation = data.frame_rotation;
+    record.local_to_world_matrix = TRS(record.position, record.rotation, record.scale);
+    record.world_to_local_matrix = InverseAffine(record.local_to_world_matrix);
+
+    BitFlag8 flag{TransformManager::FlagRead};
+    flag.SetFlag(TransformManager::FlagEnable, team_data.IsEnabled() && data.enabled);
+    transform_manager.SetTransform(transform_index, record, flag, team_id);
 }
 
 void ColliderManager::PreSimulationUpdate(
