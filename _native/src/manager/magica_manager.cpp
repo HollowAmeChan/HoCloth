@@ -102,12 +102,7 @@ int MagicaManager::StepFrame(
         time_manager_.MaxSimulationCountPerFrame()
     );
 
-    if (max_update_count <= 0) {
-        team_manager_.PostTeamUpdate();
-        collider_manager_.PostSimulationUpdate(team_manager_);
-        return 0;
-    }
-
+    virtual_mesh_manager_.PreProxyMeshUpdate(team_manager_, transform_manager_);
     team_manager_.UpdateCenterAndInertia(
         simulation_delta_time,
         transform_manager_,
@@ -115,9 +110,21 @@ int MagicaManager::StepFrame(
         wind_manager_,
         cloth_manager_.Inertia().FixedArray()
     );
-    virtual_mesh_manager_.PreProxyMeshUpdate(team_manager_, transform_manager_);
     simulation_manager_.PreSimulationUpdate(team_manager_, virtual_mesh_manager_);
     collider_manager_.PreSimulationUpdate(team_manager_, transform_manager_);
+
+    if (max_update_count <= 0) {
+        simulation_manager_.CalcDisplayPosition(
+            simulation_delta_time,
+            team_manager_,
+            virtual_mesh_manager_
+        );
+        virtual_mesh_manager_.PostProxyMeshUpdate(team_manager_, transform_manager_);
+        collider_manager_.PostSimulationUpdate(team_manager_);
+        team_manager_.PostTeamUpdate();
+        return 0;
+    }
+
     for (int update_index = 0; update_index < max_update_count; ++update_index) {
         simulation_manager_.BeginSimulationStep();
         team_manager_.SimulationStepTeamUpdate(update_index, simulation_delta_time);

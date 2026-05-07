@@ -4,7 +4,7 @@ from ..components import mc2
 from ..runtime.authoring_snapshot import (
     build_authoring_snapshot,
 )
-from ..runtime.inputs import build_runtime_inputs
+from ..runtime.inputs import build_runtime_inputs, reset_runtime_input_tracking
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.pose_apply import (
     apply_runtime_mesh_outputs_to_scene,
@@ -91,6 +91,7 @@ def _build_runtime_from_scene(context, report=None) -> bool:
         return False
 
     runtime_state = build_runtime(authoring_snapshot, True)
+    reset_runtime_input_tracking()
     initial_inputs = build_runtime_inputs(scene, authoring_snapshot)
     set_runtime_inputs_only(initial_inputs)
     set_pose_baseline(capture_pose_baseline(scene, authoring_snapshot))
@@ -363,10 +364,11 @@ class HOCLOTH_OT_reset_runtime(bpy.types.Operator):
             bpy.ops.screen.animation_cancel(restore_frame=False)
 
         authoring_snapshot = get_last_authoring_snapshot()
-        if context.scene.hocloth_runtime_handle and authoring_snapshot is not None:
-            set_runtime_inputs_only(build_runtime_inputs(context.scene, authoring_snapshot))
         runtime_state = reset_runtime()
         if runtime_state["handle"]:
+            reset_runtime_input_tracking()
+            if authoring_snapshot is not None:
+                set_runtime_inputs_only(build_runtime_inputs(context.scene, authoring_snapshot))
             set_pose_baseline(capture_pose_baseline(context.scene, authoring_snapshot))
         context.scene.hocloth_runtime_step_count = runtime_state["step_count"]
         context.scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]

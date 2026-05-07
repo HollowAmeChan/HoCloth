@@ -1860,28 +1860,28 @@ StepSceneResult RuntimeModule::StepScene(SceneHandle handle, float dt, int simul
         scene.time_state.max_simulation_count_per_frame
     );
 
+    scene.mc2_virtual_mesh_manager.PreProxyMeshUpdate(
+        scene.mc2_team_manager,
+        scene.mc2_transform_manager
+    );
+    scene.mc2_team_manager.UpdateCenterAndInertia(
+        scene.time_state.simulation_delta_time,
+        scene.mc2_transform_manager,
+        scene.mc2_virtual_mesh_manager,
+        scene.mc2_wind_manager,
+        scene.mc2_cloth_manager.Inertia().FixedArray()
+    );
+    scene.mc2_simulation_manager.PreSimulationUpdate(
+        scene.mc2_team_manager,
+        scene.mc2_virtual_mesh_manager
+    );
+    scene.mc2_collider_manager.PreSimulationUpdate(
+        scene.mc2_team_manager,
+        scene.mc2_transform_manager
+    );
+
     int executed_steps = 0;
     if (max_update_count > 0) {
-        scene.mc2_team_manager.UpdateCenterAndInertia(
-            scene.time_state.simulation_delta_time,
-            scene.mc2_transform_manager,
-            scene.mc2_virtual_mesh_manager,
-            scene.mc2_wind_manager,
-            scene.mc2_cloth_manager.Inertia().FixedArray()
-        );
-        scene.mc2_virtual_mesh_manager.PreProxyMeshUpdate(
-            scene.mc2_team_manager,
-            scene.mc2_transform_manager
-        );
-        scene.mc2_simulation_manager.PreSimulationUpdate(
-            scene.mc2_team_manager,
-            scene.mc2_virtual_mesh_manager
-        );
-        scene.mc2_collider_manager.PreSimulationUpdate(
-            scene.mc2_team_manager,
-            scene.mc2_transform_manager
-        );
-
         for (int update_index = 0; update_index < max_update_count; ++update_index) {
             scene.mc2_simulation_manager.BeginSimulationStep();
             scene.mc2_team_manager.SimulationStepTeamUpdate(
