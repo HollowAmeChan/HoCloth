@@ -345,3 +345,10 @@ Wind / VirtualMesh test boundary:
 - VirtualMesh work can resume as compile-safe function/data ports first. Avoid deep behavior assertions around proxy generation, mapping solve, reduction, or skinning until those functions have been ported end to end.
 
 Next priority: continue the bottom-up XPBD core port. `TetherConstraint`, runtime-side `TriangleBendingConstraint`, runtime-side `AngleConstraint`, collider collision, SelfCollision Self/Sync/ParentSync runtime paths, process-driven parameter refresh, and the first TeamData/mapping ownership layer are now present; next targets are the remaining data builders/prebuild feeds needed to feed these constraints end to end, plus more TeamManager lifecycle/culling/synchronization pieces.
+
+Architecture direction update:
+
+- The Blender Python `compile/` layer is now considered a transition/legacy compatibility layer, not the long-term MC2 build authority. It should not gain new MC2 topology, constraint, baseline, particle, or VirtualMesh responsibilities.
+- The next build input should be `authoring_snapshot`: raw Blender components plus sampled armature/mesh/collider data. C++ owns the Blender transfer unit that converts this snapshot into MC2-style PreBuild/Build data.
+- `compiled_scene` remains available for debug and old paths while the C++ transfer unit comes online, but new work should move toward `authoring_snapshot -> native transfer -> MC2 PreBuild/Build -> build_output`.
+- Viewport drawing and debug inspection should consume `build_output` returned by native build, not Python-side real-time topology guesses.

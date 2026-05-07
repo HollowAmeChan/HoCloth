@@ -368,3 +368,66 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 - Blender 侧绘制/调试：优先读取 `build_output`，不再从 authoring 层反推 MC2 拓扑。
 
 `runtime_debug_latest.json` 已包含 `build_output` envelope，当前字段为 `particles / lines / baselines / colliders`。后续补全 VirtualMesh 与 ParticleBuffer 时继续扩展这个输出，而不是恢复 Blender 侧的自动拓扑加工。
+
+## 架构转向：移除 Blender 侧重编译层
+
+当前 HoCloth 同时存在四层逻辑：
+- MC2 native 后端。
+- Blender authoring/UI 组件。
+- Blender Python 侧 `compile/` 预编译层。
+- C++ 侧 nanobind/API 接收与 runtime build。
+
+新的判断是：Blender Python 侧 `compile/` 不应该继续作为一套重型抽象层存在。它最初主要服务实时视图刷新、JSON 预览和早期 BoneSpring MVP，但现在目标已经变成完整 MC2 后端移植；继续让 Python 提前生成 joints、lines、baselines、collision bindings、尾端粒子或绘制数据，会形成一套“半个 MC2”，最终和 C++ 后端的真实 MC2 Build/PreBuild 分叉。
+
+目标架构改为：
+
+```text
+Blender authoring components
+  -> authoring snapshot / raw scene refs
+  -> C++ Blender transfer unit
+  -> MC2-style PreBuild / Build / manager registration
+  -> build_output / step_output
+  -> Blender viewport drawing / pose or mesh writeback
+```
+
+### Blender 侧保留职责
+
+Blender Python 侧只负责：
+- UI、属性、预设、组件创建和用户交互。
+- 采集稳定引用：armature、root bone、mesh object、collider object、参数、曲线采样值、对象名/id。
+- 逐帧采集 transform、velocity、scale、基础 pose。
+- 接收 `build_output` 做绘制/检查，接收 `step_output` 做 pose/mesh/cache 写回。
+
+Blender Python 侧不再负责：
+- 自动补尾端骨、补虚拟粒子。
+- 推导 MC2 topology 作为权威数据。
+- 生成最终 constraint/baseline/VirtualMesh/ParticleBuffer。
+- 为实时视图刷新维护一套独立编译模型。
+- 把 ColliderGroup/Binding 作为新主路径。碰撞选择以链上 collider list 为主，旧组仅作为兼容导入数据。
+
+### C++ 侧新增边界：Blender Transfer Unit
+
+C++ 侧需要新增或重命名一个明确的 Blender 输入转换单元，例如：
+
+```text
+_native/include/hocloth/api/blender_transfer.hpp
+_native/src/api/blender_transfer.cpp
+```
+
+它负责把 Blender authoring snapshot 转为 MC2 自己的数据：
+- 骨架层级、rest head/tail、parent index、transform record。
+- BoneSpring/BoneCloth/MeshCloth 参数。
+- collider refs/list 与 collider serialize data。
+- mesh 顶点、边、面、权重、选择属性。
+- PreBuild/VirtualMesh/ParticleBuffer 需要的中间数据。
+
+这个转换单元是边界适配层，不是 solver。进入 MC2 manager/constraint 之后，只使用 native MC2 风格数据结构。
+
+### 迁移路线
+
+1. 保留当前 `compile/` 作为过渡兼容层，但禁止继续扩大它的 MC2 语义。
+2. 新增 `authoring_snapshot` exchange payload，用来传 Blender 原始组件和对象采样数据。
+3. C++ `build_scene()` 优先接受 `authoring_snapshot`，内部调用 Blender transfer unit，再走 MC2 PreBuild/Build。
+4. `compiled_scene` payload 降级为 legacy/debug 路径，直到 native Build 能覆盖 BoneSpring/BoneCloth/MeshCloth。
+5. 视口绘制切到 `build_output`，不再依赖 Python 编译层实时推导。
+6. 最后删除或瘦身 `compile/`：只保留导出、兼容迁移、极薄的数据快照辅助函数。

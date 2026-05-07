@@ -26,7 +26,7 @@ quaternion_order: wxyz
 {
     "schema": "hocloth.exchange",
     "schema_version": 1,
-    "payload_type": "compiled_scene | build_output | frame_inputs | step_output | runtime_debug",
+    "payload_type": "authoring_snapshot | compiled_scene | build_output | frame_inputs | step_output | runtime_debug",
     "coordinate_space": "blender_world",
     "length_unit": "meter",
     "quaternion_order": "wxyz",
@@ -59,7 +59,33 @@ NativeModuleBridge.set_runtime_inputs()
 
 Python stub backend 仍会在本地拆成旧 payload，因为 stub 使用的是 Python dataclass/字典逻辑。等 C++ 侧全链路稳定后，可以再删除 native root dict 兼容路径。
 
-## 3. Compiled Scene
+## 3. Authoring Snapshot
+
+`payload_type = "authoring_snapshot"`
+
+这是下一阶段的主 build 输入。它表示 Blender 侧用户真实组件和相关对象采样，不表示 MC2 已编译拓扑。C++ 侧的 Blender transfer unit 负责把它转换为 MC2 PreBuild/Build 所需数据。
+
+预期 payload:
+
+```text
+components
+armatures
+meshes
+colliders
+settings
+```
+
+关键约定：
+- Blender 只传真实用户资产和采样数据，不自动补尾端骨/虚拟粒子/MC2 baseline。
+- `components[]` 保存 BoneSpring/BoneCloth/MeshCloth/Collider/CacheOutput 的参数和引用 id。
+- `armatures[]` 保存真实 bone 层级、rest transform、pose 采样和 root bone 引用。
+- `meshes[]` 保存原始 mesh 拓扑、权重、选择属性、材质/对象引用等 PreBuild 输入。
+- `colliders[]` 保存 collider object 的 shape 参数和 transform。
+- C++ build 完成后返回 `build_output` 作为 Blender 绘制和调试数据。
+
+`compiled_scene` 在过渡期继续存在，但长期降级为 legacy/debug payload。
+
+## 3.1 Compiled Scene
 
 `payload_type = "compiled_scene"`
 
@@ -256,7 +282,9 @@ compiled_scene_preview.json -> runtime_debug_latest.json -> native dump -> WinDb
 
 ## 7. 后续迁移点
 
-1. C++ binding 新增 envelope parser，但保留 legacy parser 到 BoneSpring 全链路稳定。
-2. native build dump 使用同一套 schema metadata。
-3. MeshCloth / ClothBone 加入后，只扩展 `payload`，不要新增另一套顶层协议。
-4. 任何新增字段必须先更新本文档，再接入 Python 和 native。
+1. 新增 `authoring_snapshot` Python builder，直接收集 Blender 组件和对象采样。
+2. C++ 新增 Blender transfer unit，把 `authoring_snapshot` 转为 MC2 PreBuild/Build 数据。
+3. `compiled_scene` 保留到旧链路稳定迁移完成，但不得继续扩大 Python 侧 MC2 语义。
+4. native build dump 使用同一套 schema metadata。
+5. MeshCloth / ClothBone 加入后，只扩展 `payload`，不要新增另一套顶层协议。
+6. 任何新增字段必须先更新本文档，再接入 Python 和 native。
