@@ -92,6 +92,7 @@ struct CompiledSpringBone {
     Vec3 gravity_direction{0.0f, -1.0f, 0.0f};
     std::vector<std::string> collider_group_ids;
     std::vector<std::string> collision_binding_ids;
+    std::vector<int> collision_bone_indices;
     Vec3 armature_scale{1.0f, 1.0f, 1.0f};
     std::vector<CompiledSpringJoint> joints;
     std::vector<CompiledSpringLine> lines;

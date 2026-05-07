@@ -7,9 +7,11 @@
 #include "hocloth/manager/transform/transform_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 namespace hocloth::mc2 {
@@ -112,6 +114,33 @@ void ClothProcess::SetTeamId(int team_id)
 {
     team_id_ = team_id;
 }
+
+namespace {
+
+TransformRecord ResolveTransformRecordById(
+    int transform_id,
+    const std::vector<TransformRecord>& records,
+    const RenderSetupData* render_setup = nullptr
+)
+{
+    if (transform_id == 0) {
+        return TransformRecord{};
+    }
+    if (render_setup != nullptr) {
+        TransformRecord record = render_setup->GetTransformRecordFromId(transform_id);
+        if (record.IsValid()) {
+            return record;
+        }
+    }
+    for (const TransformRecord& record : records) {
+        if (record.id == transform_id) {
+            return record;
+        }
+    }
+    return TransformRecord{transform_id};
+}
+
+}  // namespace
 
 ClothType ClothProcess::Type() const
 {
@@ -272,7 +301,9 @@ bool ClothProcess::GenerateInitialization(
     custom_skinning_bone_records.clear();
     custom_skinning_bone_records.reserve(serialize_data.custom_skinning_setting.skinning_bone_ids.size());
     for (int bone_id : serialize_data.custom_skinning_setting.skinning_bone_ids) {
-        custom_skinning_bone_records.push_back(TransformRecord{bone_id});
+        custom_skinning_bone_records.push_back(
+            ResolveTransformRecordById(bone_id, input.custom_skinning_bone_records)
+        );
     }
 
     result_.SetSuccess();
@@ -489,6 +520,93 @@ bool ClothProcess::ApplyRuntimeBuildResult(
         manager.Simulation(),
         manager.Cloth()
     );
+}
+
+ClothProcess::RuntimeBuildResult ClothProcess::CreateBoneRuntimeBuildResult(
+    const RenderSetupData& render_setup
+) const
+{
+    RuntimeBuildResult build_result;
+    if (cloth_type_ != ClothType::BoneCloth && cloth_type_ != ClothType::BoneSpring) {
+        build_result.result.SetError(ResultCode::RenderSetup_InvalidType);
+        return build_result;
+    }
+
+    auto proxy_mesh = std::make_shared<VirtualMesh>();
+    proxy_mesh->ImportFromRenderSetup(render_setup);
+    if (!proxy_mesh->IsValid()) {
+        build_result.result.SetError(ResultCode::VirtualMesh_InvalidSetup);
+        return build_result;
+    }
+
+    if (cloth_type_ == ClothType::BoneCloth) {
+        SelectionData selection = serialize_data2.selection_data.IsValid()
+            ? serialize_data2.selection_data.Clone()
+            : SelectionData::CreateBoneClothDefault(render_setup);
+        for (const auto& [transform_id, attribute] : serialize_data2.bone_attribute_dict) {
+            const int transform_index = render_setup.GetTransformIndexFromId(transform_id);
+            if (transform_index < 0 || transform_index >= selection.Count()) {
+                continue;
+            }
+            selection.attributes[static_cast<std::size_t>(transform_index)] = attribute;
+        }
+        if (selection.IsValid()) {
+            proxy_mesh->ApplySelectionAttribute(selection, true);
+        }
+    }
+
+    proxy_mesh->Optimization();
+    if (!proxy_mesh->IsValid()) {
+        build_result.result.SetError(ResultCode::VirtualMesh_ImportError);
+        return build_result;
+    }
+    std::vector<TransformRecord> custom_skinning_records;
+    custom_skinning_records.reserve(custom_skinning_bone_records.size());
+    for (const TransformRecord& record : custom_skinning_bone_records) {
+        custom_skinning_records.push_back(
+            ResolveTransformRecordById(record.id, custom_skinning_bone_records, &render_setup)
+        );
+    }
+
+    TransformRecord normal_adjustment_record = normal_adjustment_transform_record.IsValid()
+        ? ResolveTransformRecordById(
+              normal_adjustment_transform_record.id,
+              {normal_adjustment_transform_record},
+              &render_setup
+          )
+        : TransformRecord{};
+    if (!normal_adjustment_record.IsValid()
+        && serialize_data.normal_alignment_setting.adjustment_transform_id != 0) {
+        normal_adjustment_record = render_setup.GetTransformRecordFromId(
+            serialize_data.normal_alignment_setting.adjustment_transform_id
+        );
+    }
+    if (!normal_adjustment_record.IsValid()
+        && serialize_data.normal_alignment_setting.alignment_mode
+            == NormalAlignmentSettings::AlignmentMode::Transform) {
+        normal_adjustment_record = cloth_transform_record;
+    }
+
+    proxy_mesh->ConvertProxyMesh(
+        serialize_data,
+        cloth_transform_record,
+        custom_skinning_records,
+        normal_adjustment_record
+    );
+    if (!proxy_mesh->IsValid()) {
+        build_result.result.SetError(ResultCode::VirtualMesh_ImportError);
+        return build_result;
+    }
+
+    build_result.proxy_mesh_container = VirtualMeshContainer(proxy_mesh);
+    build_result.distance_constraint_data =
+        DistanceConstraint::CreateData(*proxy_mesh, parameters_);
+    build_result.bending_constraint_data =
+        TriangleBendingConstraint::CreateData(*proxy_mesh, parameters_);
+    build_result.inertia_constraint_data =
+        InertiaConstraint::CreateData(*proxy_mesh, parameters_);
+    build_result.result.SetSuccess();
+    return build_result;
 }
 
 void ClothProcess::UnregisterFromManagers(

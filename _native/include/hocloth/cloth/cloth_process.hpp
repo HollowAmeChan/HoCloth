@@ -66,6 +66,7 @@ public:
         ClothSerializeData2 serialize_data2;
         TransformRecord cloth_transform_record;
         TransformRecord normal_adjustment_transform_record;
+        std::vector<TransformRecord> custom_skinning_bone_records;
         bool enabled = true;
     };
 
@@ -139,6 +140,9 @@ public:
         RuntimeBuildResult build_result,
         MagicaManager& manager
     );
+    [[nodiscard]] RuntimeBuildResult CreateBoneRuntimeBuildResult(
+        const RenderSetupData& render_setup
+    ) const;
     void UnregisterFromManagers(
         TeamManager& team_manager,
         TransformManager& transform_manager,

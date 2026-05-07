@@ -2,6 +2,7 @@
 
 #include "hocloth/core/interface/i_valid.hpp"
 #include "hocloth/core/define/system_define.hpp"
+#include "hocloth/manager/render/render_setup_data_serialization.hpp"
 #include "hocloth/utility/grid/grid_map.hpp"
 #include "hocloth/utility/jobs/job_utility.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
@@ -105,6 +106,70 @@ public:
             selection.attributes[static_cast<std::size_t>(root_index)] = VertexAttribute::Fixed();
         }
         selection.user_edit = false;
+        return selection;
+    }
+
+    [[nodiscard]] static SelectionData CreateBoneClothDefault(const RenderSetupData& setup)
+    {
+        const int transform_count = setup.TransformCount();
+        const int particle_count = setup.render_transform_index >= 0
+            ? std::min(setup.render_transform_index, transform_count)
+            : std::max(0, transform_count - 1);
+        SelectionData selection(particle_count);
+        if (particle_count <= 0) {
+            return selection;
+        }
+
+        selection.Fill(VertexAttribute::Move());
+        for (int index = 0; index < particle_count; ++index) {
+            const float3 world_position =
+                index < static_cast<int>(setup.transform_positions.size())
+                    ? setup.transform_positions[static_cast<std::size_t>(index)]
+                    : float3{};
+            selection.positions[static_cast<std::size_t>(index)] =
+                InverseTransformPoint(world_position, setup.init_render_world_to_local);
+        }
+
+        float max_length = 0.0f;
+        for (int index = 0; index < particle_count; ++index) {
+            const int parent_index = setup.GetParentTransformIndex(index, true);
+            if (parent_index < 0 || parent_index >= particle_count) {
+                continue;
+            }
+            max_length = std::max(
+                max_length,
+                Distance(
+                    selection.positions[static_cast<std::size_t>(index)],
+                    selection.positions[static_cast<std::size_t>(parent_index)]
+                )
+            );
+        }
+        selection.max_connection_distance = max_length;
+
+        for (int root_id : setup.root_transform_ids) {
+            const int root_index = setup.GetTransformIndexFromId(root_id);
+            if (root_index < 0 || root_index >= particle_count) {
+                continue;
+            }
+            selection.attributes[static_cast<std::size_t>(root_index)] =
+                VertexAttribute::Fixed();
+        }
+
+        const bool has_fixed_root = std::any_of(
+            selection.attributes.begin(),
+            selection.attributes.end(),
+            [](VertexAttribute attribute) { return attribute.IsFixed(); }
+        );
+        if (!has_fixed_root) {
+            for (int index = 0; index < particle_count; ++index) {
+                if (setup.GetParentTransformIndex(index, true) >= 0) {
+                    continue;
+                }
+                selection.attributes[static_cast<std::size_t>(index)] =
+                    VertexAttribute::Fixed();
+            }
+        }
+        selection.user_edit = true;
         return selection;
     }
 

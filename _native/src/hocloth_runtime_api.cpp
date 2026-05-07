@@ -1,5 +1,7 @@
 #include "hocloth_runtime_api.hpp"
+#include "hocloth/cloth/cloth_serialize_data.hpp"
 #include "hocloth/cloth/constraints/collider_collision_constraint.hpp"
+#include "hocloth/manager/transform/transform_record.hpp"
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/manager/simulation/collider_manager.hpp"
 #include "hocloth/manager/simulation/simulation_manager.hpp"
@@ -469,6 +471,80 @@ mc2::ColliderManager::ColliderData ToMc2ColliderData(const CompiledCollisionObje
     return data;
 }
 
+mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain)
+{
+    mc2::RenderSetupData setup;
+    setup.name = chain.component_id + "::runtime_render_setup";
+    setup.setup_type = IsBoneCloth(chain)
+        ? mc2::RenderSetupData::SetupType::BoneCloth
+        : mc2::RenderSetupData::SetupType::BoneSpring;
+    setup.bone_connection_mode = IsBoneCloth(chain)
+        ? mc2::RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh
+        : mc2::RenderSetupData::BoneConnectionMode::Line;
+
+    const int joint_count = static_cast<int>(chain.joints.size());
+    setup.skin_bone_count = joint_count;
+    setup.skin_root_bone_index = joint_count;
+    setup.render_transform_index = joint_count;
+    setup.vertex_count = joint_count;
+    setup.transform_ids.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_parent_ids.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_names.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_positions.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_rotations.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_scales.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_local_positions.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_local_rotations.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_inverse_rotations.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_child_ids.resize(static_cast<std::size_t>(joint_count + 1));
+    setup.collision_bone_indices = chain.collision_bone_indices;
+
+    for (int joint_index = 0; joint_index < joint_count; ++joint_index) {
+        const CompiledSpringJoint& joint = chain.joints[static_cast<std::size_t>(joint_index)];
+        const bool is_root = joint.parent_index < 0;
+        const int transform_id = joint_index + 1;
+        const int parent_transform_id = joint.parent_index >= 0 ? joint.parent_index + 1 : 0;
+        const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
+        const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
+
+        setup.transform_ids.push_back(transform_id);
+        setup.transform_parent_ids.push_back(parent_transform_id);
+        setup.transform_names.push_back(joint.name);
+        setup.transform_positions.push_back(position);
+        setup.transform_rotations.push_back(rotation);
+        setup.transform_scales.push_back(mc2::float3{1.0f, 1.0f, 1.0f});
+        setup.transform_local_positions.push_back(ToMc2Float3(joint.rest_local_translation));
+        setup.transform_local_rotations.push_back(rotation);
+        setup.transform_inverse_rotations.push_back(mc2::Inverse(rotation));
+        if (is_root) {
+            setup.root_transform_ids.push_back(transform_id);
+        } else if (joint.parent_index >= 0 && joint.parent_index < joint_count) {
+            setup.transform_child_ids[static_cast<std::size_t>(joint.parent_index)].push_back(transform_id);
+        }
+    }
+
+    const int render_transform_id = joint_count + 1;
+    setup.transform_ids.push_back(render_transform_id);
+    setup.transform_parent_ids.push_back(0);
+    setup.transform_names.push_back(chain.armature_name.empty() ? "render" : chain.armature_name);
+    setup.transform_positions.push_back(mc2::float3{});
+    setup.transform_rotations.push_back(mc2::quaternion{});
+    setup.transform_scales.push_back(mc2::float3{1.0f, 1.0f, 1.0f});
+    setup.transform_local_positions.push_back(mc2::float3{});
+    setup.transform_local_rotations.push_back(mc2::quaternion{});
+    setup.transform_inverse_rotations.push_back(mc2::quaternion{});
+    if (setup.root_transform_ids.empty() && joint_count > 0) {
+        setup.root_transform_ids.push_back(1);
+    }
+
+    setup.init_render_local_to_world = mc2::float4x4{};
+    setup.init_render_world_to_local = mc2::float4x4{};
+    setup.init_render_rotation = mc2::quaternion{};
+    setup.init_render_scale = mc2::float3{1.0f, 1.0f, 1.0f};
+    setup.result.SetSuccess();
+    return setup;
+}
+
 void FromAnglePoint(const Vec3& point, JointState& state)
 {
     state.roll = Clamp(point.x, -1.2f, 1.2f);
@@ -570,79 +646,40 @@ std::vector<std::size_t> ResolveChainColliderIndices(
 
 std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone& chain)
 {
+    const mc2::RenderSetupData render_setup = BuildRuntimeBoneRenderSetup(chain);
     auto mesh = std::make_shared<mc2::VirtualMesh>();
     mesh->name = chain.component_id + "::runtime_proxy";
+    mesh->ImportFromRenderSetup(render_setup);
+    if (mesh->IsValid()) {
+        mc2::ClothSerializeData serialize_data;
+        serialize_data.cloth_type = IsBoneCloth(chain)
+            ? mc2::ClothType::BoneCloth
+            : mc2::ClothType::BoneSpring;
+        serialize_data.root_bone_ids = render_setup.root_transform_ids;
+        serialize_data.connection_mode = render_setup.bone_connection_mode;
+        serialize_data.gravity = chain.gravity_strength;
+        serialize_data.gravity_direction = ToMc2Float3(Normalize(chain.gravity_direction));
+        serialize_data.custom_skinning_setting.enable = false;
+        serialize_data.normal_alignment_setting.alignment_mode =
+            mc2::NormalAlignmentSettings::AlignmentMode::None;
+
+        mc2::TransformRecord cloth_transform_record =
+            render_setup.GetTransformRecordFromIndex(render_setup.render_transform_index);
+        if (!cloth_transform_record.IsValid()) {
+            cloth_transform_record.id = render_setup.render_transform_index + 1;
+            cloth_transform_record.scale = render_setup.init_render_scale;
+            cloth_transform_record.local_to_world_matrix = render_setup.init_render_local_to_world;
+            cloth_transform_record.world_to_local_matrix = render_setup.init_render_world_to_local;
+        }
+        mesh->ConvertProxyMesh(
+            serialize_data,
+            cloth_transform_record,
+            {},
+            mc2::TransformRecord{}
+        );
+    }
     mesh->is_managed = true;
     mesh->mesh_type = mc2::VirtualMesh::MeshType::ProxyBoneMesh;
-    mesh->is_bone_cloth = true;
-    mesh->center_transform_index = -1;
-
-    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
-        const CompiledSpringJoint& joint = chain.joints[joint_index];
-        const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
-        const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
-        const bool is_root = joint.parent_index < 0;
-        const int transform_id = static_cast<int>(joint_index) + 1;
-        const int parent_transform_id = joint.parent_index >= 0 ? joint.parent_index + 1 : 0;
-        const mc2::float4x4 local_to_world =
-            mc2::TRS(position, rotation, mc2::float3{1.0f, 1.0f, 1.0f});
-
-        mesh->attributes.Add(mc2::VertexAttribute::Invalid());
-        mesh->local_positions.Add(position);
-        mesh->local_normals.Add(mc2::float3{0.0f, 1.0f, 0.0f});
-        mesh->local_tangents.Add(mc2::float3{1.0f, 0.0f, 0.0f});
-        mesh->uv.Add(mc2::float2{});
-        mesh->bone_weights.Add(mc2::VirtualMeshBoneWeight{
-            mc2::int4{static_cast<int>(joint_index), -1, -1, -1},
-            mc2::float4{1.0f, 0.0f, 0.0f, 0.0f}
-        });
-        mesh->vertex_bind_pose_positions.Add(position);
-        mesh->vertex_bind_pose_rotations.Add(rotation);
-        mesh->vertex_depths.Add(static_cast<float>(std::max(0, joint.depth)));
-        mesh->vertex_root_indices.Add(is_root ? static_cast<int>(joint_index) : 0);
-        mesh->vertex_parent_indices.Add(joint.parent_index);
-        mesh->vertex_local_positions.Add(position);
-        mesh->vertex_local_rotations.Add(rotation);
-        mesh->normal_adjustment_rotations.Add(mc2::quaternion{});
-        mesh->vertex_to_transform_rotations.Add(mc2::quaternion{});
-        mesh->skin_bone_transform_indices.Add(static_cast<int>(joint_index));
-        mesh->skin_bone_bind_poses.Add(mc2::InverseAffine(local_to_world));
-
-        mesh->transform_data.flag_array.Add(
-            mc2::BitFlag8{
-                mc2::TransformManager::FlagRead
-                | mc2::TransformManager::FlagLocalPosRotWrite
-                | mc2::TransformManager::FlagEnable
-            }
-        );
-        mesh->transform_data.init_local_position_array.Add(ToMc2Float3(joint.rest_local_translation));
-        mesh->transform_data.init_local_rotation_array.Add(rotation);
-        mesh->transform_data.position_array.Add(position);
-        mesh->transform_data.rotation_array.Add(rotation);
-        mesh->transform_data.inverse_rotation_array.Add(mc2::Inverse(rotation));
-        mesh->transform_data.scale_array.Add(mc2::float3{1.0f, 1.0f, 1.0f});
-        mesh->transform_data.local_position_array.Add(ToMc2Float3(joint.rest_local_translation));
-        mesh->transform_data.local_rotation_array.Add(rotation);
-        mesh->transform_data.local_to_world_matrix_array.Add(local_to_world);
-        mesh->transform_data.team_id_array.Add(0);
-        mesh->transform_data.EnsureRecordCapacity(static_cast<int>(joint_index) + 1);
-        mesh->transform_data.id_array[joint_index] = transform_id;
-        mesh->transform_data.parent_id_array[joint_index] = parent_transform_id;
-        mesh->transform_data.name_array[joint_index] = joint.name;
-        if (is_root) {
-            mesh->transform_data.root_id_list.push_back(transform_id);
-        }
-    }
-
-    const mc2::RenderSetupData::BoneConnectionMode connection_mode =
-        IsBoneCloth(chain)
-            ? mc2::RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh
-            : mc2::RenderSetupData::BoneConnectionMode::Line;
-    mesh->BuildBoneConnection(connection_mode, IsBoneSpring(chain));
-    mesh->ApplyBoneClothDefaultSelection();
-    mesh->BuildVertexToTriangles();
-    mesh->BuildEdgeToTriangles();
-    mesh->BuildBaseLinesFromParents();
 
     return mesh;
 }
@@ -695,6 +732,7 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
             );
         mc2::TeamManager::TeamData& team_data = scene.mc2_team_manager.GetTeamData(team_id);
         team_data.particle_chunk = particle_chunks.next_pos_chunk;
+        team_data.proxy_mesh_type = proxy_mesh->mesh_type;
 
         for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
             const int particle_index = particle_chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);

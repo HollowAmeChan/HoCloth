@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/utility/math/math_types.hpp"
+#include "hocloth/manager/transform/transform_record.hpp"
 #include "hocloth/utility/result_code/result_code.hpp"
 
 #include <cstdint>
@@ -46,6 +47,19 @@ struct RenderSetupData {
         std::vector<int> root_transform_ids;
         std::vector<int> transform_ids;
         std::vector<int> transform_parent_ids;
+        std::vector<std::vector<int>> transform_child_ids;
+        std::vector<int> collision_bone_indices;
+        std::vector<std::string> transform_names;
+        std::vector<float3> transform_positions;
+        std::vector<quaternion> transform_rotations;
+        std::vector<float3> transform_scales;
+        std::vector<float3> transform_local_positions;
+        std::vector<quaternion> transform_local_rotations;
+        std::vector<quaternion> transform_inverse_rotations;
+        float4x4 init_render_local_to_world;
+        float4x4 init_render_world_to_local;
+        quaternion init_render_rotation;
+        float3 init_render_scale{1.0f, 1.0f, 1.0f};
         int render_transform_index = -1;
     };
 
@@ -95,6 +109,19 @@ struct RenderSetupData {
     std::vector<int> root_transform_ids;
     std::vector<int> transform_ids;
     std::vector<int> transform_parent_ids;
+    std::vector<std::vector<int>> transform_child_ids;
+    std::vector<int> collision_bone_indices;
+    std::vector<std::string> transform_names;
+    std::vector<float3> transform_positions;
+    std::vector<quaternion> transform_rotations;
+    std::vector<float3> transform_scales;
+    std::vector<float3> transform_local_positions;
+    std::vector<quaternion> transform_local_rotations;
+    std::vector<quaternion> transform_inverse_rotations;
+    float4x4 init_render_local_to_world;
+    float4x4 init_render_world_to_local;
+    quaternion init_render_rotation;
+    float3 init_render_scale{1.0f, 1.0f, 1.0f};
     int render_transform_index = -1;
 
     [[nodiscard]] bool IsSuccess() const;
@@ -102,6 +129,8 @@ struct RenderSetupData {
     [[nodiscard]] bool HasLocalPositions() const;
     [[nodiscard]] int TransformCount() const;
     [[nodiscard]] int GetTransformIndexFromId(int id) const;
+    [[nodiscard]] TransformRecord GetTransformRecordFromIndex(int index) const;
+    [[nodiscard]] TransformRecord GetTransformRecordFromId(int id) const;
     [[nodiscard]] int GetParentTransformIndex(int index, bool center_excluded) const;
     void Dispose();
 

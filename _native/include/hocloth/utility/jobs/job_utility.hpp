@@ -300,7 +300,7 @@ ToNativeMultiHashMap(const std::vector<std::uint32_t>& index_array, const std::v
     for (int index = 0; index < static_cast<int>(index_array.size()); ++index) {
         int data_count = 0;
         int data_start = 0;
-        Unpack12_20(index_array[static_cast<std::size_t>(index)], data_count, data_start);
+        data::Unpack12_20(index_array[static_cast<std::size_t>(index)], data_count, data_start);
         for (int data_index = 0; data_index < data_count; ++data_index) {
             const int source_index = data_start + data_index;
             if (source_index >= 0 && source_index < static_cast<int>(data_array.size())) {

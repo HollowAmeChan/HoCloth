@@ -1,5 +1,6 @@
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
+#include "hocloth/cloth/cloth_serialize_data.hpp"
 #include "hocloth/core/define/system_define.hpp"
 #include "hocloth/reduction/reduction_settings.hpp"
 #include "hocloth/reduction/reduction_work_data.hpp"
@@ -215,6 +216,56 @@ void OrganizeReductionTransform(VirtualMesh& mesh, ReductionWorkData& work_data)
 
 }  // namespace
 
+void VirtualMesh::ImportFromRenderSetup(const RenderSetupData& render_setup)
+{
+    // Ported from Magica Cloth 2: VirtualMesh.ImportFrom(RenderSetupData).
+    Dispose();
+    name = render_setup.name;
+    if (render_setup.IsFailed()) {
+        result = Result::Error(
+            ResultCode::VirtualMesh_InvalidSetup,
+            "VirtualMesh render setup is failed."
+        );
+        return;
+    }
+
+    switch (render_setup.setup_type) {
+    case RenderSetupData::SetupType::BoneCloth:
+    case RenderSetupData::SetupType::BoneSpring:
+        mesh_type = MeshType::NormalBoneMesh;
+        is_bone_cloth = true;
+        ImportBoneType(render_setup);
+        if (!result.Succeeded()) {
+            return;
+        }
+        break;
+    case RenderSetupData::SetupType::MeshCloth:
+        result = Result::Error(
+            ResultCode::VirtualMesh_InvalidSetup,
+            "MeshCloth RenderSetup import remains a Blender/render boundary."
+        );
+        return;
+    default:
+        result = Result::Error(
+            ResultCode::RenderSetup_InvalidType,
+            "Unknown RenderSetup type."
+        );
+        return;
+    }
+
+    bounding_box = AABB{};
+    for (int index = 0; index < local_positions.Count(); ++index) {
+        Encapsulate(bounding_box, local_positions[index]);
+    }
+    if (TriangleCount() > 0 && uv.Count() == VertexCount()) {
+        for (int index = 0; index < VertexCount(); ++index) {
+            uv[index] = SphereMappingUV(local_positions[index], bounding_box, index);
+        }
+    }
+    CalcAverageAndMaxVertexDistanceRun();
+    result = Result::Ok();
+}
+
 void VirtualMesh::CreateProxyFixedListAndAABB()
 {
     // Ported from Magica Cloth 2: ProxyCreateFixedListAndAABB()
@@ -223,6 +274,7 @@ void VirtualMesh::CreateProxyFixedListAndAABB()
     bounding_box = AABB{};
     average_vertex_distance = 0.0f;
     max_vertex_distance = 0.0f;
+    local_center_position = float3{};
 
     if (vertex_count <= 0
         || attributes.Count() < vertex_count
@@ -232,6 +284,8 @@ void VirtualMesh::CreateProxyFixedListAndAABB()
 
     float total_distance = 0.0f;
     int distance_count = 0;
+    float3 fixed_center{};
+    int fixed_count = 0;
     for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
         const VertexAttribute attr = attributes[vertex_index];
         if (attr.IsInvalid()) {
@@ -240,8 +294,42 @@ void VirtualMesh::CreateProxyFixedListAndAABB()
 
         Encapsulate(bounding_box, local_positions[vertex_index]);
         if (attr.IsFixed() && IsValidVertexIndex(vertex_index, vertex_count)) {
+            bool connected_to_move = true;
+            if (vertex_to_vertex_index_array.Count() > vertex_index
+                && vertex_to_vertex_data_array.Count() > 0) {
+                int data_count = 0;
+                int data_start = 0;
+                data::Unpack12_20(
+                    vertex_to_vertex_index_array[vertex_index],
+                    data_count,
+                    data_start
+                );
+                connected_to_move = data_count <= 0;
+                for (int offset = 0; offset < data_count; ++offset) {
+                    const int data_index = data_start + offset;
+                    if (data_index < 0 || data_index >= vertex_to_vertex_data_array.Count()) {
+                        continue;
+                    }
+                    const int connected_index = vertex_to_vertex_data_array[data_index];
+                    if (connected_index < 0 || connected_index >= attributes.Count()) {
+                        continue;
+                    }
+                    if (attributes[connected_index].IsMove()) {
+                        connected_to_move = true;
+                        break;
+                    }
+                }
+            }
+            if (!connected_to_move) {
+                continue;
+            }
             center_fixed_list.Add(static_cast<std::uint16_t>(vertex_index));
+            fixed_center = Add(fixed_center, local_positions[vertex_index]);
+            ++fixed_count;
         }
+    }
+    if (fixed_count > 0) {
+        local_center_position = Scale(fixed_center, 1.0f / static_cast<float>(fixed_count));
     }
 
     const int edge_count = edges.Count();
@@ -573,7 +661,10 @@ void VirtualMesh::ConvertInvalidToFixed()
     }
 }
 
-void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
+void VirtualMesh::ApplySelectionAttribute(
+    const SelectionData& selection_data,
+    bool clear_fixed_move_flags
+)
 {
     // Ported from MC2 Proxy_ApplySelectionJob + Proxy_BoneClothApplayTransformFlagJob.
     if (!selection_data.IsValid() || VertexCount() <= 0 || attributes.Count() < VertexCount()) {
@@ -626,6 +717,14 @@ void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
         }
 
         VertexAttribute attribute = attributes[vertex_index];
+        if (clear_fixed_move_flags) {
+            attribute.Set(
+                static_cast<std::uint8_t>(
+                    VertexAttribute::FlagFixed | VertexAttribute::FlagMove
+                ),
+                false
+            );
+        }
         attribute.Set(nearest_attribute, true);
         attributes[vertex_index] = attribute;
     }
@@ -636,6 +735,11 @@ void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
     for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
         const VertexAttribute attribute = attributes[vertex_index];
         BitFlag8 flag = transform_data.flag_array[vertex_index];
+        if (clear_fixed_move_flags) {
+            flag.SetFlag(TransformManager::FlagLocalPosRotWrite, false);
+            flag.SetFlag(TransformManager::FlagWorldRotWrite, false);
+            flag.SetFlag(TransformManager::FlagRestore, false);
+        }
         if (attribute.IsMove()) {
             flag.SetFlag(TransformManager::FlagLocalPosRotWrite, true);
         } else if (attribute.IsFixed()) {
@@ -650,7 +754,7 @@ void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
 
 void VirtualMesh::ApplyBoneClothDefaultSelection()
 {
-    // MC2 fallback path for BoneCloth/BoneSpring without paint/manual selection:
+    // MC2 fallback path for BoneCloth without paint/manual selection:
     // fill all proxy vertices as Move, then mark root transforms as Fixed.
     const int vertex_count = VertexCount();
     if (vertex_count <= 0 || local_positions.Count() < vertex_count) {
@@ -711,12 +815,13 @@ void VirtualMesh::ApplyBoneClothDefaultSelection()
     }
 }
 
-void VirtualMesh::BuildBoneConnection(
-    RenderSetupData::BoneConnectionMode connection_mode,
-    bool setup_as_bone_spring
-)
+void VirtualMesh::BuildBoneConnection(const RenderSetupData& render_setup)
 {
     // Ported from MC2 VirtualMeshInputOutput.cs BoneConnectionMode construction.
+    const RenderSetupData::BoneConnectionMode connection_mode =
+        render_setup.bone_connection_mode;
+    const bool setup_as_bone_spring =
+        render_setup.setup_type == RenderSetupData::SetupType::BoneSpring;
     const int vertex_count = VertexCount();
     lines.Dispose();
     edges.Dispose();
@@ -733,14 +838,22 @@ void VirtualMesh::BuildBoneConnection(
 
     std::unordered_map<int, int> id_to_index;
     id_to_index.reserve(static_cast<std::size_t>(vertex_count));
-    std::vector<int> root_ids = transform_data.root_id_list;
+    std::vector<int> root_ids;
+    root_ids.reserve(transform_data.root_id_list.size());
+    std::unordered_set<int> root_seen;
+    for (int root_id : transform_data.root_id_list) {
+        if (root_id != 0 && root_seen.insert(root_id).second) {
+            root_ids.push_back(root_id);
+        }
+    }
     for (int index = 0; index < vertex_count; ++index) {
         const int transform_id = transform_data.id_array[static_cast<std::size_t>(index)];
         if (!id_to_index.contains(transform_id)) {
             id_to_index.emplace(transform_id, index);
         }
         if (transform_data.parent_id_array[static_cast<std::size_t>(index)] == 0
-            && std::find(root_ids.begin(), root_ids.end(), transform_id) == root_ids.end()) {
+            && transform_id != 0
+            && root_seen.insert(transform_id).second) {
             root_ids.push_back(transform_id);
         }
     }
@@ -760,25 +873,34 @@ void VirtualMesh::BuildBoneConnection(
     if (root_ids.empty()) {
         return;
     }
+    const int original_root_count = static_cast<int>(root_ids.size());
 
     std::vector<int2> line_list;
     std::unordered_set<std::uint32_t> line_keys;
     auto add_line = [&](int a, int b) {
         AddUniqueEdge(line_list, line_keys, a, b);
     };
+    auto apply_bone_spring_collision_attributes = [&]() {
+        if (!setup_as_bone_spring || attributes.Count() < vertex_count) {
+            return;
+        }
+        attributes.Fill(0, vertex_count, VertexAttribute::DisableCollision());
+        for (int collision_index : render_setup.collision_bone_indices) {
+            if (collision_index >= 0 && collision_index < vertex_count) {
+                attributes[collision_index] = VertexAttribute::Invalid();
+            }
+        }
+    };
 
     if (connection_mode == RenderSetupData::BoneConnectionMode::Line) {
         for (int index = 0; index < vertex_count; ++index) {
-            const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
-            const auto found_parent = id_to_index.find(parent_id);
-            if (found_parent != id_to_index.end()) {
-                add_line(found_parent->second, index);
+            const int parent_index = render_setup.GetParentTransformIndex(index, true);
+            if (parent_index >= 0 && parent_index < vertex_count) {
+                add_line(parent_index, index);
             }
         }
 
-        if (setup_as_bone_spring && attributes.Count() >= vertex_count) {
-            attributes.Fill(0, vertex_count, VertexAttribute::DisableCollision());
-        }
+        apply_bone_spring_collision_attributes();
         if (!line_list.empty()) {
             lines.AddRange(line_list);
             edges.AddRange(line_list);
@@ -863,10 +985,23 @@ void VirtualMesh::BuildBoneConnection(
 
     std::unordered_map<int, std::vector<int>> children_by_parent_id;
     children_by_parent_id.reserve(static_cast<std::size_t>(vertex_count));
+    const bool has_child_id_list =
+        static_cast<int>(render_setup.transform_child_ids.size()) >= vertex_count;
     for (int index = 0; index < vertex_count; ++index) {
-        const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
-        if (id_to_index.contains(parent_id)) {
-            children_by_parent_id[parent_id].push_back(transform_data.id_array[static_cast<std::size_t>(index)]);
+        const int transform_id = transform_data.id_array[static_cast<std::size_t>(index)];
+        if (has_child_id_list) {
+            const std::vector<int>& child_ids =
+                render_setup.transform_child_ids[static_cast<std::size_t>(index)];
+            for (int child_id : child_ids) {
+                if (id_to_index.contains(child_id)) {
+                    children_by_parent_id[transform_id].push_back(child_id);
+                }
+            }
+        } else {
+            const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
+            if (id_to_index.contains(parent_id)) {
+                children_by_parent_id[parent_id].push_back(transform_id);
+            }
         }
     }
 
@@ -875,8 +1010,12 @@ void VirtualMesh::BuildBoneConnection(
     std::vector<int> vertex_root_index(static_cast<std::size_t>(vertex_count), 0);
     std::map<int, std::vector<int>> vertices_by_level;
     std::unordered_set<std::uint32_t> main_edge_set;
+    std::vector<std::uint8_t> visited(static_cast<std::size_t>(vertex_count), 0);
 
-    for (std::size_t root_order = 0; root_order < ordered_root_ids.size(); ++root_order) {
+    for (std::size_t root_order = 0;
+         root_order < ordered_root_ids.size()
+         && root_order < static_cast<std::size_t>(original_root_count);
+         ++root_order) {
         const int root_id = ordered_root_ids[root_order];
         if (!id_to_index.contains(root_id)) {
             continue;
@@ -897,6 +1036,10 @@ void VirtualMesh::BuildBoneConnection(
             }
 
             const int vertex_index = found_index->second;
+            if (visited[static_cast<std::size_t>(vertex_index)] != 0) {
+                continue;
+            }
+            visited[static_cast<std::size_t>(vertex_index)] = 1;
             vertex_level[static_cast<std::size_t>(vertex_index)] = level;
             vertex_root_index[static_cast<std::size_t>(vertex_index)] =
                 static_cast<int>(root_order);
@@ -927,7 +1070,7 @@ void VirtualMesh::BuildBoneConnection(
     }
 
     const int first_root_index = 0;
-    const int last_root_index = static_cast<int>(ordered_root_ids.size()) - 1;
+    const int last_root_index = original_root_count - 1;
     const std::uint32_t start_end_root_pack = data::Pack32Sort(first_root_index, last_root_index);
     for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
         const int level = vertex_level[static_cast<std::size_t>(vertex_index)];
@@ -1086,6 +1229,165 @@ void VirtualMesh::BuildBoneConnection(
         edge_flags.AddRange(static_cast<int>(edge_list.size()), BitFlag8{});
     }
     BuildEdgeToTriangles();
+}
+
+void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
+{
+    // Ported from MC2 ImportBoneType(). The native form expects RenderSetupData to
+    // already contain backend transform records in render-local/world pose space.
+    const int transform_count = render_setup.TransformCount();
+    const int vertex_count =
+        render_setup.render_transform_index >= 0
+            ? std::min(render_setup.render_transform_index, transform_count)
+            : std::max(0, transform_count - 1);
+    if (vertex_count <= 0 || transform_count <= 0) {
+        result = Result::Error(
+            ResultCode::VirtualMesh_InvalidSetup,
+            "Bone RenderSetup has no bone transforms."
+        );
+        return;
+    }
+
+    center_transform_index = render_setup.render_transform_index >= 0
+        ? render_setup.render_transform_index
+        : transform_count - 1;
+    init_local_to_world = render_setup.init_render_local_to_world;
+    init_world_to_local = render_setup.init_render_world_to_local;
+    init_rotation = render_setup.init_render_rotation;
+    init_inverse_rotation = Inverse(init_rotation);
+    init_scale = render_setup.init_render_scale;
+    skin_root_index = render_setup.skin_root_bone_index;
+
+    transform_data.Dispose();
+    transform_data.Initialize(transform_count);
+    transform_data.root_id_list = render_setup.root_transform_ids;
+    for (int index = 0; index < transform_count; ++index) {
+        const int id = index < static_cast<int>(render_setup.transform_ids.size())
+            ? render_setup.transform_ids[static_cast<std::size_t>(index)]
+            : index + 1;
+        const int parent_id = index < static_cast<int>(render_setup.transform_parent_ids.size())
+            ? render_setup.transform_parent_ids[static_cast<std::size_t>(index)]
+            : 0;
+        transform_data.id_array[static_cast<std::size_t>(index)] = id;
+        transform_data.parent_id_array[static_cast<std::size_t>(index)] = parent_id;
+        transform_data.name_array[static_cast<std::size_t>(index)] =
+            index < static_cast<int>(render_setup.transform_names.size())
+                ? render_setup.transform_names[static_cast<std::size_t>(index)]
+                : std::string{};
+
+        BitFlag8 flag{
+            TransformManager::FlagRead
+            | TransformManager::FlagEnable
+        };
+        if (index < vertex_count) {
+            flag.SetFlag(TransformManager::FlagRestore, true);
+        }
+        transform_data.flag_array[index] = flag;
+
+        const float3 world_position =
+            index < static_cast<int>(render_setup.transform_positions.size())
+                ? render_setup.transform_positions[static_cast<std::size_t>(index)]
+                : float3{};
+        const quaternion world_rotation =
+            index < static_cast<int>(render_setup.transform_rotations.size())
+                ? render_setup.transform_rotations[static_cast<std::size_t>(index)]
+                : quaternion{};
+        const float3 world_scale =
+            index < static_cast<int>(render_setup.transform_scales.size())
+                ? render_setup.transform_scales[static_cast<std::size_t>(index)]
+                : float3{1.0f, 1.0f, 1.0f};
+        const float3 local_position =
+            index < static_cast<int>(render_setup.transform_local_positions.size())
+                ? render_setup.transform_local_positions[static_cast<std::size_t>(index)]
+                : world_position;
+        const quaternion local_rotation =
+            index < static_cast<int>(render_setup.transform_local_rotations.size())
+                ? render_setup.transform_local_rotations[static_cast<std::size_t>(index)]
+                : world_rotation;
+        const quaternion inverse_rotation =
+            index < static_cast<int>(render_setup.transform_inverse_rotations.size())
+                ? render_setup.transform_inverse_rotations[static_cast<std::size_t>(index)]
+                : Inverse(world_rotation);
+
+        transform_data.init_local_position_array[index] = local_position;
+        transform_data.init_local_rotation_array[index] = local_rotation;
+        transform_data.position_array[index] = world_position;
+        transform_data.rotation_array[index] = world_rotation;
+        transform_data.inverse_rotation_array[index] = inverse_rotation;
+        transform_data.scale_array[index] = world_scale;
+        transform_data.local_position_array[index] = local_position;
+        transform_data.local_rotation_array[index] = local_rotation;
+        transform_data.local_to_world_matrix_array[index] =
+            TRS(world_position, world_rotation, world_scale);
+        transform_data.team_id_array[index] = 0;
+    }
+    if (transform_data.root_id_list.empty()) {
+        for (int index = 0; index < vertex_count; ++index) {
+            if (transform_data.parent_id_array[static_cast<std::size_t>(index)] == 0) {
+                transform_data.root_id_list.push_back(
+                    transform_data.id_array[static_cast<std::size_t>(index)]
+                );
+            }
+        }
+    }
+
+    reference_indices.AddRange(vertex_count, 0);
+    attributes.AddRange(vertex_count, VertexAttribute::Invalid());
+    local_positions.AddRange(vertex_count, float3{});
+    local_normals.AddRange(vertex_count, float3{0.0f, 1.0f, 0.0f});
+    local_tangents.AddRange(vertex_count, float3{0.0f, 0.0f, 1.0f});
+    uv.AddRange(vertex_count, float2{});
+    bone_weights.AddRange(vertex_count, VirtualMeshBoneWeight{});
+    skin_bone_transform_indices.AddRange(vertex_count, 0);
+    skin_bone_bind_poses.AddRange(vertex_count, float4x4{});
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        reference_indices[vertex_index] = vertex_index;
+        skin_bone_transform_indices[vertex_index] = vertex_index;
+
+        const float3 world_position = transform_data.position_array[vertex_index];
+        const quaternion world_rotation = transform_data.rotation_array[vertex_index];
+        const float3 world_scale = transform_data.scale_array[vertex_index];
+        const float4x4 local_to_world = transform_data.local_to_world_matrix_array[vertex_index];
+
+        const float3 local_position = InverseTransformPoint(world_position, init_world_to_local);
+        float3 local_normal = InverseTransformDirection(
+            Rotate(world_rotation, float3{0.0f, 1.0f, 0.0f}),
+            init_world_to_local
+        );
+        float3 local_tangent = InverseTransformDirection(
+            Rotate(world_rotation, float3{0.0f, 0.0f, 1.0f}),
+            init_world_to_local
+        );
+        if (Length(local_normal) <= define::system::Epsilon) {
+            local_normal = float3{0.0f, 1.0f, 0.0f};
+        }
+        if (Length(local_tangent) <= define::system::Epsilon) {
+            local_tangent = float3{0.0f, 0.0f, 1.0f};
+        }
+
+        local_positions[vertex_index] = local_position;
+        local_normals[vertex_index] = Normalize(local_normal);
+        local_tangents[vertex_index] = Normalize(local_tangent);
+        bone_weights[vertex_index] = VirtualMeshBoneWeight{
+            int4{vertex_index, -1, -1, -1},
+            float4{1.0f, 0.0f, 0.0f, 0.0f}
+        };
+        skin_bone_bind_poses[vertex_index] = InverseAffine(local_to_world);
+        (void)world_scale;
+    }
+
+    BuildBoneConnection(render_setup);
+    if (render_setup.setup_type == RenderSetupData::SetupType::BoneCloth) {
+        ApplyBoneClothDefaultSelection();
+    }
+    BuildVertexToTriangles();
+    BuildEdgeToTriangles();
+    BuildTransformBaseLines();
+    CreateProxyFixedListAndAABB();
+    CreateVertexBindPose();
+    CreateVertexToTransformRotations();
+    result = Result::Ok();
 }
 
 void VirtualMesh::BuildMeshBaseLinesFromEdges()
@@ -2315,6 +2617,331 @@ void VirtualMesh::BuildBaseLinesFromParents()
         vertex_depths[vertex_index] =
             SafeDepth(root_lengths[static_cast<std::size_t>(vertex_index)], max_length);
     }
+}
+
+void VirtualMesh::SetCustomSkinningBones(
+    const TransformRecord& cloth_transform_record,
+    std::vector<TransformRecord>& custom_skinning_bone_records
+)
+{
+    // Ported from Magica Cloth 2: VirtualMesh.SetCustomSkinningBones(...).
+    custom_skinning_bone_indices.clear();
+    if (custom_skinning_bone_records.empty()) {
+        return;
+    }
+
+    custom_skinning_bone_indices.reserve(custom_skinning_bone_records.size());
+    for (TransformRecord& record : custom_skinning_bone_records) {
+        if (!record.IsValid()) {
+            custom_skinning_bone_indices.push_back(-1);
+            continue;
+        }
+
+        if (cloth_transform_record.IsValid()) {
+            record.local_position =
+                TransformPoint(record.position, cloth_transform_record.world_to_local_matrix);
+        }
+
+        int transform_index = -1;
+        const auto found = std::find(
+            transform_data.id_array.begin(),
+            transform_data.id_array.end(),
+            record.id
+        );
+        if (found != transform_data.id_array.end()) {
+            transform_index = static_cast<int>(std::distance(transform_data.id_array.begin(), found));
+        }
+        if (transform_index < 0 && record.id == cloth_transform_record.id) {
+            transform_index = center_transform_index;
+        }
+
+        const DataChunk transform_chunk = transform_data.flag_array.Add(BitFlag8{});
+        const int added_transform_index = transform_chunk.IsValid()
+            ? transform_chunk.start_index
+            : transform_index;
+        if (transform_chunk.IsValid()) {
+            transform_data.init_local_position_array.Add(record.local_position);
+            transform_data.init_local_rotation_array.Add(record.local_rotation);
+            transform_data.position_array.Add(record.position);
+            transform_data.rotation_array.Add(record.rotation);
+            transform_data.inverse_rotation_array.Add(Inverse(record.rotation));
+            transform_data.scale_array.Add(record.scale);
+            transform_data.local_position_array.Add(record.local_position);
+            transform_data.local_rotation_array.Add(record.local_rotation);
+            transform_data.local_to_world_matrix_array.Add(record.local_to_world_matrix);
+            transform_data.team_id_array.Add(0);
+            transform_data.EnsureRecordCapacity(added_transform_index + 1);
+            transform_data.id_array[static_cast<std::size_t>(added_transform_index)] = record.id;
+            transform_data.parent_id_array[static_cast<std::size_t>(added_transform_index)] =
+                record.parent_id;
+            transform_data.name_array[static_cast<std::size_t>(added_transform_index)] = record.name;
+            transform_data.is_dirty = true;
+        }
+
+        const int skin_bone_index = skin_bone_transform_indices.Count();
+        skin_bone_transform_indices.Add(added_transform_index);
+        skin_bone_bind_poses.Add(Multiply(record.world_to_local_matrix, init_local_to_world));
+        custom_skinning_bone_indices.push_back(skin_bone_index);
+    }
+}
+
+void VirtualMesh::CreateCustomSkinning(
+    const CustomSkinningSettings& settings,
+    const std::vector<TransformRecord>& custom_skinning_bone_records
+)
+{
+    (void)settings;
+    // Ported from MC2 Proxy_CalcCustomSkinningWeightsJobV2.
+    if (CustomSkinningBoneCount() == 0
+        || VertexCount() <= 0
+        || attributes.Count() < VertexCount()
+        || local_positions.Count() < VertexCount()
+        || bone_weights.Count() < VertexCount()) {
+        return;
+    }
+
+    struct SkinningBoneInfo {
+        int child_transform_index = -1;
+        float3 child_position{};
+    };
+    std::vector<SkinningBoneInfo> bone_infos;
+    bone_infos.reserve(custom_skinning_bone_indices.size());
+    for (std::size_t index = 0; index < custom_skinning_bone_indices.size(); ++index) {
+        const int skin_bone_index = custom_skinning_bone_indices[index];
+        if (skin_bone_index < 0 || index >= custom_skinning_bone_records.size()) {
+            continue;
+        }
+        const TransformRecord& record = custom_skinning_bone_records[index];
+        if (!record.IsValid()) {
+            continue;
+        }
+        SkinningBoneInfo info;
+        info.child_transform_index = skin_bone_index;
+        info.child_position = record.local_position;
+        bone_infos.push_back(info);
+    }
+    if (bone_infos.empty()) {
+        return;
+    }
+
+    for (int vertex_index = 0; vertex_index < VertexCount(); ++vertex_index) {
+        if (attributes[vertex_index].IsDontMove()) {
+            continue;
+        }
+
+        ExCostSortedList4 cost_list{-1.0f};
+        const float3 position = local_positions[vertex_index];
+        for (const SkinningBoneInfo& info : bone_infos) {
+            const float distance = Distance(position, info.child_position);
+            const int current_index = cost_list.IndexOf(info.child_transform_index);
+            if (current_index >= 0) {
+                if (distance < cost_list.costs[current_index]) {
+                    cost_list.RemoveItem(info.child_transform_index);
+                    cost_list.Add(distance, info.child_transform_index);
+                }
+            } else {
+                cost_list.Add(distance, info.child_transform_index);
+            }
+        }
+
+        int count = cost_list.Count();
+        if (count <= 0) {
+            continue;
+        }
+        const float min_distance =
+            cost_list.MinCost() * define::system::CustomSkinningDistanceReduction;
+        for (int index = 0; index < count; ++index) {
+            cost_list.costs[index] =
+                std::pow(std::max(cost_list.costs[index] - min_distance, 0.0f),
+                         define::system::CustomSkinningDistancePow);
+        }
+
+        if (cost_list.MinCost() < define::system::Epsilon) {
+            cost_list.costs = float4{1.0f, 0.0f, 0.0f, 0.0f};
+            cost_list.data = int4{cost_list.data[0], 0, 0, 0};
+        } else {
+            float inverse_sum = 0.0f;
+            count = cost_list.Count();
+            for (int index = 0; index < count; ++index) {
+                inverse_sum += 1.0f / cost_list.costs[index];
+            }
+            if (inverse_sum <= define::system::Epsilon) {
+                continue;
+            }
+            for (int index = 0; index < count; ++index) {
+                cost_list.costs[index] = (1.0f / cost_list.costs[index]) / inverse_sum;
+            }
+
+            constexpr float InvalidWeight = 0.001f;
+            float weight_sum = 0.0f;
+            for (int index = 0; index < 4; ++index) {
+                if (index >= count || cost_list.costs[index] < InvalidWeight) {
+                    cost_list.costs[index] = 0.0f;
+                    cost_list.data[index] = 0;
+                } else {
+                    weight_sum += cost_list.costs[index];
+                }
+            }
+            if (weight_sum <= define::system::Epsilon) {
+                continue;
+            }
+            for (int index = 0; index < 4; ++index) {
+                cost_list.costs[index] /= weight_sum;
+            }
+        }
+
+        bone_weights[vertex_index] = VirtualMeshBoneWeight(cost_list.data, cost_list.costs);
+    }
+}
+
+void VirtualMesh::ProxyNormalAdjustment(
+    const ClothSerializeData& serialize_data,
+    const TransformRecord& normal_adjustment_transform_record
+)
+{
+    // Ported from Magica Cloth 2: ProxyNormalAdjustment().
+    const int vertex_count = VertexCount();
+    normal_adjustment_rotations.Dispose();
+    normal_adjustment_rotations.AddRange(vertex_count, quaternion{});
+    if (vertex_count <= 0) {
+        return;
+    }
+
+    const auto mode = serialize_data.normal_alignment_setting.alignment_mode;
+    if (mode == NormalAlignmentSettings::AlignmentMode::None) {
+        return;
+    }
+
+    float3 center{};
+    if (mode == NormalAlignmentSettings::AlignmentMode::BoundingBoxCenter) {
+        center = Center(bounding_box);
+    } else if (mode == NormalAlignmentSettings::AlignmentMode::Transform) {
+        if (!normal_adjustment_transform_record.IsValid()) {
+            return;
+        }
+        center = TransformPoint(normal_adjustment_transform_record.position, init_world_to_local);
+    } else {
+        return;
+    }
+
+    if (local_positions.Count() < vertex_count
+        || local_normals.Count() < vertex_count
+        || local_tangents.Count() < vertex_count
+        || vertex_parent_indices.Count() < vertex_count
+        || vertex_child_index_array.Count() < vertex_count) {
+        return;
+    }
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const float3 local_position = local_positions[vertex_index];
+        float3 radiation = Subtract(local_position, center);
+        if (Length(radiation) < define::system::Epsilon) {
+            continue;
+        }
+        radiation = Normalize(radiation);
+
+        const quaternion local_rotation =
+            ToRotation(local_normals[vertex_index], local_tangents[vertex_index]);
+        quaternion adjusted_rotation = local_rotation;
+
+        float3 child_vector{};
+        int child_count = 0;
+        int child_start = 0;
+        data::Unpack12_20(vertex_child_index_array[vertex_index], child_count, child_start);
+        if (child_count > 0) {
+            for (int index = 0; index < child_count; ++index) {
+                const int child_index = vertex_child_data_array[child_start + index];
+                if (child_index >= 0 && child_index < vertex_count) {
+                    child_vector = Add(
+                        child_vector,
+                        Subtract(local_positions[child_index], local_position)
+                    );
+                }
+            }
+
+            if (LengthSquared(child_vector) > define::system::Epsilon) {
+                const float3 tangent = Normalize(child_vector);
+                float3 normal = Cross(tangent, radiation);
+                normal = Cross(normal, tangent);
+                if (LengthSquared(normal) > define::system::Epsilon) {
+                    normal = Normalize(normal);
+                    local_normals[vertex_index] = normal;
+                    local_tangents[vertex_index] = tangent;
+                    adjusted_rotation = ToRotation(normal, tangent);
+                }
+            }
+        } else {
+            const int parent_index = vertex_parent_indices[vertex_index];
+            if (parent_index >= 0 && parent_index < vertex_count) {
+                const float3 parent_position = local_positions[parent_index];
+                const float3 tangent = Normalize(Subtract(local_position, parent_position));
+                float3 normal = Cross(tangent, radiation);
+                normal = Cross(normal, tangent);
+                if (LengthSquared(normal) > define::system::Epsilon) {
+                    normal = Normalize(normal);
+                    local_normals[vertex_index] = normal;
+                    local_tangents[vertex_index] = tangent;
+                    adjusted_rotation = ToRotation(normal, tangent);
+                }
+            }
+        }
+
+        normal_adjustment_rotations[vertex_index] =
+            Multiply(Inverse(local_rotation), adjusted_rotation);
+    }
+}
+
+void VirtualMesh::ConvertProxyMesh(
+    const ClothSerializeData& serialize_data,
+    const TransformRecord& cloth_transform_record,
+    const std::vector<TransformRecord>& custom_skinning_bone_records,
+    const TransformRecord& normal_adjustment_transform_record
+)
+{
+    // Ported subset of MC2 VirtualMesh.ConvertProxyMesh(...). Import/reduction are already
+    // handled before this native finalization stage.
+    if (!IsValid() || VertexCount() <= 0) {
+        return;
+    }
+
+    const bool use_custom_skinning =
+        serialize_data.custom_skinning_setting.enable
+        && serialize_data.cloth_type != ClothType::BoneSpring;
+    std::vector<TransformRecord> custom_skinning_records = custom_skinning_bone_records;
+    if (use_custom_skinning) {
+        SetCustomSkinningBones(cloth_transform_record, custom_skinning_records);
+    } else {
+        custom_skinning_bone_indices.clear();
+    }
+
+    BuildVertexToTriangles();
+    BuildEdgeToTriangles();
+    CreateProxyFixedListAndAABB();
+    if (is_bone_cloth) {
+        BuildTransformBaseLines();
+    } else {
+        BuildMeshBaseLinesFromEdges();
+    }
+
+    ProxyNormalAdjustment(serialize_data, normal_adjustment_transform_record);
+
+    if (is_bone_cloth) {
+        CreateVertexToTransformRotations();
+    }
+    CreateVertexBindPose();
+    BuildEdgeFlags();
+
+    center_world_position = TransformPoint(local_center_position, init_local_to_world);
+    center_world_rotation = init_rotation;
+    center_world_scale = init_scale;
+    if (use_custom_skinning) {
+        CreateCustomSkinning(
+            serialize_data.custom_skinning_setting,
+            custom_skinning_records
+        );
+    }
+    mesh_type = is_bone_cloth ? MeshType::ProxyBoneMesh : MeshType::ProxyMesh;
+    result = Result::Ok();
 }
 
 bool VirtualMesh::CompareSpace(const VirtualMesh& target) const

@@ -527,7 +527,7 @@ void VirtualMeshManager::PostProxyMeshUpdate(
         TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
         if (!team_data.IsProcess()
             || team_data.IsCullingInvisible()
-            || team_data.proxy_mesh_type != VirtualMesh::MeshType::ProxyBoneMesh
+            || team_data.proxy_mesh_type != VirtualMeshType::ProxyBoneMesh
             || !team_data.proxy_common_chunk.IsValid()
             || !team_data.proxy_transform_chunk.IsValid()) {
             continue;

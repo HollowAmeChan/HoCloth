@@ -11,7 +11,7 @@
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
 #include "hocloth/utility/native_collection/fixed_list.hpp"
-#include "hocloth/virtual_mesh/virtual_mesh.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_type.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -148,7 +148,7 @@ public:
         ClothForceMode force_mode = ClothForceMode::None;
         float3 impact_force{};
 
-        VirtualMesh::MeshType proxy_mesh_type = VirtualMesh::MeshType::NormalMesh;
+        VirtualMeshType proxy_mesh_type = VirtualMeshType::NormalMesh;
         DataChunk proxy_transform_chunk;
         DataChunk proxy_common_chunk;
         DataChunk proxy_vertex_child_data_chunk;

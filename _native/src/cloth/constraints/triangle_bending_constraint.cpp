@@ -115,7 +115,7 @@ TriangleBendingConstraint::ConstraintData TriangleBendingConstraint::CreateData(
                 const int4 sorted_vertices = data::PackInt4(vertices);
                 const std::uint64_t sorted_key = data::Pack64(sorted_vertices);
                 if (volume_set.find(sorted_key) != volume_set.end()) {
-                    continue;
+                    return;
                 }
                 volume_set.insert(sorted_key);
 

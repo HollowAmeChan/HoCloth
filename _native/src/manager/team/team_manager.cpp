@@ -520,7 +520,7 @@ int TeamManager::CreateTeam(const ClothParameters& parameters, bool enabled, boo
     data.negative_scale_triangle_sign = float2{1.0f, 1.0f};
     data.negative_scale_quaternion_value = float4{1.0f, 1.0f, 1.0f, 1.0f};
     data.sync_parent_team_ids.Clear();
-    data.proxy_mesh_type = VirtualMesh::MeshType::NormalMesh;
+    data.proxy_mesh_type = VirtualMeshType::NormalMesh;
     team_data_array_[team_id] = data;
     team_mapping_index_array_[team_id] = TeamMappingList{};
     parameter_array_[team_id] = parameters;

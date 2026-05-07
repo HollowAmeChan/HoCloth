@@ -1,6 +1,8 @@
 #pragma once
 
+#include "hocloth/cloth/custom_skinning_settings.hpp"
 #include "hocloth/manager/transform/transform_data.hpp"
+#include "hocloth/manager/transform/transform_record.hpp"
 #include "hocloth/manager/render/render_setup_data_serialization.hpp"
 #include "hocloth/cloth/selection_data.hpp"
 #include "hocloth/utility/math/math_types.hpp"
@@ -14,6 +16,7 @@
 #include "hocloth/virtual_mesh/virtual_mesh_bone_weight.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_raycast_hit.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_type.hpp"
 
 #include <cstdint>
 #include <string>
@@ -24,6 +27,7 @@ namespace hocloth::mc2 {
 
 struct ReductionSettings;
 struct ReductionWorkData;
+struct ClothSerializeData;
 
 // Port target for Magica Cloth 2: Scripts/Core/VirtualMesh/VirtualMesh.cs
 class VirtualMesh {
@@ -36,13 +40,7 @@ public:
     using ShareSerializationData = VirtualMeshSerializationData::ShareSerializationData;
     using UniqueSerializationData = VirtualMeshSerializationData::UniqueSerializationData;
 
-    enum class MeshType {
-        NormalMesh = 0,
-        NormalBoneMesh = 1,
-        ProxyMesh = 2,
-        ProxyBoneMesh = 3,
-        Mapping = 4,
-    };
+    using MeshType = VirtualMeshType;
 
     std::string name;
     Result result = Result::Ok();
@@ -108,6 +106,7 @@ public:
     float3 center_world_scale{1.0f, 1.0f, 1.0f};
 
     void Dispose();
+    void ImportFromRenderSetup(const RenderSetupData& render_setup);
     void CreateProxyFixedListAndAABB();
     void CreateVertexBindPose();
     void CreateVertexToTransformRotations();
@@ -115,15 +114,35 @@ public:
     void BuildEdgeToTriangles();
     void BuildEdgeFlags();
     void ConvertInvalidToFixed();
-    void ApplySelectionAttribute(const SelectionData& selection_data);
+    void ApplySelectionAttribute(
+        const SelectionData& selection_data,
+        bool clear_fixed_move_flags = false
+    );
     void ApplyBoneClothDefaultSelection();
     void BuildBoneConnection(
-        RenderSetupData::BoneConnectionMode connection_mode,
-        bool setup_as_bone_spring = false
+        const RenderSetupData& render_setup
     );
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();
+    void SetCustomSkinningBones(
+        const TransformRecord& cloth_transform_record,
+        std::vector<TransformRecord>& custom_skinning_bone_records
+    );
+    void CreateCustomSkinning(
+        const CustomSkinningSettings& settings,
+        const std::vector<TransformRecord>& custom_skinning_bone_records
+    );
+    void ProxyNormalAdjustment(
+        const ClothSerializeData& serialize_data,
+        const TransformRecord& normal_adjustment_transform_record
+    );
+    void ConvertProxyMesh(
+        const ClothSerializeData& serialize_data,
+        const TransformRecord& cloth_transform_record,
+        const std::vector<TransformRecord>& custom_skinning_bone_records,
+        const TransformRecord& normal_adjustment_transform_record
+    );
     void CalcAverageAndMaxVertexDistanceRun();
     [[nodiscard]] GridMap<int> CreateVertexIndexGridMapRun(float grid_size) const;
     [[nodiscard]] VirtualMeshRaycastHit IntersectRayMesh(
@@ -167,6 +186,7 @@ private:
     };
 
     static float4 CalcMappingVertexWeights(float4 distances);
+    void ImportBoneType(const RenderSetupData& render_setup);
     void DirectMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);
     void SearchMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);
     void CalcDirectMappingWeights(VirtualMesh& proxy_mesh, const std::vector<MappingWorkData>& mapping_work_data, float weight_length);

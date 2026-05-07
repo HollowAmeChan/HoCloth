@@ -286,6 +286,7 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         }
         chain.collider_group_ids = ReadStringArray(chain_dict, "collider_group_ids");
         chain.collision_binding_ids = ReadStringArray(chain_dict, "collision_binding_ids");
+        chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");
 
         for (nb::handle joint_item : ReadSequence(chain_dict, "joints")) {
             nb::dict joint_dict = nb::cast<nb::dict>(joint_item);
