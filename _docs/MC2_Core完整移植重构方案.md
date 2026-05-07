@@ -351,3 +351,10 @@ Blender frame data -> native managers -> simulation step -> output buffers -> Bl
 7. 当前阶段可以暂缓逐步编译；做大块原样移植后，再统一进入编译修复与 WinDbg/cdb 定位。
 
 这条路的关键不再是“能不能跑一个小 smoke”，而是把 MC2 Core 的数据流完整搬过来，让后续调试有稳定坐标系。
+
+## 10. 当前碰撞接入决策
+
+- Blender 侧碰撞主流程改为 MC2 风格：BoneSpring/BoneCloth 组件直接持有链级 `collider_ids`，对应 MC2 `ColliderCollisionConstraint.colliderList`。
+- 旧 ColliderGroup/Binding 仅作为兼容/组织层保留，不再作为新交互主路径；新建链会默认接入已有 collider，新建 collider 会默认挂到已有链，但构建时不会强制全局自动绑定。
+- native runtime 已把骨骼粒子和 collider 统一到 `blender_world`：每帧 `basic_head_positions` 写入 MC2 particle base/step-basic position，collider 使用同一帧 world transform。
+- `joint_radius` 已接到 MC2 `radius_curve_data`，`collider_limit_distance` 已接到 `ColliderCollisionConstraint.limit_distance`，后续碰撞异常应优先从 collider list、世界坐标、radius/limit 参数和 manager lifecycle 四处定位。

@@ -72,6 +72,7 @@ class CompiledSpringBone:
     collider_limit_distance: float
     gravity_strength: float
     gravity_direction: tuple[float, float, float]
+    collider_ids: list[str] = field(default_factory=list)
     collider_group_ids: list[str] = field(default_factory=list)
     collision_binding_ids: list[str] = field(default_factory=list)
     armature_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -230,6 +231,7 @@ class CompiledScene:
                     "center_object_name": chain.center_object_name,
                     "center_bone_name": chain.center_bone_name,
                     "joint_radius": chain.joint_radius,
+                    "collider_ids": list(chain.collider_ids),
                     "collider_group_ids": list(chain.collider_group_ids),
                     "collision_binding_ids": list(chain.collision_binding_ids),
                     "stiffness": chain.stiffness,

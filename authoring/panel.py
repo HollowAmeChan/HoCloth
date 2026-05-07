@@ -158,14 +158,16 @@ def _draw_spring_bone_details(layout, scene, item):
         collision_box.prop(chain.collider_collision_constraint.limit_distance, "use_curve", text="推出距离使用曲线")
         collision_box.prop(chain.collider_collision_constraint.limit_distance, "value", text="推出限制距离")
     params.separator()
-    params.prop(chain, "collider_group_ids", text="碰撞绑定")
+    params.prop(chain, "collider_ids", text="碰撞体")
+    selected_collider_op = params.operator("hocloth.assign_selected_colliders_to_spring_bone", icon="RESTRICT_SELECT_OFF", text="使用选中碰撞体")
+    selected_collider_op.component_id = item.component_id
+    all_collider_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED", text="使用全部碰撞体")
+    all_collider_op.component_id = item.component_id
     sync_op = params.operator("hocloth.sync_spring_bone_joints", icon="FILE_REFRESH", text="同步骨骼")
     sync_op.component_id = item.component_id
-    group_link_op = params.operator("hocloth.assign_all_groups_to_spring_bone", icon="LINKED", text="使用全部碰撞绑定")
-    group_link_op.component_id = item.component_id
 
     group_names = list_component_display_names(scene, _parse_component_id_list(chain.collider_group_ids))
-    if group_names:
+    if False and group_names:
         body.label(text="碰撞绑定", icon="LINKED")
         for group_name in group_names[:4]:
             body.label(text=group_name, icon="DOT")
@@ -328,7 +330,6 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         quick_add.operator("hocloth.add_active_bone_cloth", icon="MOD_CLOTH", text="BoneCloth")
         quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA", text="弹簧骨骼")
         quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE", text="碰撞体")
-        quick_add.operator("hocloth.add_collider_group", icon="GROUP", text="绑定")
         quick_add.operator("hocloth.add_cache_output", icon="EXPORT", text="缓存")
 
         row = layout.row(align=True)
@@ -370,7 +371,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
                 elif item.component_type == "COLLIDER":
                     _draw_collider_details(box, scene, item)
                 elif item.component_type == "COLLIDER_GROUP":
-                    _draw_collider_group_details(box, scene, item)
+                    continue
                 elif item.component_type == "CACHE_OUTPUT":
                     _draw_cache_output_details(box, scene, item)
                 else:

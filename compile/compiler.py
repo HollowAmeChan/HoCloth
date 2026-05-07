@@ -26,6 +26,7 @@ from ..components.properties import (
 
 
 _BONE_AUTHORING_TYPES = {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}
+_AUTO_COLLIDER_BINDING_ID = "__auto_all_colliders__"
 
 
 def _spring_joint_override_map(typed_item) -> dict[str, object]:
@@ -224,6 +225,7 @@ def compile_scene_from_components(scene) -> CompiledScene:
                     collider_limit_distance=float(typed_item.collider_collision_constraint.limit_distance.value),
                     gravity_strength=typed_item.gravity_strength,
                     gravity_direction=tuple(typed_item.gravity_direction),
+                    collider_ids=_parse_component_id_list(getattr(typed_item, "collider_ids", "")),
                     armature_scale=armature_scale,
                     joints=topology_prebuild.joints,
                     lines=topology_prebuild.lines,
@@ -287,7 +289,38 @@ def compile_scene_from_components(scene) -> CompiledScene:
             )
         )
 
-    if compiled.collider_groups:
+    for spring_bone in compiled.spring_bones:
+        direct_collider_ids = [
+            collider_id
+            for collider_id in spring_bone.collider_ids
+            if collider_id in collision_object_id_by_collider_id
+        ]
+        spring_bone.collider_ids = direct_collider_ids
+        if not direct_collider_ids:
+            continue
+
+        binding_id = f"chain::{spring_bone.component_id}::colliders"
+        compiled.collision_bindings.append(
+            CompiledCollisionBinding(
+                binding_id=binding_id,
+                owner_component_id=spring_bone.component_id,
+                source_group_ids=[],
+                collision_object_ids=[
+                    collision_object_id_by_collider_id[collider_id]
+                    for collider_id in direct_collider_ids
+                ],
+            )
+        )
+        spring_bone.collision_binding_ids = [
+            binding_id,
+            *[
+                existing_id
+                for existing_id in spring_bone.collision_binding_ids
+                if existing_id != binding_id
+            ],
+        ]
+
+    if compiled.collision_bindings:
         all_group_ids = {group.component_id for group in compiled.collider_groups}
         all_binding_ids = {binding.binding_id for binding in compiled.collision_bindings}
         for spring_bone in compiled.spring_bones:
@@ -295,6 +328,10 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 spring_bone.collider_group_ids = [
                     group_id for group_id in spring_bone.collider_group_ids if group_id in all_group_ids
                 ]
+                spring_bone.collision_binding_ids = [
+                    binding_id for binding_id in spring_bone.collision_binding_ids if binding_id in all_binding_ids
+                ]
+            elif spring_bone.collision_binding_ids:
                 spring_bone.collision_binding_ids = [
                     binding_id for binding_id in spring_bone.collision_binding_ids if binding_id in all_binding_ids
                 ]

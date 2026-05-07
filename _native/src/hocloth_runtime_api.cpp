@@ -165,6 +165,11 @@ Vec3 RotateVector(const Quat& rotation, const Vec3& value)
     return Vec3{result.x, result.y, result.z};
 }
 
+Vec3 Mc2ToVec3(const mc2::float3& value)
+{
+    return Vec3{value.x, value.y, value.z};
+}
+
 Quat QuaternionFromPitchRoll(float pitch, float roll)
 {
     // Blender pose bones use local +Y as the head-to-tail axis. The compact
@@ -417,6 +422,21 @@ mc2::float3 ToMc2Float3(const Vec3& value)
 mc2::quaternion ToMc2Quaternion(const Quat& value)
 {
     return mc2::quaternion{value.w, value.x, value.y, value.z};
+}
+
+mc2::float3 ResolveParticleBasePosition(
+    const CompiledSpringBone& chain,
+    const RuntimeChainInput* runtime_input,
+    std::size_t joint_index
+)
+{
+    if (
+        runtime_input != nullptr
+        && joint_index < runtime_input->basic_head_positions.size()
+    ) {
+        return ToMc2Float3(runtime_input->basic_head_positions[joint_index]);
+    }
+    return ToMc2Float3(chain.joints[joint_index].rest_head_local);
 }
 
 mc2::ColliderManager::ColliderType CapsuleColliderType(
@@ -711,9 +731,13 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
         mc2::ClothParameters parameters;
         parameters.gravity = IsBoneCloth(chain) ? std::max(0.0f, chain.gravity_strength) : 0.0f;
         parameters.world_gravity_direction = ToMc2Float3(Normalize(chain.gravity_direction));
+        parameters.radius_curve_data = mc2::ConstantCurve(std::max(0.0001f, chain.joint_radius));
+        parameters.damping_curve_data = mc2::ConstantCurve(Clamp01(chain.damping));
         parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
         parameters.collider_collision_constraint.dynamic_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
         parameters.collider_collision_constraint.static_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
+        parameters.collider_collision_constraint.limit_distance =
+            mc2::ConstantCurve(std::max(0.0001f, chain.collider_limit_distance));
 
         const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, IsBoneSpring(chain));
         auto proxy_mesh = BuildRuntimeProxyMesh(chain);
@@ -837,6 +861,7 @@ void SyncJointStatesToMc2Particles(
     const ChainCache& cache = scene.chain_caches[chain_index];
     const mc2::SimulationManager::ParticleChunkSet& chunks =
         scene.mc2_chain_particle_chunks[chain_index];
+    const RuntimeChainInput* runtime_input = FindRuntimeChainInput(scene.runtime_inputs, chain.component_id);
 
     for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
         const int particle_index = chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);
@@ -845,10 +870,26 @@ void SyncJointStatesToMc2Particles(
         }
 
         const CompiledSpringJoint& joint = chain.joints[joint_index];
-        const Vec3 point = ToAnglePoint(cache.joint_states[joint_index]);
-        const float point_scale = std::max(0.05f, joint.length);
-        const mc2::float3 base_position = ToMc2Float3(joint.rest_head_local);
-        const mc2::float3 offset{point.x * point_scale, point.y * point_scale, 0.0f};
+        const int driven_joint_index = joint.parent_index >= 0
+            ? joint.parent_index
+            : static_cast<int>(joint_index);
+        const CompiledSpringJoint& driven_joint =
+            chain.joints[static_cast<std::size_t>(driven_joint_index)];
+        const Vec3 point = ToAnglePoint(cache.joint_states[static_cast<std::size_t>(driven_joint_index)]);
+        const float point_scale = std::max(0.05f, driven_joint.length);
+        const mc2::float3 base_position = ResolveParticleBasePosition(chain, runtime_input, joint_index);
+        Quat basis_rotation = driven_joint.rest_local_rotation;
+        if (
+            runtime_input != nullptr
+            && static_cast<std::size_t>(driven_joint_index) < runtime_input->basic_rotations.size()
+        ) {
+            basis_rotation = runtime_input->basic_rotations[static_cast<std::size_t>(driven_joint_index)];
+        }
+        const Vec3 world_offset = RotateVector(
+            basis_rotation,
+            Vec3{-point.x * point_scale, 0.0f, -point.y * point_scale}
+        );
+        const mc2::float3 offset = ToMc2Float3(world_offset);
         const mc2::float3 next_position{
             base_position.x + offset.x,
             base_position.y + offset.y,
@@ -874,15 +915,28 @@ void ApplyMc2ParticlesToJointStates(
     }
 
     const CompiledSpringBone& chain = scene.compiled_scene.spring_bones[chain_index];
+    if (IsBoneCloth(chain)) {
+        return;
+    }
+
     ChainCache& cache = scene.chain_caches[chain_index];
     const mc2::SimulationManager::ParticleChunkSet& chunks =
         scene.mc2_chain_particle_chunks[chain_index];
+    const RuntimeChainInput* runtime_input = FindRuntimeChainInput(scene.runtime_inputs, chain.component_id);
+
+    std::vector<Vec3> accumulated_points(chain.joints.size(), Vec3{});
+    std::vector<int> accumulated_counts(chain.joints.size(), 0);
 
     for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
         const CompiledSpringJoint& joint = chain.joints[joint_index];
         if (joint.parent_index < 0) {
             continue;
         }
+        const std::size_t driven_joint_index = static_cast<std::size_t>(joint.parent_index);
+        if (driven_joint_index >= chain.joints.size()) {
+            continue;
+        }
+        const CompiledSpringJoint& driven_joint = chain.joints[driven_joint_index];
 
         const int particle_index = chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);
         if (particle_index < 0 || particle_index >= scene.mc2_simulation_manager.NextPositions().Length()) {
@@ -891,13 +945,37 @@ void ApplyMc2ParticlesToJointStates(
 
         const mc2::float3 next_position = scene.mc2_simulation_manager.NextPositions()[particle_index];
         const mc2::float3 base_position = scene.mc2_simulation_manager.BasePositions()[particle_index];
-        const float point_scale = std::max(0.05f, joint.length);
-        const Vec3 point{
-            (next_position.x - base_position.x) / point_scale,
-            (next_position.y - base_position.y) / point_scale,
+        const float point_scale = std::max(0.05f, driven_joint.length);
+        Vec3 world_offset = Sub(Mc2ToVec3(next_position), Mc2ToVec3(base_position));
+        Quat basis_rotation = driven_joint.rest_local_rotation;
+        if (
+            runtime_input != nullptr
+            && driven_joint_index < runtime_input->basic_rotations.size()
+        ) {
+            basis_rotation = runtime_input->basic_rotations[driven_joint_index];
+        }
+        const Vec3 local_offset = RotateVector(Conjugate(basis_rotation), world_offset);
+        Vec3 point{
+            -local_offset.x / point_scale,
+            -local_offset.z / point_scale,
             0.0f,
         };
-        FromAnglePoint(point, cache.joint_states[joint_index]);
+        if (IsBoneCloth(chain)) {
+            point = ClampVectorLength(point, 0.35f);
+        }
+        accumulated_points[driven_joint_index] = Add(accumulated_points[driven_joint_index], point);
+        accumulated_counts[driven_joint_index] += 1;
+    }
+
+    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+        if (accumulated_counts[joint_index] <= 0) {
+            continue;
+        }
+        const Vec3 average_point = Scale(
+            accumulated_points[joint_index],
+            1.0f / static_cast<float>(accumulated_counts[joint_index])
+        );
+        FromAnglePoint(average_point, cache.joint_states[joint_index]);
     }
 }
 

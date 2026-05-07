@@ -90,6 +90,7 @@ struct CompiledSpringBone {
     float collider_limit_distance = 0.05f;
     float gravity_strength = 0.0f;
     Vec3 gravity_direction{0.0f, -1.0f, 0.0f};
+    std::vector<std::string> collider_ids;
     std::vector<std::string> collider_group_ids;
     std::vector<std::string> collision_binding_ids;
     std::vector<int> collision_bone_indices;

@@ -284,6 +284,7 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         if (chain_dict.contains("armature_scale")) {
             chain.armature_scale = ReadVec3(chain_dict["armature_scale"]);
         }
+        chain.collider_ids = ReadStringArray(chain_dict, "collider_ids");
         chain.collider_group_ids = ReadStringArray(chain_dict, "collider_group_ids");
         chain.collision_binding_ids = ReadStringArray(chain_dict, "collision_binding_ids");
         chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");

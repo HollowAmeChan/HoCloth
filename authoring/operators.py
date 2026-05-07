@@ -87,6 +87,111 @@ def _find_collider_group_component(scene, component_id: str):
     )
 
 
+def _parse_component_id_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _join_component_id_list(component_ids: list[str]) -> str:
+    ordered: list[str] = []
+    for component_id in component_ids:
+        if component_id and component_id not in ordered:
+            ordered.append(component_id)
+    return ", ".join(ordered)
+
+
+def _main_component_item(scene, component_id: str):
+    return next(
+        (item for item in scene.hocloth_components if item.component_id == component_id),
+        None,
+    )
+
+
+def _ensure_default_collider_group(scene):
+    for group in scene.hocloth_collider_group_components:
+        main_item = _main_component_item(scene, group.component_id)
+        if main_item is not None and main_item.enabled:
+            return main_item, group
+
+    main_item, group = create_component(scene, "COLLIDER_GROUP", "Collision Binding: All Colliders")
+    main_item.ui_expanded = False
+    return main_item, group
+
+
+def _append_collider_to_group(group, collider_id: str) -> bool:
+    collider_ids = _parse_component_id_list(group.collider_ids)
+    if collider_id in collider_ids:
+        return False
+    collider_ids.append(collider_id)
+    group.collider_ids = _join_component_id_list(collider_ids)
+    return True
+
+
+def _append_collider_to_chain(chain, collider_id: str) -> bool:
+    collider_ids = _parse_component_id_list(getattr(chain, "collider_ids", ""))
+    if collider_id in collider_ids:
+        return False
+    collider_ids.append(collider_id)
+    chain.collider_ids = _join_component_id_list(collider_ids)
+    return True
+
+
+def _link_collider_to_all_chains(scene, collider_id: str) -> int:
+    linked_count = 0
+    for chain in scene.hocloth_spring_bone_components:
+        if _append_collider_to_chain(chain, collider_id):
+            linked_count += 1
+    return linked_count
+
+
+def _auto_link_existing_colliders_to_chain(scene, chain) -> int:
+    linked_count = 0
+    for collider in scene.hocloth_collider_components:
+        if collider.collider_object is not None and _append_collider_to_chain(chain, collider.component_id):
+            linked_count += 1
+    return linked_count
+
+
+def _append_group_to_chain(chain, group_id: str) -> bool:
+    group_ids = _parse_component_id_list(chain.collider_group_ids)
+    if group_id in group_ids:
+        return False
+    group_ids.append(group_id)
+    chain.collider_group_ids = _join_component_id_list(group_ids)
+    return True
+
+
+def _link_group_to_all_chains(scene, group_id: str) -> int:
+    linked_count = 0
+    for chain in scene.hocloth_spring_bone_components:
+        if _append_group_to_chain(chain, group_id):
+            linked_count += 1
+    return linked_count
+
+
+def _auto_link_existing_groups_to_chain(scene, chain) -> int:
+    linked_count = 0
+    for group in scene.hocloth_collider_group_components:
+        main_item = _main_component_item(scene, group.component_id)
+        if main_item is not None and main_item.enabled and _append_group_to_chain(chain, group.component_id):
+            linked_count += 1
+    return linked_count
+
+
+def _sync_default_collision_binding(scene) -> tuple[int, int]:
+    collider_ids = [
+        collider.component_id
+        for collider in scene.hocloth_collider_components
+        if collider.collider_object is not None
+    ]
+    if not collider_ids:
+        return 0, 0
+
+    linked_chains = 0
+    for collider_id in collider_ids:
+        linked_chains += _link_collider_to_all_chains(scene, collider_id)
+    return len(collider_ids), linked_chains
+
+
 def _build_runtime_from_scene(context, report=None) -> bool:
     scene = context.scene
     stop_live_runtime(scene, "Live runtime stopped")
@@ -155,6 +260,7 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
         )
         typed_item.armature_object = context.object
         typed_item.root_bone_name = extracted.root_bone_name
+        linked_colliders = _auto_link_existing_colliders_to_chain(context.scene, typed_item)
         sync_joint_override_names(typed_item, extracted.bone_names)
         main_item.display_name = f"Spring Bone: {extracted.root_bone_name}"
         branching_bones = resolve_bone_chain_branching_names(
@@ -169,6 +275,7 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
                 if branching_bones
                 else ""
             )
+            + (f"; linked {linked_colliders} colliders" if linked_colliders else "")
         )
         return {"FINISHED"}
 
@@ -193,6 +300,7 @@ class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
         typed_item.armature_object = context.object
         typed_item.root_bone_name = extracted.root_bone_name
         typed_item.spring_constraint.use_spring = False
+        linked_colliders = _auto_link_existing_colliders_to_chain(context.scene, typed_item)
         sync_joint_override_names(typed_item, extracted.bone_names)
         main_item.display_name = f"Bone Cloth: {extracted.root_bone_name}"
         branching_bones = resolve_bone_chain_branching_names(
@@ -207,6 +315,7 @@ class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
                 if branching_bones
                 else ""
             )
+            + (f"; linked {linked_colliders} colliders" if linked_colliders else "")
             + "; native runtime is still using the current bone-particle bridge"
         )
         return {"FINISHED"}
@@ -231,7 +340,11 @@ class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
         typed_item.collider_object = active_object
         typed_item.shape_type = "SPHERE" if active_object.type == "EMPTY" else "CAPSULE"
         main_item.display_name = f"Collider: {active_object.name}"
-        context.scene.hocloth_runtime_status = f"Added collider from {active_object.name}"
+        linked_chains = _link_collider_to_all_chains(context.scene, main_item.component_id)
+        context.scene.hocloth_runtime_status = (
+            f"Added collider from {active_object.name}"
+            + (f"; linked {linked_chains} chains" if linked_chains else "")
+        )
         return {"FINISHED"}
 
 
@@ -241,8 +354,18 @@ class HOCLOTH_OT_add_collider_group(bpy.types.Operator):
     bl_description = "Create a collision-binding component"
 
     def execute(self, context):
-        create_component(context.scene, "COLLIDER_GROUP", "Collision Binding")
-        context.scene.hocloth_runtime_status = "Added collision binding"
+        main_item, group = create_component(context.scene, "COLLIDER_GROUP", "Collision Binding")
+        collider_ids = [
+            collider.component_id
+            for collider in context.scene.hocloth_collider_components
+            if collider.collider_object is not None
+        ]
+        group.collider_ids = _join_component_id_list(collider_ids)
+        linked_chains = _link_group_to_all_chains(context.scene, main_item.component_id)
+        context.scene.hocloth_runtime_status = (
+            f"Added collision binding with {len(collider_ids)} colliders"
+            + (f"; linked {linked_chains} chains" if linked_chains else "")
+        )
         return {"FINISHED"}
 
 
@@ -282,6 +405,33 @@ class HOCLOTH_OT_assign_selected_colliders_to_group(bpy.types.Operator):
         ]
         group.collider_ids = ", ".join(matched_ids)
         context.scene.hocloth_runtime_status = f"已将 {len(matched_ids)} 个碰撞体加入绑定"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_assign_selected_colliders_to_spring_bone(bpy.types.Operator):
+    bl_idname = "hocloth.assign_selected_colliders_to_spring_bone"
+    bl_label = "Use Selected Colliders"
+    bl_description = "Use the selected HoCloth collider components on this BoneSpring/BoneCloth"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        chain = _find_spring_bone_component(context.scene, self.component_id)
+        if chain is None:
+            self.report({"ERROR"}, "BoneSpring/BoneCloth component was not found.")
+            return {"CANCELLED"}
+
+        selected_object_names = {obj.name for obj in context.selected_objects}
+        matched_ids = [
+            collider.component_id
+            for collider in context.scene.hocloth_collider_components
+            if collider.collider_object is not None and collider.collider_object.name in selected_object_names
+        ]
+        chain.collider_ids = _join_component_id_list(matched_ids)
+        context.scene.hocloth_runtime_status = (
+            f"Assigned {len(matched_ids)} colliders to "
+            f"{chain.root_bone_name or 'BoneSpring/BoneCloth'}"
+        )
         return {"FINISHED"}
 
 
@@ -405,8 +555,8 @@ class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
 
 class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
     bl_idname = "hocloth.assign_all_groups_to_spring_bone"
-    bl_label = "Use All Collision Bindings"
-    bl_description = "Link all current collision bindings to this spring bone"
+    bl_label = "Use All Colliders"
+    bl_description = "Assign all current collider components to this BoneSpring/BoneCloth"
 
     component_id: bpy.props.StringProperty(name="Component ID")
 
@@ -416,9 +566,13 @@ class HOCLOTH_OT_assign_all_groups_to_spring_bone(bpy.types.Operator):
             self.report({"ERROR"}, "Spring-bone component was not found.")
             return {"CANCELLED"}
 
-        group_ids = [item.component_id for item in context.scene.hocloth_collider_group_components]
-        chain.collider_group_ids = ", ".join(group_ids)
-        context.scene.hocloth_runtime_status = f"Linked {len(group_ids)} collision bindings to spring bone"
+        collider_ids = [
+            collider.component_id
+            for collider in context.scene.hocloth_collider_components
+            if collider.collider_object is not None
+        ]
+        chain.collider_ids = _join_component_id_list(collider_ids)
+        context.scene.hocloth_runtime_status = f"Assigned {len(collider_ids)} colliders to BoneSpring/BoneCloth"
         return {"FINISHED"}
 
 
@@ -742,6 +896,7 @@ CLASSES = (
     HOCLOTH_OT_add_collider_group,
     HOCLOTH_OT_add_cache_output,
     HOCLOTH_OT_assign_selected_colliders_to_group,
+    HOCLOTH_OT_assign_selected_colliders_to_spring_bone,
     HOCLOTH_OT_remove_component,
     HOCLOTH_OT_apply_spring_bone_preset,
     HOCLOTH_OT_sync_spring_bone_joints,
