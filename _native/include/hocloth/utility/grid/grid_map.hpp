@@ -43,6 +43,21 @@ public:
         grid_map_.reserve(static_cast<std::size_t>(capacity));
     }
 
+    void Dispose()
+    {
+        grid_map_.clear();
+    }
+
+    [[nodiscard]] const Map& GetMultiHashMap() const
+    {
+        return grid_map_;
+    }
+
+    [[nodiscard]] Map& GetMultiHashMap()
+    {
+        return grid_map_;
+    }
+
     [[nodiscard]] const Map& GetMap() const
     {
         return grid_map_;
@@ -86,6 +101,12 @@ public:
         return grids;
     }
 
+    static std::vector<int3> GetArea(int3 start_grid, int3 end_grid, const Map& grid_map)
+    {
+        (void)grid_map;
+        return GetArea(start_grid, end_grid);
+    }
+
     static std::vector<int3> GetArea(const float3& position, float radius, float grid_size)
     {
         const int3 min_grid = GetGrid(
@@ -97,6 +118,17 @@ public:
             grid_size
         );
         return GetArea(min_grid, max_grid);
+    }
+
+    static std::vector<int3> GetArea(
+        const float3& position,
+        float radius,
+        const Map& grid_map,
+        float grid_size
+    )
+    {
+        (void)grid_map;
+        return GetArea(position, radius, grid_size);
     }
 
     static int3 GetGrid(const float3& position, float grid_size)

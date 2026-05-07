@@ -32,6 +32,16 @@ constexpr float kMc2BoneSpringDistanceStiffness = 0.5f;
 constexpr float kMc2BoneSpringTetherCompressionLimit = 0.8f;
 constexpr float kMc2BoneSpringCollisionFriction = 0.5f;
 
+bool IsBoneCloth(const CompiledSpringBone& chain)
+{
+    return chain.cloth_type == "BoneCloth" || chain.component_type == "BONE_CLOTH";
+}
+
+bool IsBoneSpring(const CompiledSpringBone& chain)
+{
+    return !IsBoneCloth(chain);
+}
+
 float Clamp(float value, float low, float high)
 {
     return std::clamp(value, low, high);
@@ -492,12 +502,19 @@ struct RuntimeModule::SceneState {
 std::string CompiledScene::Summary() const
 {
     std::size_t total_bones = 0;
+    std::size_t bone_cloths = 0;
     for (const CompiledSpringBone& chain : spring_bones) {
         total_bones += chain.joints.size();
+        if (chain.cloth_type == "BoneCloth" || chain.component_type == "BONE_CLOTH") {
+            ++bone_cloths;
+        }
     }
+    const std::size_t bone_springs = spring_bones.size() - bone_cloths;
 
     std::ostringstream stream;
     stream << "spring_bones=" << spring_bones.size()
+           << ", bone_cloths=" << bone_cloths
+           << ", bone_springs=" << bone_springs
            << ", bones=" << total_bones
            << ", colliders=0"
            << ", collider_groups=0"
@@ -520,6 +537,11 @@ std::string RuntimeBackendStatus(const RuntimeModule::SceneState& scene)
            << " mc2_particles=" << scene.mc2_simulation_manager.ParticleCount()
            << " mc2_proxy_vertices=" << scene.mc2_virtual_mesh_manager.ProxyVertexCount()
            << " mc2_step_particles=" << scene.mc2_simulation_manager.ProcessingStepParticles().Count()
+           << " bone_cloths=" << std::count_if(
+               scene.compiled_scene.spring_bones.begin(),
+               scene.compiled_scene.spring_bones.end(),
+               IsBoneCloth
+           )
            << " mesh_writeback_targets=" << scene.compiled_scene.mesh_writeback_targets.size();
     return stream.str();
 }
@@ -565,7 +587,7 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
         const mc2::float4x4 local_to_world =
             mc2::TRS(position, rotation, mc2::float3{1.0f, 1.0f, 1.0f});
 
-        mesh->attributes.Add(is_root ? mc2::VertexAttribute::Fixed() : mc2::VertexAttribute::Move());
+        mesh->attributes.Add(mc2::VertexAttribute::Invalid());
         mesh->local_positions.Add(position);
         mesh->local_normals.Add(mc2::float3{0.0f, 1.0f, 0.0f});
         mesh->local_tangents.Add(mc2::float3{1.0f, 0.0f, 0.0f});
@@ -607,15 +629,17 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
         mesh->transform_data.id_array[joint_index] = transform_id;
         mesh->transform_data.parent_id_array[joint_index] = parent_transform_id;
         mesh->transform_data.name_array[joint_index] = joint.name;
-    }
-
-    for (const CompiledSpringLine& line : chain.lines) {
-        if (line.start_index >= 0 && line.end_index >= 0) {
-            mesh->edges.Add(mc2::int2{line.start_index, line.end_index});
-            mesh->edge_flags.Add(mc2::BitFlag8{});
+        if (is_root) {
+            mesh->transform_data.root_id_list.push_back(transform_id);
         }
     }
 
+    const mc2::RenderSetupData::BoneConnectionMode connection_mode =
+        IsBoneCloth(chain)
+            ? mc2::RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh
+            : mc2::RenderSetupData::BoneConnectionMode::Line;
+    mesh->BuildBoneConnection(connection_mode, IsBoneSpring(chain));
+    mesh->ApplyBoneClothDefaultSelection();
     mesh->BuildVertexToTriangles();
     mesh->BuildEdgeToTriangles();
     mesh->BuildBaseLinesFromParents();
@@ -648,11 +672,13 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
 
     for (const CompiledSpringBone& chain : scene.compiled_scene.spring_bones) {
         mc2::ClothParameters parameters;
+        parameters.gravity = IsBoneCloth(chain) ? std::max(0.0f, chain.gravity_strength) : 0.0f;
+        parameters.world_gravity_direction = ToMc2Float3(Normalize(chain.gravity_direction));
         parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
         parameters.collider_collision_constraint.dynamic_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
         parameters.collider_collision_constraint.static_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
 
-        const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, true);
+        const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, IsBoneSpring(chain));
         auto proxy_mesh = BuildRuntimeProxyMesh(chain);
         mc2::VirtualMeshContainer proxy_container(proxy_mesh);
         scene.mc2_virtual_mesh_manager.RegisterProxyMesh(
@@ -954,6 +980,9 @@ void ApplyMc2SpringConstraint(
     JointState& joint_state
 )
 {
+    if (!IsBoneSpring(chain)) {
+        return;
+    }
     if (!chain.use_spring || chain.spring_power <= 1.0e-6f) {
         return;
     }
@@ -1032,8 +1061,9 @@ void StepChain(
     const Vec3 center_velocity = runtime_input
         ? Sub(runtime_input->center_linear_velocity, runtime_input->root_linear_velocity)
         : Vec3{};
+    const bool is_bone_cloth = IsBoneCloth(chain);
     const Vec3 gravity_direction = Normalize(chain.gravity_direction);
-    (void)gravity_direction;
+    const float gravity_strength = is_bone_cloth ? std::max(0.0f, chain.gravity_strength) : 0.0f;
 
     if (
         runtime_input != nullptr
@@ -1129,6 +1159,21 @@ void StepChain(
                     0.0f,
                 }
             );
+            if (gravity_strength > 1.0e-6f) {
+                const float gravity_gain =
+                    gravity_strength
+                    * std::max(0.0f, joint.gravity_scale)
+                    * (0.0009f + depth_ratio * 0.0012f)
+                    * std::sqrt(std::max(0.05f, joint.length));
+                shifted_point = Add(
+                    shifted_point,
+                    Vec3{
+                        gravity_direction.x * gravity_gain,
+                        -gravity_direction.y * gravity_gain,
+                        0.0f,
+                    }
+                );
+            }
             FromAnglePoint(shifted_point, state);
             const float particle_speed_limit = chain.inertia_particle_speed_limit_enabled
                 ? std::max(0.0f, chain.inertia_particle_speed_limit)
@@ -1274,7 +1319,7 @@ BuildSceneResult RuntimeModule::BuildScene(CompiledScene compiled_scene)
     result.handle = handle;
     result.summary = scene->compiled_scene.Summary();
     result.backend = "native_mc2_particle_bridge";
-    result.build_message = "HoCloth native MC2 particle/collider bridge active.";
+    result.build_message = "HoCloth native MC2 particle/collider bridge active; BoneCloth chains use cloth gravity and non-spring teams.";
     result.backend_status = RuntimeBackendStatus(*scene);
 
     scenes_[handle] = std::move(scene);

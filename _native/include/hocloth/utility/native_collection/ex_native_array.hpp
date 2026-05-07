@@ -2,10 +2,12 @@
 
 #include "hocloth/utility/native_collection/data_chunk.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
+#include "hocloth/utility/native_collection/native_array_extensions.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -126,6 +128,16 @@ public:
         return chunk;
     }
 
+    DataChunk AddRange(const T* values, int length)
+    {
+        if (length <= 0 || values == nullptr) {
+            return DataChunk::Empty();
+        }
+        const DataChunk chunk = AddRange(length);
+        std::copy(values, values + length, storage_.begin() + chunk.start_index);
+        return chunk;
+    }
+
     DataChunk AddRange(const ExNativeArray<T>& values)
     {
         if (!values.IsValid() || values.Count() <= 0) {
@@ -170,6 +182,33 @@ public:
         const DataChunk chunk = AddRange(1);
         storage_[static_cast<std::size_t>(chunk.start_index)] = value;
         return chunk;
+    }
+
+    [[nodiscard]] std::vector<T> ToArray() const
+    {
+        return storage_;
+    }
+
+    void CopyTo(std::vector<T>& values) const
+    {
+        values = storage_;
+    }
+
+    void CopyFrom(const std::vector<T>& values)
+    {
+        assert(static_cast<int>(values.size()) <= Length());
+        std::copy(values.begin(), values.end(), storage_.begin());
+        use_count_ = std::max(use_count_, static_cast<int>(values.size()));
+    }
+
+    template <typename U>
+    void CopyFromTypeChange(const std::vector<U>& values)
+    {
+        const std::vector<std::uint8_t> bytes = native_array_extensions::ToRawBytes(values);
+        const std::vector<T> converted = native_array_extensions::FromRawBytes<T>(bytes);
+        assert(static_cast<int>(converted.size()) <= Length());
+        std::copy(converted.begin(), converted.end(), storage_.begin());
+        use_count_ = std::max(use_count_, static_cast<int>(converted.size()));
     }
 
     DataChunk Expand(DataChunk chunk, int new_data_length)
@@ -291,6 +330,44 @@ public:
     [[nodiscard]] std::vector<T>& Data()
     {
         return storage_;
+    }
+
+    [[nodiscard]] const std::vector<T>& GetNativeArray() const
+    {
+        return storage_;
+    }
+
+    [[nodiscard]] std::vector<T>& GetNativeArray()
+    {
+        return storage_;
+    }
+
+    struct SerializationData {
+        int use_count = 0;
+        int length = 0;
+        std::vector<DataChunk> empty_chunks;
+        std::vector<std::uint8_t> array_bytes;
+    };
+
+    [[nodiscard]] SerializationData Serialize() const
+    {
+        SerializationData data;
+        data.use_count = use_count_;
+        data.length = Length();
+        data.empty_chunks = empty_chunks_;
+        data.array_bytes = native_array_extensions::ToRawBytes(storage_);
+        return data;
+    }
+
+    bool Deserialize(const SerializationData& data)
+    {
+        storage_ = native_array_extensions::FromRawBytes<T>(data.array_bytes);
+        if (data.length > static_cast<int>(storage_.size())) {
+            storage_.resize(static_cast<std::size_t>(data.length));
+        }
+        empty_chunks_ = data.empty_chunks;
+        use_count_ = std::min(data.use_count, Length());
+        return true;
     }
 
     [[nodiscard]] std::string ToSummary() const

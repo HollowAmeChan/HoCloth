@@ -3,6 +3,7 @@
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
 #include <algorithm>
+#include <exception>
 
 namespace hocloth::mc2 {
 
@@ -37,42 +38,61 @@ void PreBuildManager::ShareDeserializationData::Deserialize(
     render_setup_data_list.clear();
     render_mesh_list.clear();
     proxy_mesh.reset();
+    distance_constraint_data = DistanceConstraint::ConstraintData{};
+    bending_constraint_data = TriangleBendingConstraint::ConstraintData{};
+    inertia_constraint_data = InertiaConstraint::ConstraintData{};
 
-    const ResultStatus validate_result = share_prebuild_data.DataValidate();
-    if (validate_result.IsFailed()) {
-        result.Merge(validate_result);
-        return;
-    }
+    try {
+        const ResultStatus validate_result = share_prebuild_data.DataValidate();
+        if (validate_result.IsFailed()) {
+            result.Merge(validate_result);
+            return;
+        }
 
-    build_id = share_prebuild_data.build_id;
-    render_setup_data_list.reserve(share_prebuild_data.render_setup_data_list.size());
-    for (const RenderSetupData::ShareSerializationData& setup_data
-         : share_prebuild_data.render_setup_data_list) {
-        render_setup_data_list.push_back(RenderSetupData::ShareDeserialize(setup_data));
-    }
-    proxy_mesh = std::make_shared<VirtualMesh>(
-        VirtualMeshSerializationData::ShareDeserialize(share_prebuild_data.proxy_mesh)
-    );
-    proxy_mesh->is_managed = true;
-
-    render_mesh_list.reserve(share_prebuild_data.render_mesh_list.size());
-    for (const VirtualMesh::ShareSerializationData& mesh_data : share_prebuild_data.render_mesh_list) {
-        auto mesh = std::make_shared<VirtualMesh>(
-            VirtualMeshSerializationData::ShareDeserialize(mesh_data)
+        build_id = share_prebuild_data.build_id;
+        render_setup_data_list.reserve(share_prebuild_data.render_setup_data_list.size());
+        for (const RenderSetupData::ShareSerializationData& setup_data
+             : share_prebuild_data.render_setup_data_list) {
+            render_setup_data_list.push_back(RenderSetupData::ShareDeserialize(setup_data));
+        }
+        proxy_mesh = std::make_shared<VirtualMesh>(
+            VirtualMeshSerializationData::ShareDeserialize(share_prebuild_data.proxy_mesh)
         );
-        mesh->is_managed = true;
-        render_mesh_list.push_back(std::move(mesh));
-    }
+        proxy_mesh->is_managed = true;
 
-    distance_constraint_data = share_prebuild_data.distance_constraint_data;
-    bending_constraint_data = share_prebuild_data.bending_constraint_data;
-    inertia_constraint_data = share_prebuild_data.inertia_constraint_data;
-    result.SetSuccess();
+        render_mesh_list.reserve(share_prebuild_data.render_mesh_list.size());
+        for (const VirtualMesh::ShareSerializationData& mesh_data : share_prebuild_data.render_mesh_list) {
+            auto mesh = std::make_shared<VirtualMesh>(
+                VirtualMeshSerializationData::ShareDeserialize(mesh_data)
+            );
+            mesh->is_managed = true;
+            render_mesh_list.push_back(std::move(mesh));
+        }
+
+        distance_constraint_data = share_prebuild_data.distance_constraint_data;
+        bending_constraint_data = share_prebuild_data.bending_constraint_data;
+        inertia_constraint_data = share_prebuild_data.inertia_constraint_data;
+        result.SetSuccess();
+    } catch (const std::exception&) {
+        result.SetError(ResultCode::Deserialization_Exception);
+    } catch (...) {
+        result.SetError(ResultCode::Deserialization_Exception);
+    }
 }
 
 int PreBuildManager::ShareDeserializationData::RenderMeshCount() const
 {
     return static_cast<int>(render_mesh_list.size());
+}
+
+bool PreBuildManager::ShareDeserializationData::IsSuccess() const
+{
+    return result.IsSuccess();
+}
+
+bool PreBuildManager::ShareDeserializationData::IsFailed() const
+{
+    return result.IsFailed();
 }
 
 VirtualMeshContainer PreBuildManager::ShareDeserializationData::GetProxyMeshContainer() const
@@ -86,6 +106,17 @@ VirtualMeshContainer PreBuildManager::ShareDeserializationData::GetRenderMeshCon
         return VirtualMeshContainer();
     }
     return VirtualMeshContainer(render_mesh_list[static_cast<std::size_t>(index)]);
+}
+
+std::string PreBuildManager::ShareDeserializationData::ToString() const
+{
+    std::ostringstream stream;
+    stream << "[" << build_id << "] refcnt:" << reference_count
+           << " result:" << result.GetResultString()
+           << " proxyMesh:" << (proxy_mesh != nullptr ? "true" : "false")
+           << " renderSetup:" << render_setup_data_list.size()
+           << " renderMesh:" << render_mesh_list.size();
+    return stream.str();
 }
 
 Result PreBuildManager::Initialize()
@@ -159,8 +190,32 @@ void PreBuildManager::UnregisterPreBuildData(const SharePreBuildData& share_data
     }
     ShareDeserializationData* data = GetPreBuildData(share_data);
     if (data != nullptr) {
-        --data->reference_count;
+        data->reference_count = std::max(0, data->reference_count - 1);
     }
+}
+
+int PreBuildManager::Warmup(const PreBuildDataLibrary& library, bool reference_increment)
+{
+    return Warmup(library.share_prebuild_data_list, reference_increment);
+}
+
+int PreBuildManager::Warmup(
+    const std::vector<SharePreBuildData>& share_data_list,
+    bool reference_increment
+)
+{
+    if (!initialized_) {
+        return 0;
+    }
+
+    int registered_count = 0;
+    for (const SharePreBuildData& share_data : share_data_list) {
+        ShareDeserializationData* data = RegisterPreBuildData(share_data, reference_increment);
+        if (data != nullptr) {
+            ++registered_count;
+        }
+    }
+    return registered_count;
 }
 
 void PreBuildManager::UnloadUnusedData()
@@ -181,9 +236,7 @@ std::string PreBuildManager::InformationString() const
     stream << "Count:" << deserialization_dict_.size();
     for (const auto& key_value : deserialization_dict_) {
         const ShareDeserializationData& data = key_value.second;
-        stream << " [" << data.build_id << "] refcnt:" << data.reference_count
-               << " result:" << data.result.GetResultString()
-               << " proxyMesh:" << (data.proxy_mesh != nullptr ? "true" : "false");
+        stream << ' ' << data.ToString();
     }
     return stream.str();
 }

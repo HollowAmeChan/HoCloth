@@ -36,6 +36,15 @@ struct NormalAlignmentSettings final : public IValid, public IDataValidate {
     {
         return *this;
     }
+
+    [[nodiscard]] int GetHashCode() const
+    {
+        int hash = static_cast<int>(alignment_mode) * 105;
+        if (adjustment_transform_id != 0) {
+            hash += adjustment_transform_id;
+        }
+        return hash;
+    }
 };
 
 }  // namespace hocloth::mc2

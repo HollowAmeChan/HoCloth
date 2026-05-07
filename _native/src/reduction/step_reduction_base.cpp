@@ -5,41 +5,11 @@
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <limits>
 #include <unordered_set>
 #include <utility>
 
 namespace hocloth::mc2 {
-
-namespace {
-
-using VertexLinkMap = std::unordered_map<std::uint16_t, std::vector<std::uint16_t>>;
-
-void UniqueAdd(VertexLinkMap& map, std::uint16_t key, std::uint16_t value)
-{
-    std::vector<std::uint16_t>& values = map[key];
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
-        values.push_back(value);
-    }
-}
-
-int ResolveJoinRoot(const std::vector<int>& join_indices, int index)
-{
-    if (index < 0 || index >= static_cast<int>(join_indices.size())) {
-        return index;
-    }
-
-    int guard = 0;
-    while (join_indices[static_cast<std::size_t>(index)] >= 0
-        && guard < static_cast<int>(join_indices.size())) {
-        index = join_indices[static_cast<std::size_t>(index)];
-        ++guard;
-    }
-    return index;
-}
-
-}  // namespace
 
 StepReductionBase::StepReductionBase(
     std::string name,
@@ -129,16 +99,7 @@ ResultCode StepReductionBase::ExceptionCode() const
 
 int StepReductionBase::CountLinks(int vertex_index) const
 {
-    if (work_data_ == nullptr
-        || vertex_index < 0
-        || vertex_index > std::numeric_limits<std::uint16_t>::max()) {
-        return 0;
-    }
-    const auto found =
-        work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index));
-    return found != work_data_->vertex_to_vertex_map.end()
-        ? static_cast<int>(found->second.size())
-        : 0;
+    return work_data_ != nullptr ? work_data_->LinkCount(vertex_index) : 0;
 }
 
 bool StepReductionBase::CheckJoin2(int vertex_index, int target_vertex_index) const
@@ -151,30 +112,8 @@ bool StepReductionBase::CheckJoin2(int vertex_index, int target_vertex_index) co
         return false;
     }
 
-    std::vector<std::uint16_t> join_links;
-    auto add_link = [&join_links, vertex_index, target_vertex_index](std::uint16_t link) {
-        if (link == vertex_index || link == target_vertex_index) {
-            return;
-        }
-        if (std::find(join_links.begin(), join_links.end(), link) == join_links.end()) {
-            join_links.push_back(link);
-        }
-    };
-
-    const auto found_vertex =
-        work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index));
-    if (found_vertex != work_data_->vertex_to_vertex_map.end()) {
-        for (std::uint16_t link : found_vertex->second) {
-            add_link(link);
-        }
-    }
-    const auto found_target =
-        work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(target_vertex_index));
-    if (found_target != work_data_->vertex_to_vertex_map.end()) {
-        for (std::uint16_t link : found_target->second) {
-            add_link(link);
-        }
-    }
+    std::vector<std::uint16_t> join_links =
+        work_data_->GatherMergedLinks(vertex_index, target_vertex_index);
 
     if (join_links.empty()) {
         return false;
@@ -318,32 +257,10 @@ void StepReductionBase::RunJoinEdge()
             vmesh_->local_normals[vertex_index2] = Add(normal1, normal2);
         }
 
-        std::vector<std::uint16_t> new_links;
-        auto add_link = [&new_links, vertex_index1, vertex_index2](std::uint16_t link) {
-            if (link == vertex_index1 || link == vertex_index2) {
-                return;
-            }
-            if (std::find(new_links.begin(), new_links.end(), link) == new_links.end()) {
-                new_links.push_back(link);
-            }
-        };
-
-        const auto found1 =
-            work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index1));
-        if (found1 != work_data_->vertex_to_vertex_map.end()) {
-            for (std::uint16_t link : found1->second) {
-                add_link(link);
-            }
-        }
-        const auto found2 =
-            work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index2));
-        if (found2 != work_data_->vertex_to_vertex_map.end()) {
-            for (std::uint16_t link : found2->second) {
-                add_link(link);
-            }
-        }
-        work_data_->vertex_to_vertex_map[static_cast<std::uint16_t>(vertex_index2)] =
-            std::move(new_links);
+        work_data_->ReplaceVertexLinks(
+            vertex_index2,
+            work_data_->GatherMergedLinks(vertex_index1, vertex_index2)
+        );
 
         if (vertex_index2 < vmesh_->bone_weights.Count() && vertex_index1 < vmesh_->bone_weights.Count()) {
             vmesh_->bone_weights[vertex_index2].AddWeight(vmesh_->bone_weights[vertex_index1]);
@@ -364,41 +281,7 @@ void StepReductionBase::UpdateJoinAndLink()
         return;
     }
 
-    const int vertex_count = vmesh_->VertexCount();
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        int& join = work_data_->vertex_join_indices[static_cast<std::size_t>(vertex_index)];
-        if (join >= 0) {
-            join = ResolveJoinRoot(work_data_->vertex_join_indices, join);
-        }
-    }
-
-    VertexLinkMap new_map;
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        if (work_data_->vertex_join_indices[static_cast<std::size_t>(vertex_index)] >= 0) {
-            continue;
-        }
-
-        const auto found =
-            work_data_->vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index));
-        if (found == work_data_->vertex_to_vertex_map.end()) {
-            continue;
-        }
-
-        for (std::uint16_t old_link : found->second) {
-            int link = static_cast<int>(old_link);
-            if (link < 0 || link >= vertex_count) {
-                continue;
-            }
-            link = ResolveJoinRoot(work_data_->vertex_join_indices, link);
-            if (link == vertex_index
-                || link < 0
-                || link > std::numeric_limits<std::uint16_t>::max()) {
-                continue;
-            }
-            UniqueAdd(new_map, static_cast<std::uint16_t>(vertex_index), static_cast<std::uint16_t>(link));
-        }
-    }
-    work_data_->vertex_to_vertex_map = std::move(new_map);
+    work_data_->RefreshJoinAndLinks(vmesh_->VertexCount());
 }
 
 void StepReductionBase::UpdateReductionResult()

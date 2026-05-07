@@ -10,6 +10,13 @@ _BOOTSTRAP_COLLIDER_PROJECTION_SCALE = 0.35
 _BOOTSTRAP_COLLIDER_PUSH_LIMIT = 0.18
 
 
+def _is_bone_cloth(chain):
+    return (
+        getattr(chain, "cloth_type", "") == "BoneCloth"
+        or getattr(chain, "component_type", "") == "BONE_CLOTH"
+    )
+
+
 def _quat_mul(a, b):
     aw, ax, ay, az = a
     bw, bx, by, bz = b
@@ -310,6 +317,9 @@ class NativeBridgeStub:
         }
 
     def _backend_status(self, scene):
+        bone_cloth_count = sum(
+            1 for chain in scene["compiled_scene"].bone_chains if _is_bone_cloth(chain)
+        )
         return (
             "python_stub:runtime_build managers=deferred "
             f"mc2_collider_data={len(scene.get('mc2_collision_data', []))} "
@@ -317,7 +327,8 @@ class NativeBridgeStub:
             f"mc2_collider_teams={len(scene.get('mc2_chain_team_ids', []))} "
             f"mc2_registered_colliders={sum(len(indices) for indices in scene.get('mc2_chain_collider_indices', []))} "
             f"mc2_particles={sum(len(chain.bones) for chain in scene['compiled_scene'].bone_chains)} "
-            f"mc2_proxy_vertices={sum(len(chain.bones) for chain in scene['compiled_scene'].bone_chains)}"
+            f"mc2_proxy_vertices={sum(len(chain.bones) for chain in scene['compiled_scene'].bone_chains)} "
+            f"bone_cloths={bone_cloth_count}"
         )
 
     def _resolve_chain_collider_indices(self, scene, chain):
@@ -425,7 +436,7 @@ class NativeBridgeStub:
                 continue
 
             gravity_dir = _normalize_vector3(chain.gravity_direction)
-            gravity = 0.0
+            gravity = max(0.0, float(chain.gravity_strength)) if _is_bone_cloth(chain) else 0.0
             max_angle = 1.15
             max_velocity = 8.0
             max_depth = max(1, max((getattr(bone, "depth", 0) for bone in chain.bones), default=0))

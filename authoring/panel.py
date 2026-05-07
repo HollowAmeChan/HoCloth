@@ -43,7 +43,9 @@ def _draw_spring_bone_details(layout, scene, item):
     )
 
     title_col = header.column(align=True)
+    component_label = "BoneCloth" if item.component_type == "BONE_CLOTH" else "BoneSpring"
     title_col.label(text=item.display_name, icon="BONE_DATA")
+    title_col.label(text=component_label, icon="MOD_CLOTH")
     title_col.label(text=f"{bone_count} joints", icon="ARMATURE_DATA")
 
     actions = header.row(align=True)
@@ -323,6 +325,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
 
         layout.label(text="HoCloth XPBD")
         quick_add = layout.row(align=True)
+        quick_add.operator("hocloth.add_active_bone_cloth", icon="MOD_CLOTH", text="BoneCloth")
         quick_add.operator("hocloth.add_active_spring_bone", icon="BONE_DATA", text="弹簧骨骼")
         quick_add.operator("hocloth.add_active_collider", icon="MESH_UVSPHERE", text="碰撞体")
         quick_add.operator("hocloth.add_collider_group", icon="GROUP", text="绑定")
@@ -362,7 +365,7 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
             box.label(text="还没有组件", icon="INFO")
         else:
             for item in scene.hocloth_components:
-                if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+                if item.component_type in {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}:
                     _draw_spring_bone_details(box, scene, item)
                 elif item.component_type == "COLLIDER":
                     _draw_collider_details(box, scene, item)

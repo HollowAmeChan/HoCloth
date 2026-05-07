@@ -50,6 +50,8 @@ struct CompiledSpringBaseline {
 
 struct CompiledSpringBone {
     std::string component_id;
+    std::string component_type;
+    std::string cloth_type;
     std::string armature_name;
     std::string root_bone_name;
     std::string center_object_name;

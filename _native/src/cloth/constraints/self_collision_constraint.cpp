@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cmath>
+#include <sstream>
 
 namespace hocloth::mc2 {
 
@@ -208,6 +209,22 @@ bool SelfCollisionConstraint::HasPrimitive() const
     return point_primitive_count_ + edge_primitive_count_ + triangle_primitive_count_ > 0;
 }
 
+std::string SelfCollisionConstraint::ToString() const
+{
+    std::ostringstream stream;
+    stream << "[SelfCollisionConstraint]\n"
+           << "  -primitiveArray:" << primitive_array_.ToSummary() << '\n'
+           << "  -sortAndSweepArray:" << sort_and_sweep_array_.ToSummary() << '\n'
+           << "  -edgeEdgeContactList:" << edge_edge_contact_array_.Count() << '\n'
+           << "  -pointTriangleContactList:" << point_triangle_contact_array_.Count() << '\n'
+           << "  -intersectFlagArray:" << intersect_flag_array_.Length() << '\n'
+           << "  -pointPrimitive:" << point_primitive_count_ << '\n'
+           << "  -edgePrimitive:" << edge_primitive_count_ << '\n'
+           << "  -trianglePrimitive:" << triangle_primitive_count_ << '\n'
+           << "  -intersect:" << intersect_count_;
+    return stream.str();
+}
+
 void SelfCollisionConstraint::Clear()
 {
     primitive_array_.Clear();
@@ -235,6 +252,24 @@ void SelfCollisionConstraint::WorkBufferUpdate(int particle_count)
     } else {
         intersect_flag_array_.Fill(0);
     }
+}
+
+void SelfCollisionConstraint::Register(
+    int team_id,
+    TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager
+)
+{
+    UpdateTeam(team_id, team_manager, virtual_mesh_manager);
+}
+
+void SelfCollisionConstraint::Exit(
+    int team_id,
+    TeamManager& team_manager,
+    const VirtualMeshManager& virtual_mesh_manager
+)
+{
+    UpdateTeam(team_id, team_manager, virtual_mesh_manager);
 }
 
 void SelfCollisionConstraint::RegisterTeamPrimitives(

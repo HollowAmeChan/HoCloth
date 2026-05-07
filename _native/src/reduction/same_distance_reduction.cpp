@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -15,79 +14,6 @@
 namespace hocloth::mc2 {
 
 namespace {
-
-using VertexLinkMap = std::unordered_map<std::uint16_t, std::vector<std::uint16_t>>;
-
-void UniqueAdd(VertexLinkMap& map, std::uint16_t key, std::uint16_t value)
-{
-    std::vector<std::uint16_t>& values = map[key];
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
-        values.push_back(value);
-    }
-}
-
-void RemoveValue(VertexLinkMap& map, std::uint16_t key, std::uint16_t value)
-{
-    const auto found = map.find(key);
-    if (found == map.end()) {
-        return;
-    }
-    std::vector<std::uint16_t>& values = found->second;
-    values.erase(std::remove(values.begin(), values.end(), value), values.end());
-}
-
-int ResolveJoinRoot(const std::vector<int>& join_indices, int index)
-{
-    if (index < 0 || index >= static_cast<int>(join_indices.size())) {
-        return index;
-    }
-
-    int guard = 0;
-    while (join_indices[static_cast<std::size_t>(index)] >= 0
-        && guard < static_cast<int>(join_indices.size())) {
-        index = join_indices[static_cast<std::size_t>(index)];
-        ++guard;
-    }
-    return index;
-}
-
-void UpdateJoinAndLink(ReductionWorkData& work_data, int vertex_count)
-{
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        int& join = work_data.vertex_join_indices[static_cast<std::size_t>(vertex_index)];
-        if (join >= 0) {
-            join = ResolveJoinRoot(work_data.vertex_join_indices, join);
-        }
-    }
-
-    VertexLinkMap new_map;
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        if (work_data.vertex_join_indices[static_cast<std::size_t>(vertex_index)] >= 0) {
-            continue;
-        }
-
-        const auto found = work_data.vertex_to_vertex_map.find(static_cast<std::uint16_t>(vertex_index));
-        if (found == work_data.vertex_to_vertex_map.end()) {
-            continue;
-        }
-
-        for (std::uint16_t old_link : found->second) {
-            int link = static_cast<int>(old_link);
-            if (link < 0 || link >= vertex_count) {
-                continue;
-            }
-            link = ResolveJoinRoot(work_data.vertex_join_indices, link);
-            if (link == vertex_index
-                || link < 0
-                || link > std::numeric_limits<std::uint16_t>::max()) {
-                continue;
-            }
-            UniqueAdd(new_map, static_cast<std::uint16_t>(vertex_index), static_cast<std::uint16_t>(link));
-        }
-    }
-
-    work_data.vertex_to_vertex_map = std::move(new_map);
-}
 
 void FinalizeLiveVertices(VirtualMesh& mesh, const ReductionWorkData& work_data)
 {
@@ -211,11 +137,7 @@ Result SameDistanceReduction::Reduction()
 
                 work_data_->vertex_join_indices[static_cast<std::size_t>(dead_index)] = live_index;
                 ++remove_count;
-                RemoveValue(
-                    work_data_->vertex_to_vertex_map,
-                    static_cast<std::uint16_t>(live_index),
-                    static_cast<std::uint16_t>(dead_index)
-                );
+                work_data_->RemoveVertexLink(live_index, dead_index);
 
                 std::vector<std::uint16_t> dead_links;
                 const auto found_dead =
@@ -234,21 +156,9 @@ Result SameDistanceReduction::Reduction()
                         continue;
                     }
 
-                    RemoveValue(
-                        work_data_->vertex_to_vertex_map,
-                        static_cast<std::uint16_t>(link_index),
-                        static_cast<std::uint16_t>(dead_index)
-                    );
-                    UniqueAdd(
-                        work_data_->vertex_to_vertex_map,
-                        static_cast<std::uint16_t>(live_index),
-                        static_cast<std::uint16_t>(link_index)
-                    );
-                    UniqueAdd(
-                        work_data_->vertex_to_vertex_map,
-                        static_cast<std::uint16_t>(link_index),
-                        static_cast<std::uint16_t>(live_index)
-                    );
+                    work_data_->RemoveVertexLink(link_index, dead_index);
+                    work_data_->AddUniqueVertexLink(live_index, link_index);
+                    work_data_->AddUniqueVertexLink(link_index, live_index);
                 }
 
                 if (live_index < vmesh_->bone_weights.Count() && dead_index < vmesh_->bone_weights.Count()) {
@@ -264,7 +174,7 @@ Result SameDistanceReduction::Reduction()
             }
         }
 
-        UpdateJoinAndLink(*work_data_, vertex_count);
+        work_data_->RefreshJoinAndLinks(vertex_count);
         FinalizeLiveVertices(*vmesh_, *work_data_);
         work_data_->remove_vertex_count += remove_count;
         return result_;

@@ -66,12 +66,22 @@ TransformRecord VirtualMeshContainer::GetTransformRecordFromIndex(int index) con
         : TransformRecord{};
 }
 
+TransformRecord VirtualMeshContainer::GetTransformFromIndex(int index) const
+{
+    return GetTransformRecordFromIndex(index);
+}
+
 TransformRecord VirtualMeshContainer::GetCenterTransformRecord() const
 {
     if (!share_virtual_mesh_) {
         return TransformRecord{};
     }
     return GetTransformRecordFromIndex(share_virtual_mesh_->center_transform_index);
+}
+
+TransformRecord VirtualMeshContainer::GetCenterTransform() const
+{
+    return GetCenterTransformRecord();
 }
 
 VirtualMesh* VirtualMeshContainer::SharedVirtualMesh()

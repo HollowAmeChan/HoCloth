@@ -20,6 +20,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -142,6 +145,34 @@ struct ClothSerializeData final : public IValid, public IDataValidate {
         wind.DataValidate();
     }
 
+    [[nodiscard]] int GetHashCode() const
+    {
+        constexpr int NullHash = -3910836;
+
+        int hash = static_cast<int>(cloth_type);
+        for (int renderer_id : source_renderer_ids) {
+            hash += renderer_id != 0 ? renderer_id : NullHash;
+        }
+        for (int root_bone_id : root_bone_ids) {
+            hash += root_bone_id != 0 ? root_bone_id : NullHash;
+        }
+        hash += static_cast<int>(connection_mode) * 10;
+        hash += reduction_setting.GetHashCode();
+        hash += custom_skinning_setting.GetHashCode();
+        hash += normal_alignment_setting.GetHashCode();
+        hash += culling_settings.GetHashCode();
+        hash += static_cast<int>(paint_mode);
+        for (int paint_map_id : paint_map_ids) {
+            if (paint_map_id != 0) {
+                hash += paint_map_id;
+            }
+        }
+        hash += static_cast<int>(collider_collision_constraint.mode);
+        hash += FloatHash(collider_collision_constraint.dynamic_friction);
+        hash += FloatHash(collider_collision_constraint.static_friction);
+        return hash;
+    }
+
     [[nodiscard]] ClothParameters GetClothParameters() const
     {
         ClothParameters parameters;
@@ -174,6 +205,14 @@ struct ClothSerializeData final : public IValid, public IDataValidate {
         parameters.spring_constraint = spring_constraint;
         return parameters;
     }
+
+private:
+    [[nodiscard]] static int FloatHash(float value)
+    {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<int>(bits);
+    }
 };
 
 // Port target for Magica Cloth 2: Scripts/Core/Cloth/ClothSerializeData2.cs
@@ -190,6 +229,14 @@ struct ClothSerializeData2 final : public IValid, public IDataValidate {
 
     void DataValidate() override
     {
+        if (prebuild_data.UsePreBuild()) {
+            (void)prebuild_data.DataValidate();
+        }
+    }
+
+    [[nodiscard]] int GetHashCode() const
+    {
+        return 0;
     }
 
     [[nodiscard]] std::vector<int> GetUsedTransforms() const
@@ -200,6 +247,18 @@ struct ClothSerializeData2 final : public IValid, public IDataValidate {
     void ReplaceTransform(const std::unordered_map<int, int>& replace_dict)
     {
         prebuild_data.ReplaceTransform(replace_dict);
+    }
+
+    [[nodiscard]] std::string ToString() const
+    {
+        std::ostringstream stream;
+        stream << "ClothSerializeData2("
+               << "selectionCount:" << selection_data.Count()
+               << ", boneAttributes:" << bone_attribute_dict.size()
+               << ", vertexAttributeLists:" << vertex_attribute_list.size()
+               << ", preBuildEnabled:" << (prebuild_data.UsePreBuild() ? "true" : "false")
+               << ")";
+        return stream.str();
     }
 };
 

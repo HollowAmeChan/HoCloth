@@ -41,7 +41,7 @@ public:
     [[nodiscard]] TriangleBendingConstraint& TriangleBending();
     [[nodiscard]] const TriangleBendingConstraint& TriangleBending() const;
 
-    void PrepareStepWorkBuffers(const SimulationManager& simulation_manager);
+    void PrepareStepWorkBuffers(SimulationManager& simulation_manager);
     void SolveStepConstraints(
         int update_index,
         const float4& simulation_power,

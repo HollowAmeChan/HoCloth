@@ -380,7 +380,7 @@ bool ClothProcess::RegisterToManagers(
             bending_constraint_data,
             team_manager
         );
-        cloth_manager.SelfCollision().UpdateTeam(
+        cloth_manager.SelfCollision().Register(
             team_id_,
             team_manager,
             virtual_mesh_manager
@@ -520,7 +520,7 @@ void ClothProcess::UnregisterFromManagers(
         }
 
         team_manager.GetTeamData(team_id_).flag.Set(TeamManager::FlagExit, true);
-        cloth_manager.SelfCollision().UpdateTeam(
+        cloth_manager.SelfCollision().Exit(
             team_id_,
             team_manager,
             virtual_mesh_manager
@@ -628,7 +628,7 @@ void ClothProcess::ApplyPendingManagerUpdates(
             cloth_type_ == ClothType::BoneSpring
                 && parameters_.spring_constraint.spring_power > 0.0f
         );
-        cloth_manager.SelfCollision().UpdateTeam(
+        cloth_manager.SelfCollision().Register(
             team_id_,
             team_manager,
             virtual_mesh_manager

@@ -141,6 +141,7 @@ Result SimulationManager::Initialize()
     friction_array_ = ExNativeArray<float>(capacity);
     static_friction_array_ = ExNativeArray<float>(capacity);
     collision_normal_array_ = ExNativeArray<float3>(capacity);
+    temp_float3_buffer_.clear();
     count_array_ = ExNativeArray<int>(capacity);
     sum_array_ = ExNativeArray<int>(capacity);
 
@@ -166,6 +167,7 @@ void SimulationManager::Dispose()
     friction_array_.Dispose();
     static_friction_array_.Dispose();
     collision_normal_array_.Dispose();
+    temp_float3_buffer_.clear();
     count_array_.Dispose();
     sum_array_.Dispose();
 
@@ -188,7 +190,17 @@ ManagerStatus SimulationManager::Status() const
 {
     std::ostringstream detail;
     detail << "steps=" << simulation_step_count_
-           << " next_pos_length=" << next_pos_array_.Length();
+           << " next_pos_length=" << next_pos_array_.Length()
+           << " temp_float3=" << temp_float3_buffer_.size()
+           << " step_particles=" << processing_step_particle_.Count()
+           << " step_bending=" << processing_step_triangle_bending_.Count()
+           << " step_edge_collision=" << processing_step_edge_collision_.Count()
+           << " step_colliders=" << processing_step_collider_.Count()
+           << " step_baseline=" << processing_step_baseline_.Count()
+           << " self_particles=" << processing_self_particle_.Count()
+           << " self_pt=" << processing_self_point_triangle_.Count()
+           << " self_ee=" << processing_self_edge_edge_.Count()
+           << " self_tp=" << processing_self_triangle_point_.Count();
     return ManagerStatus{
         "SimulationManager",
         initialized_,
@@ -372,6 +384,16 @@ ExNativeArray<int>& SimulationManager::SumArray()
     return sum_array_;
 }
 
+const std::vector<float3>& SimulationManager::TempFloat3Buffer() const
+{
+    return temp_float3_buffer_;
+}
+
+std::vector<float3>& SimulationManager::TempFloat3Buffer()
+{
+    return temp_float3_buffer_;
+}
+
 const ExProcessingList<int>& SimulationManager::ProcessingStepParticles() const
 {
     return processing_step_particle_;
@@ -450,6 +472,9 @@ SimulationManager::ParticleChunkSet SimulationManager::RegisterParticleRange(int
     chunks.friction_chunk = friction_array_.AddRange(particle_count, 0.0f);
     chunks.static_friction_chunk = static_friction_array_.AddRange(particle_count, 0.0f);
     chunks.collision_normal_chunk = collision_normal_array_.AddRange(particle_count, float3{});
+    if (static_cast<int>(temp_float3_buffer_.size()) < next_pos_array_.Length()) {
+        temp_float3_buffer_.resize(static_cast<std::size_t>(next_pos_array_.Length()));
+    }
     count_array_.AddRange(particle_count, 0);
     sum_array_.AddRange(particle_count * 3, 0);
     return chunks;
@@ -474,22 +499,57 @@ void SimulationManager::RemoveParticleRange(const ParticleChunkSet& chunks)
     friction_array_.Remove(chunks.friction_chunk);
     static_friction_array_.Remove(chunks.static_friction_chunk);
     collision_normal_array_.Remove(chunks.collision_normal_chunk);
+    if (next_pos_array_.Length() < static_cast<int>(temp_float3_buffer_.size())) {
+        temp_float3_buffer_.resize(static_cast<std::size_t>(std::max(0, next_pos_array_.Length())));
+    }
     count_array_.Remove(DataChunk{chunks.team_id_chunk.start_index, chunks.team_id_chunk.data_length});
     sum_array_.Remove(DataChunk{chunks.team_id_chunk.start_index * 3, chunks.team_id_chunk.data_length * 3});
 }
 
-void SimulationManager::PrepareProcessingBuffers(int particle_capacity)
+void SimulationManager::PrepareProcessingBuffers(
+    int particle_capacity,
+    int triangle_bending_capacity,
+    int edge_collision_capacity,
+    int collider_capacity,
+    int baseline_capacity,
+    int self_point_triangle_capacity,
+    int self_edge_edge_capacity,
+    int self_triangle_point_capacity
+)
 {
     processing_step_particle_.UpdateBuffer(particle_capacity);
-    processing_step_triangle_bending_.UpdateBuffer(particle_capacity);
-    processing_step_edge_collision_.UpdateBuffer(particle_capacity);
-    processing_step_collider_.UpdateBuffer(particle_capacity);
-    processing_step_baseline_.UpdateBuffer(particle_capacity);
+    processing_step_triangle_bending_.UpdateBuffer(
+        triangle_bending_capacity >= 0 ? triangle_bending_capacity : particle_capacity
+    );
+    processing_step_edge_collision_.UpdateBuffer(
+        edge_collision_capacity >= 0 ? edge_collision_capacity : particle_capacity
+    );
+    processing_step_collider_.UpdateBuffer(
+        collider_capacity >= 0 ? collider_capacity : particle_capacity
+    );
+    processing_step_baseline_.UpdateBuffer(
+        baseline_capacity >= 0 ? baseline_capacity : particle_capacity
+    );
     processing_step_motion_particle_.UpdateBuffer(particle_capacity);
     processing_self_particle_.UpdateBuffer(particle_capacity);
-    processing_self_point_triangle_.UpdateBuffer(particle_capacity);
-    processing_self_edge_edge_.UpdateBuffer(particle_capacity);
-    processing_self_triangle_point_.UpdateBuffer(particle_capacity);
+    processing_self_point_triangle_.UpdateBuffer(
+        self_point_triangle_capacity >= 0 ? self_point_triangle_capacity : particle_capacity
+    );
+    processing_self_edge_edge_.UpdateBuffer(
+        self_edge_edge_capacity >= 0 ? self_edge_edge_capacity : particle_capacity
+    );
+    processing_self_triangle_point_.UpdateBuffer(
+        self_triangle_point_capacity >= 0 ? self_triangle_point_capacity : particle_capacity
+    );
+    if (particle_capacity > static_cast<int>(temp_float3_buffer_.size())) {
+        temp_float3_buffer_.resize(static_cast<std::size_t>(particle_capacity));
+    }
+    if (particle_capacity > count_array_.Length()) {
+        count_array_.AddRange(particle_capacity - count_array_.Length(), 0);
+    }
+    if (particle_capacity * 3 > sum_array_.Length()) {
+        sum_array_.AddRange(particle_capacity * 3 - sum_array_.Length(), 0);
+    }
 }
 
 void SimulationManager::PreSimulationUpdate(
@@ -1133,6 +1193,27 @@ void SimulationManager::CalcDisplayPosition(
             );
         }
     }
+}
+
+void SimulationManager::FeedbackTempFloat3Buffer(const std::vector<int>& particle_indices, int count)
+{
+    const int write_count = count < 0
+        ? static_cast<int>(particle_indices.size())
+        : std::min(count, static_cast<int>(particle_indices.size()));
+    for (int index = 0; index < write_count; ++index) {
+        const int particle_index = particle_indices[static_cast<std::size_t>(index)];
+        if (particle_index < 0
+            || particle_index >= next_pos_array_.Length()
+            || particle_index >= static_cast<int>(temp_float3_buffer_.size())) {
+            continue;
+        }
+        next_pos_array_[particle_index] = temp_float3_buffer_[static_cast<std::size_t>(particle_index)];
+    }
+}
+
+void SimulationManager::FeedbackTempFloat3Buffer(const ExProcessingList<int>& processing_list)
+{
+    FeedbackTempFloat3Buffer(processing_list.Buffer(), processing_list.Count());
 }
 
 void SimulationManager::MarkStepParticle(int particle_index)

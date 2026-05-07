@@ -32,6 +32,11 @@ struct CustomSkinningSettings final : public IValid, public IDataValidate {
     {
         return *this;
     }
+
+    [[nodiscard]] int GetHashCode() const
+    {
+        return 0;
+    }
 };
 
 }  // namespace hocloth::mc2

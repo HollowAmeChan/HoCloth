@@ -9,6 +9,7 @@ class ComponentDefinition:
 
 
 COMPONENT_DEFINITIONS = (
+    ComponentDefinition("BONE_CLOTH", "Bone Cloth", "hocloth_spring_bone_components"),
     ComponentDefinition("SPRING_BONE", "Spring Bone", "hocloth_spring_bone_components"),
     ComponentDefinition("BONE_CHAIN", "Bone Chain (Legacy)", "hocloth_spring_bone_components"),
     ComponentDefinition("COLLIDER", "Collider", "hocloth_collider_components"),

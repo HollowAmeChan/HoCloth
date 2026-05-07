@@ -32,6 +32,8 @@ class CompiledSpringBaseline:
 @dataclass
 class CompiledSpringBone:
     component_id: str
+    component_type: str
+    cloth_type: str
     armature_name: str
     root_bone_name: str
     center_object_name: str
@@ -199,8 +201,14 @@ class CompiledScene:
         return self.spring_bones
 
     def summary(self) -> str:
+        bone_cloth_count = sum(
+            1 for chain in self.spring_bones if chain.cloth_type == "BoneCloth"
+        )
+        bone_spring_count = len(self.spring_bones) - bone_cloth_count
         return (
             f"spring_bones={len(self.spring_bones)}, "
+            f"bone_cloths={bone_cloth_count}, "
+            f"bone_springs={bone_spring_count}, "
             f"bones={self.total_bone_count()}, "
             f"colliders={len(self.colliders)}, "
             f"collider_groups={len(self.collider_groups)}, "
@@ -215,6 +223,8 @@ class CompiledScene:
             "spring_bones": [
                 {
                     "component_id": chain.component_id,
+                    "component_type": chain.component_type,
+                    "cloth_type": chain.cloth_type,
                     "armature_name": chain.armature_name,
                     "root_bone_name": chain.root_bone_name,
                     "center_object_name": chain.center_object_name,

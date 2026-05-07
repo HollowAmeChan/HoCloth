@@ -3,6 +3,7 @@
 namespace hocloth::mc2::define::system {
 
 // Ported from Magica Cloth 2: Scripts/Core/Define/SystemDefine.cs
+inline constexpr const char* DefineSymbol = "MAGICACLOTH2";
 inline constexpr int LatestPreBuildVersion = 2;
 inline constexpr float Epsilon = 1.0e-8f;
 inline constexpr int MaxRendererCount = 31;

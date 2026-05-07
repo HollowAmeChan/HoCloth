@@ -1,6 +1,8 @@
 #pragma once
 
+#include "hocloth/manager/simulation/collider_manager.hpp"
 #include "hocloth/utility/math/math_types.hpp"
+#include "hocloth/utility/native_collection/bit_flag.hpp"
 
 #include <cstdint>
 
@@ -37,5 +39,7 @@ void Unpack10_22(std::uint32_t pack, int& hi, int& low);
 void Unpack12_20(std::uint32_t pack, int& hi, int& low);
 [[nodiscard]] int RemainingData(const int3& data, const int2& used);
 [[nodiscard]] float EvaluateCurve(const float4x4& curve, float time);
+[[nodiscard]] ColliderManager::ColliderType GetColliderType(BitFlag8 flag);
+[[nodiscard]] BitFlag8 SetColliderType(BitFlag8 flag, ColliderManager::ColliderType type);
 
 }  // namespace hocloth::mc2::data

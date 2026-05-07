@@ -5,6 +5,7 @@
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 
 #include <cstdint>
+#include <string>
 
 namespace hocloth::mc2 {
 
@@ -93,9 +94,20 @@ public:
     [[nodiscard]] int TrianglePrimitiveCount() const;
     [[nodiscard]] int IntersectCount() const;
     [[nodiscard]] bool HasPrimitive() const;
+    [[nodiscard]] std::string ToString() const;
 
     void Clear();
     void WorkBufferUpdate(int particle_count);
+    void Register(
+        int team_id,
+        TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
+    void Exit(
+        int team_id,
+        TeamManager& team_manager,
+        const VirtualMeshManager& virtual_mesh_manager
+    );
     void RegisterTeamPrimitives(
         int team_id,
         bool use_point_primitive,

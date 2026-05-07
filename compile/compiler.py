@@ -25,6 +25,9 @@ from ..components.properties import (
 )
 
 
+_BONE_AUTHORING_TYPES = {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}
+
+
 def _spring_joint_override_map(typed_item) -> dict[str, object]:
     return {
         item.bone_name: item
@@ -104,7 +107,7 @@ def _compiled_collision_object_from_collider(compiled_collider: CompiledCollider
 
 
 def _resolve_component(scene, component_type: str, component_id: str):
-    if component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+    if component_type in _BONE_AUTHORING_TYPES:
         return find_component_by_id(scene.hocloth_spring_bone_components, component_id)
     if component_type == "COLLIDER":
         return find_component_by_id(scene.hocloth_collider_components, component_id)
@@ -150,7 +153,7 @@ def compile_scene_from_components(scene) -> CompiledScene:
         if not item.enabled:
             continue
 
-        if item.component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+        if item.component_type in _BONE_AUTHORING_TYPES:
             typed_item = _resolve_component(scene, item.component_type, item.component_id)
             if typed_item is None:
                 continue
@@ -169,6 +172,8 @@ def compile_scene_from_components(scene) -> CompiledScene:
             compiled.spring_bones.append(
                 CompiledSpringBone(
                     component_id=item.component_id,
+                    component_type=item.component_type,
+                    cloth_type="BoneCloth" if item.component_type == "BONE_CLOTH" else "BoneSpring",
                     armature_name=armature_object.name,
                     root_bone_name=typed_item.root_bone_name,
                     center_object_name=(

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <queue>
 #include <stack>
 #include <unordered_map>
@@ -54,6 +55,25 @@ float3 LocalTangentOrDefault(const VirtualMesh& mesh, int vertex_index)
         : float3{0.0f, 0.0f, 1.0f};
 }
 
+void AddUniquePackedEdge(std::unordered_set<std::uint32_t>& edge_set, int a, int b)
+{
+    if (a < 0 || b < 0 || a == b) {
+        return;
+    }
+    edge_set.insert(data::Pack32Sort(a, b));
+}
+
+void AddUniqueEdge(std::vector<int2>& edges, std::unordered_set<std::uint32_t>& edge_set, int a, int b)
+{
+    if (a < 0 || b < 0 || a == b) {
+        return;
+    }
+    const std::uint32_t key = data::Pack32Sort(a, b);
+    if (edge_set.insert(key).second) {
+        edges.push_back(data::PackInt2(a, b));
+    }
+}
+
 std::uint64_t PackedTriangleKey(const int3& triangle)
 {
     const int3 packed = data::PackInt3(triangle);
@@ -74,10 +94,7 @@ void UniqueAdd(
     std::uint16_t value
 )
 {
-    std::vector<std::uint16_t>& values = map[key];
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
-        values.push_back(value);
-    }
+    ReductionWorkData::AddUniqueLink(map, key, value);
 }
 
 void UniqueAdd(
@@ -146,7 +163,7 @@ void OrganizeReductionTransform(VirtualMesh& mesh, ReductionWorkData& work_data)
             old_skin_bone_index >= 0 && old_skin_bone_index < mesh.skin_bone_transform_indices.Count()
                 ? mesh.skin_bone_transform_indices[old_skin_bone_index]
                 : -1;
-        work_data.new_skin_bone_transform_indices.push_back(static_cast<int>(old_to_new_indices.size()));
+        work_data.new_skin_bone_transform_indices.push_back(old_to_new.second);
         old_to_new_indices.push_back(transform_index);
     }
 
@@ -629,6 +646,446 @@ void VirtualMesh::ApplySelectionAttribute(const SelectionData& selection_data)
         }
         transform_data.flag_array[vertex_index] = flag;
     }
+}
+
+void VirtualMesh::ApplyBoneClothDefaultSelection()
+{
+    // MC2 fallback path for BoneCloth/BoneSpring without paint/manual selection:
+    // fill all proxy vertices as Move, then mark root transforms as Fixed.
+    const int vertex_count = VertexCount();
+    if (vertex_count <= 0 || local_positions.Count() < vertex_count) {
+        return;
+    }
+
+    std::vector<float3> positions;
+    positions.reserve(static_cast<std::size_t>(vertex_count));
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        positions.push_back(local_positions[vertex_index]);
+    }
+
+    std::vector<int> root_indices;
+    root_indices.reserve(static_cast<std::size_t>(vertex_count));
+    if (vertex_parent_indices.Count() >= vertex_count) {
+        for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+            if (vertex_parent_indices[vertex_index] < 0) {
+                root_indices.push_back(vertex_index);
+            }
+        }
+    }
+    if (root_indices.empty() && !transform_data.root_id_list.empty()) {
+        for (int root_id : transform_data.root_id_list) {
+            auto found = std::find(transform_data.id_array.begin(), transform_data.id_array.end(), root_id);
+            if (found != transform_data.id_array.end()) {
+                root_indices.push_back(static_cast<int>(std::distance(transform_data.id_array.begin(), found)));
+            }
+        }
+    }
+    if (root_indices.empty()) {
+        root_indices.push_back(0);
+    }
+
+    SelectionData selection = SelectionData::CreateBoneClothDefault(positions, root_indices);
+    if (attributes.Count() < vertex_count) {
+        attributes.Dispose();
+        attributes.AddRange(vertex_count, VertexAttribute::Invalid());
+    }
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        attributes[vertex_index] = selection.attributes[static_cast<std::size_t>(vertex_index)];
+    }
+
+    if (!is_bone_cloth || transform_data.flag_array.Count() < vertex_count) {
+        return;
+    }
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const VertexAttribute attribute = attributes[vertex_index];
+        BitFlag8 flag = transform_data.flag_array[vertex_index];
+        if (attribute.IsMove()) {
+            flag.SetFlag(TransformManager::FlagLocalPosRotWrite, true);
+        } else if (attribute.IsFixed()) {
+            flag.SetFlag(TransformManager::FlagWorldRotWrite, true);
+        }
+        if (!attribute.IsInvalid()) {
+            flag.SetFlag(TransformManager::FlagRestore, true);
+        }
+        transform_data.flag_array[vertex_index] = flag;
+    }
+}
+
+void VirtualMesh::BuildBoneConnection(
+    RenderSetupData::BoneConnectionMode connection_mode,
+    bool setup_as_bone_spring
+)
+{
+    // Ported from MC2 VirtualMeshInputOutput.cs BoneConnectionMode construction.
+    const int vertex_count = VertexCount();
+    lines.Dispose();
+    edges.Dispose();
+    triangles.Dispose();
+    edge_flags.Dispose();
+    edge_to_triangles.clear();
+
+    if (vertex_count <= 0
+        || local_positions.Count() < vertex_count
+        || transform_data.id_array.size() < static_cast<std::size_t>(vertex_count)
+        || transform_data.parent_id_array.size() < static_cast<std::size_t>(vertex_count)) {
+        return;
+    }
+
+    std::unordered_map<int, int> id_to_index;
+    id_to_index.reserve(static_cast<std::size_t>(vertex_count));
+    std::vector<int> root_ids = transform_data.root_id_list;
+    for (int index = 0; index < vertex_count; ++index) {
+        const int transform_id = transform_data.id_array[static_cast<std::size_t>(index)];
+        if (!id_to_index.contains(transform_id)) {
+            id_to_index.emplace(transform_id, index);
+        }
+        if (transform_data.parent_id_array[static_cast<std::size_t>(index)] == 0
+            && std::find(root_ids.begin(), root_ids.end(), transform_id) == root_ids.end()) {
+            root_ids.push_back(transform_id);
+        }
+    }
+    if (root_ids.empty() && !transform_data.id_array.empty()) {
+        root_ids.push_back(transform_data.id_array.front());
+    }
+    root_ids.erase(
+        std::remove_if(
+            root_ids.begin(),
+            root_ids.end(),
+            [&id_to_index](int root_id) {
+                return id_to_index.find(root_id) == id_to_index.end();
+            }
+        ),
+        root_ids.end()
+    );
+    if (root_ids.empty()) {
+        return;
+    }
+
+    std::vector<int2> line_list;
+    std::unordered_set<std::uint32_t> line_keys;
+    auto add_line = [&](int a, int b) {
+        AddUniqueEdge(line_list, line_keys, a, b);
+    };
+
+    if (connection_mode == RenderSetupData::BoneConnectionMode::Line) {
+        for (int index = 0; index < vertex_count; ++index) {
+            const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
+            const auto found_parent = id_to_index.find(parent_id);
+            if (found_parent != id_to_index.end()) {
+                add_line(found_parent->second, index);
+            }
+        }
+
+        if (setup_as_bone_spring && attributes.Count() >= vertex_count) {
+            attributes.Fill(0, vertex_count, VertexAttribute::DisableCollision());
+        }
+        if (!line_list.empty()) {
+            lines.AddRange(line_list);
+            edges.AddRange(line_list);
+            edge_flags.AddRange(static_cast<int>(line_list.size()), BitFlag8{});
+            BuildEdgeToTriangles();
+        }
+        return;
+    }
+
+    bool loop_connection =
+        connection_mode == RenderSetupData::BoneConnectionMode::SequentialLoopMesh;
+    const bool sequential_connection =
+        connection_mode == RenderSetupData::BoneConnectionMode::SequentialLoopMesh
+        || connection_mode == RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh;
+
+    std::vector<int> ordered_root_ids = root_ids;
+    if (connection_mode == RenderSetupData::BoneConnectionMode::AutomaticMesh
+        && ordered_root_ids.size() > 1) {
+        std::vector<int> remaining_root_ids = ordered_root_ids;
+        ordered_root_ids.clear();
+        ordered_root_ids.push_back(remaining_root_ids.front());
+        float last_distance = 0.0f;
+        while (!remaining_root_ids.empty()) {
+            const int root_id = ordered_root_ids.back();
+            remaining_root_ids.erase(
+                std::remove(remaining_root_ids.begin(), remaining_root_ids.end(), root_id),
+                remaining_root_ids.end()
+            );
+            if (remaining_root_ids.empty()) {
+                break;
+            }
+
+            const auto found_root = id_to_index.find(root_id);
+            if (found_root == id_to_index.end()) {
+                break;
+            }
+            const int root_index = found_root->second;
+            const float3 position = local_positions[root_index];
+            float min_distance = std::numeric_limits<float>::max();
+            int min_id = 0;
+            for (int candidate_id : remaining_root_ids) {
+                const auto found_candidate = id_to_index.find(candidate_id);
+                if (found_candidate == id_to_index.end()) {
+                    continue;
+                }
+                const float distance = Distance(position, local_positions[found_candidate->second]);
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    min_id = candidate_id;
+                }
+            }
+            if (min_id == 0) {
+                break;
+            }
+            if (last_distance == 0.0f || min_distance < last_distance * 1.5f) {
+                ordered_root_ids.push_back(min_id);
+                last_distance = last_distance == 0.0f
+                    ? min_distance
+                    : (last_distance + min_distance) * 0.5f;
+            } else {
+                std::reverse(ordered_root_ids.begin(), ordered_root_ids.end());
+                last_distance = 0.0f;
+            }
+        }
+
+        if (ordered_root_ids.size() >= 3 && last_distance > 0.0f) {
+            const int first_root = ordered_root_ids.front();
+            const int last_root = ordered_root_ids.back();
+            const auto found_first = id_to_index.find(first_root);
+            const auto found_last = id_to_index.find(last_root);
+            if (found_first != id_to_index.end() && found_last != id_to_index.end()) {
+                const float distance = Distance(
+                    local_positions[found_first->second],
+                    local_positions[found_last->second]
+                );
+                if (distance < last_distance * 1.5f) {
+                    loop_connection = true;
+                }
+            }
+        }
+    }
+
+    std::unordered_map<int, std::vector<int>> children_by_parent_id;
+    children_by_parent_id.reserve(static_cast<std::size_t>(vertex_count));
+    for (int index = 0; index < vertex_count; ++index) {
+        const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
+        if (id_to_index.contains(parent_id)) {
+            children_by_parent_id[parent_id].push_back(transform_data.id_array[static_cast<std::size_t>(index)]);
+        }
+    }
+
+    std::vector<std::vector<int>> link_list(static_cast<std::size_t>(vertex_count));
+    std::vector<int> vertex_level(static_cast<std::size_t>(vertex_count), 0);
+    std::vector<int> vertex_root_index(static_cast<std::size_t>(vertex_count), 0);
+    std::map<int, std::vector<int>> vertices_by_level;
+    std::unordered_set<std::uint32_t> main_edge_set;
+
+    for (std::size_t root_order = 0; root_order < ordered_root_ids.size(); ++root_order) {
+        const int root_id = ordered_root_ids[root_order];
+        if (!id_to_index.contains(root_id)) {
+            continue;
+        }
+
+        std::stack<int> id_stack;
+        std::stack<int> level_stack;
+        id_stack.push(root_id);
+        level_stack.push(0);
+        while (!id_stack.empty()) {
+            const int id = id_stack.top();
+            id_stack.pop();
+            const int level = level_stack.top();
+            level_stack.pop();
+            const auto found_index = id_to_index.find(id);
+            if (found_index == id_to_index.end()) {
+                continue;
+            }
+
+            const int vertex_index = found_index->second;
+            vertex_level[static_cast<std::size_t>(vertex_index)] = level;
+            vertex_root_index[static_cast<std::size_t>(vertex_index)] =
+                static_cast<int>(root_order);
+            vertices_by_level[level].push_back(vertex_index);
+
+            const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(vertex_index)];
+            const auto found_parent = id_to_index.find(parent_id);
+            if (found_parent != id_to_index.end()) {
+                link_list[static_cast<std::size_t>(vertex_index)].push_back(found_parent->second);
+                AddUniquePackedEdge(main_edge_set, vertex_index, found_parent->second);
+            }
+
+            const auto found_children = children_by_parent_id.find(id);
+            if (found_children == children_by_parent_id.end()) {
+                continue;
+            }
+            for (int child_id : found_children->second) {
+                const auto found_child = id_to_index.find(child_id);
+                if (found_child == id_to_index.end()) {
+                    continue;
+                }
+                id_stack.push(child_id);
+                level_stack.push(level + 1);
+                link_list[static_cast<std::size_t>(vertex_index)].push_back(found_child->second);
+                AddUniquePackedEdge(main_edge_set, vertex_index, found_child->second);
+            }
+        }
+    }
+
+    const int first_root_index = 0;
+    const int last_root_index = static_cast<int>(ordered_root_ids.size()) - 1;
+    const std::uint32_t start_end_root_pack = data::Pack32Sort(first_root_index, last_root_index);
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const int level = vertex_level[static_cast<std::size_t>(vertex_index)];
+        const auto found_level = vertices_by_level.find(level);
+        if (found_level == vertices_by_level.end()) {
+            continue;
+        }
+
+        std::vector<int>& link = link_list[static_cast<std::size_t>(vertex_index)];
+        const int root_index = vertex_root_index[static_cast<std::size_t>(vertex_index)];
+        const float3 position = local_positions[vertex_index];
+        float first_distance = std::numeric_limits<float>::max();
+        int first_index = -1;
+
+        for (int candidate : found_level->second) {
+            if (candidate == vertex_index) {
+                continue;
+            }
+            const int candidate_root = vertex_root_index[static_cast<std::size_t>(candidate)];
+            const bool first_last =
+                start_end_root_pack == data::Pack32Sort(root_index, candidate_root)
+                && start_end_root_pack > 0;
+            if (!loop_connection && first_last) {
+                continue;
+            }
+            if (sequential_connection && !(loop_connection && first_last)
+                && std::abs(root_index - candidate_root) > 1) {
+                continue;
+            }
+
+            const float distance = Distance(position, local_positions[candidate]);
+            if (distance < first_distance) {
+                first_distance = distance;
+                first_index = candidate;
+            }
+        }
+
+        if (first_index < 0) {
+            continue;
+        }
+
+        link.push_back(first_index);
+        first_distance = sequential_connection
+            ? std::numeric_limits<float>::max()
+            : first_distance * 1.5f;
+        for (int candidate : found_level->second) {
+            if (candidate == vertex_index || candidate == first_index) {
+                continue;
+            }
+            const int candidate_root = vertex_root_index[static_cast<std::size_t>(candidate)];
+            const bool first_last =
+                start_end_root_pack == data::Pack32Sort(root_index, candidate_root)
+                && start_end_root_pack > 0;
+            if (!loop_connection && first_last) {
+                continue;
+            }
+            if (sequential_connection && !(loop_connection && first_last)
+                && std::abs(root_index - candidate_root) > 1) {
+                continue;
+            }
+            if (Distance(position, local_positions[candidate]) <= first_distance) {
+                link.push_back(candidate);
+            }
+        }
+    }
+
+    std::vector<int2> edge_list;
+    std::vector<int2> triangle_edge_list;
+    std::vector<int3> triangle_list;
+    std::unordered_set<std::uint32_t> edge_set;
+    std::unordered_set<std::uint32_t> triangle_edge_set;
+    std::unordered_set<std::uint64_t> triangle_set;
+
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        const std::vector<int>& link = link_list[static_cast<std::size_t>(vertex_index)];
+        if (link.empty()) {
+            continue;
+        }
+        if (link.size() == 1) {
+            AddUniqueEdge(edge_list, edge_set, vertex_index, link.front());
+            continue;
+        }
+
+        for (int linked : link) {
+            AddUniqueEdge(edge_list, edge_set, vertex_index, linked);
+        }
+
+        const int root_index = vertex_root_index[static_cast<std::size_t>(vertex_index)];
+        const float3 position = local_positions[vertex_index];
+        for (std::size_t j = 0; j + 1 < link.size(); ++j) {
+            const int v1_index = link[j];
+            const float3 v1 = Subtract(local_positions[v1_index], position);
+            for (std::size_t k = j + 1; k < link.size(); ++k) {
+                const int v2_index = link[k];
+                const float3 v2 = Subtract(local_positions[v2_index], position);
+                if (LengthSquared(v1) < 1.0e-6f || LengthSquared(v2) < 1.0e-6f) {
+                    continue;
+                }
+                const float angle_degrees = Angle(v1, v2) * 57.29577951308232f;
+                if (angle_degrees >= define::system::ProxyMeshBoneClothTriangleAngle) {
+                    continue;
+                }
+
+                const int root1 = vertex_root_index[static_cast<std::size_t>(v1_index)];
+                const int root2 = vertex_root_index[static_cast<std::size_t>(v2_index)];
+                if (root1 != root_index && root2 != root_index && root1 != root2) {
+                    continue;
+                }
+
+                int main_edge_count = 0;
+                main_edge_count += main_edge_set.contains(data::Pack32Sort(vertex_index, v1_index)) ? 1 : 0;
+                main_edge_count += main_edge_set.contains(data::Pack32Sort(vertex_index, v2_index)) ? 1 : 0;
+                main_edge_count += main_edge_set.contains(data::Pack32Sort(v1_index, v2_index)) ? 1 : 0;
+                if (main_edge_count == 0) {
+                    continue;
+                }
+
+                const int3 triangle = data::PackInt3(vertex_index, v1_index, v2_index);
+                const std::uint64_t triangle_key = PackedTriangleKey(triangle);
+                if (!triangle_set.insert(triangle_key).second) {
+                    continue;
+                }
+                triangle_list.push_back(triangle);
+                const int2 edge0 = data::PackInt2(vertex_index, v1_index);
+                const int2 edge1 = data::PackInt2(vertex_index, v2_index);
+                const std::uint32_t edge_key0 = data::Pack32(edge0.x, edge0.y);
+                const std::uint32_t edge_key1 = data::Pack32(edge1.x, edge1.y);
+                if (triangle_edge_set.insert(edge_key0).second) {
+                    triangle_edge_list.push_back(edge0);
+                }
+                if (triangle_edge_set.insert(edge_key1).second) {
+                    triangle_edge_list.push_back(edge1);
+                }
+            }
+        }
+    }
+
+    if (!triangle_list.empty()) {
+        triangles.AddRange(triangle_list);
+    }
+    for (const int2& edge : triangle_edge_list) {
+        edge_set.erase(data::Pack32(edge.x, edge.y));
+    }
+    std::vector<int2> remaining_line_list;
+    remaining_line_list.reserve(edge_list.size());
+    for (const int2& edge : edge_list) {
+        if (edge_set.contains(data::Pack32(edge.x, edge.y))) {
+            remaining_line_list.push_back(edge);
+        }
+    }
+    if (!remaining_line_list.empty()) {
+        lines.AddRange(remaining_line_list);
+    }
+    if (!edge_list.empty()) {
+        edges.AddRange(edge_list);
+        edge_flags.AddRange(static_cast<int>(edge_list.size()), BitFlag8{});
+    }
+    BuildEdgeToTriangles();
 }
 
 void VirtualMesh::BuildMeshBaseLinesFromEdges()

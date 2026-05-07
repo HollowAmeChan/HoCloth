@@ -99,8 +99,8 @@ def _build_runtime_from_scene(context, report=None) -> bool:
     scene.hocloth_compile_summary = compiled.summary()
     if not compiled.spring_bones:
         if report is not None:
-            report({"ERROR"}, "No enabled spring-bone components could be compiled.")
-        scene.hocloth_runtime_status = "Build failed: no valid spring bones"
+            report({"ERROR"}, "No enabled bone cloth/spring components could be compiled.")
+        scene.hocloth_runtime_status = "Build failed: no valid bone cloth/spring components"
         return False
 
     if compiled.total_bone_count() == 0:
@@ -169,6 +169,45 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
                 if branching_bones
                 else ""
             )
+        )
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
+    bl_idname = "hocloth.add_active_bone_cloth"
+    bl_label = "Add Active Bone Cloth"
+    bl_description = "Create a BoneCloth component from the active armature selection"
+
+    def execute(self, context):
+        try:
+            extracted = extract_active_bone_chain(context)
+        except RuntimeError as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+        main_item, typed_item = create_component(
+            context.scene,
+            "BONE_CLOTH",
+            f"Bone Cloth: {extracted.root_bone_name}",
+        )
+        typed_item.armature_object = context.object
+        typed_item.root_bone_name = extracted.root_bone_name
+        typed_item.spring_constraint.use_spring = False
+        sync_joint_override_names(typed_item, extracted.bone_names)
+        main_item.display_name = f"Bone Cloth: {extracted.root_bone_name}"
+        branching_bones = resolve_bone_chain_branching_names(
+            context.scene,
+            context.object,
+            extracted.root_bone_name,
+        )
+        context.scene.hocloth_runtime_status = (
+            f"Added BoneCloth authoring data with {len(extracted.bone_names)} bones"
+            + (
+                f"; detected {len(branching_bones)} branch points"
+                if branching_bones
+                else ""
+            )
+            + "; native runtime is still using the current bone-particle bridge"
         )
         return {"FINISHED"}
 
@@ -697,6 +736,7 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
 
 
 CLASSES = (
+    HOCLOTH_OT_add_active_bone_cloth,
     HOCLOTH_OT_add_active_spring_bone,
     HOCLOTH_OT_add_active_collider,
     HOCLOTH_OT_add_collider_group,

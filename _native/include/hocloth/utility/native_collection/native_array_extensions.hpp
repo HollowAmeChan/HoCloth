@@ -2,6 +2,7 @@
 
 #include "hocloth/utility/native_collection/bit_flag.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -34,6 +35,37 @@ template <typename T>
     std::vector<T> values(count);
     std::memcpy(values.data(), bytes.data(), count * sizeof(T));
     return values;
+}
+
+template <typename T>
+void MC2DisposeSafe(std::vector<T>& values)
+{
+    values.clear();
+    values.shrink_to_fit();
+}
+
+template <typename T>
+void MC2Resize(std::vector<T>& values, int size)
+{
+    if (size <= 0) {
+        MC2DisposeSafe(values);
+        return;
+    }
+    if (values.size() < static_cast<std::size_t>(size)) {
+        values.assign(static_cast<std::size_t>(size), T{});
+    }
+}
+
+template <typename T>
+[[nodiscard]] std::vector<std::uint8_t> MC2ToRawBytes(const std::vector<T>& values)
+{
+    return ToRawBytes(values);
+}
+
+template <typename T>
+[[nodiscard]] std::vector<T> MC2FromRawBytes(const std::vector<std::uint8_t>& bytes)
+{
+    return FromRawBytes<T>(bytes);
 }
 
 [[nodiscard]] inline std::vector<BitFlag8> FromRawBitFlag8Bytes(

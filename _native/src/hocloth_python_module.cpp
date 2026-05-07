@@ -206,6 +206,8 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         nb::dict chain_dict = nb::cast<nb::dict>(item);
         CompiledSpringBone chain;
         chain.component_id = ReadString(chain_dict, "component_id");
+        chain.component_type = ReadString(chain_dict, "component_type", "SPRING_BONE");
+        chain.cloth_type = ReadString(chain_dict, "cloth_type", "BoneSpring");
         chain.armature_name = ReadString(chain_dict, "armature_name");
         chain.root_bone_name = ReadString(chain_dict, "root_bone_name");
         chain.center_object_name = ReadString(chain_dict, "center_object_name");

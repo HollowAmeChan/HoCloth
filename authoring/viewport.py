@@ -75,7 +75,7 @@ def _draw_segments(segments: list[tuple[Vector, Vector]], color, alpha_scale: fl
 
 def _iter_enabled_spring_bones(scene):
     for item in scene.hocloth_components:
-        if not item.enabled or item.component_type not in {"SPRING_BONE", "BONE_CHAIN"}:
+        if not item.enabled or item.component_type not in {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}:
             continue
         component = find_component_by_id(scene.hocloth_spring_bone_components, item.component_id)
         if component is not None:

@@ -18,7 +18,9 @@ public:
     [[nodiscard]] bool HasUniqueData() const;
     [[nodiscard]] int GetTransformCount() const;
     [[nodiscard]] TransformRecord GetTransformRecordFromIndex(int index) const;
+    [[nodiscard]] TransformRecord GetTransformFromIndex(int index) const;
     [[nodiscard]] TransformRecord GetCenterTransformRecord() const;
+    [[nodiscard]] TransformRecord GetCenterTransform() const;
     [[nodiscard]] VirtualMesh* SharedVirtualMesh();
     [[nodiscard]] const VirtualMesh* SharedVirtualMesh() const;
 

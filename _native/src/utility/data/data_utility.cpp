@@ -215,4 +215,14 @@ float EvaluateCurve(const float4x4& curve, float time)
     return a + (b - a) * t;
 }
 
+ColliderManager::ColliderType GetColliderType(BitFlag8 flag)
+{
+    return ColliderManager::TypeFromFlag(flag);
+}
+
+BitFlag8 SetColliderType(BitFlag8 flag, ColliderManager::ColliderType type)
+{
+    return ColliderManager::SetColliderType(flag, type);
+}
+
 }  // namespace hocloth::mc2::data

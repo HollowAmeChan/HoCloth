@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/manager/transform/transform_data.hpp"
+#include "hocloth/manager/render/render_setup_data_serialization.hpp"
 #include "hocloth/cloth/selection_data.hpp"
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/utility/grid/grid_map.hpp"
@@ -115,6 +116,11 @@ public:
     void BuildEdgeFlags();
     void ConvertInvalidToFixed();
     void ApplySelectionAttribute(const SelectionData& selection_data);
+    void ApplyBoneClothDefaultSelection();
+    void BuildBoneConnection(
+        RenderSetupData::BoneConnectionMode connection_mode,
+        bool setup_as_bone_spring = false
+    );
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();

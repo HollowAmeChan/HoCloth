@@ -7,6 +7,7 @@
 #include "hocloth/utility/native_collection/ex_processing_list.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace hocloth::mc2 {
 
@@ -77,6 +78,8 @@ public:
     [[nodiscard]] ExNativeArray<int>& CountArray();
     [[nodiscard]] const ExNativeArray<int>& SumArray() const;
     [[nodiscard]] ExNativeArray<int>& SumArray();
+    [[nodiscard]] const std::vector<float3>& TempFloat3Buffer() const;
+    [[nodiscard]] std::vector<float3>& TempFloat3Buffer();
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepParticles() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepTriangleBending() const;
     [[nodiscard]] const ExProcessingList<int>& ProcessingStepEdgeCollision() const;
@@ -91,7 +94,16 @@ public:
     [[nodiscard]] ParticleChunkSet RegisterParticleRange(int team_id, int particle_count);
     void RemoveParticleRange(const ParticleChunkSet& chunks);
 
-    void PrepareProcessingBuffers(int particle_capacity);
+    void PrepareProcessingBuffers(
+        int particle_capacity,
+        int triangle_bending_capacity = -1,
+        int edge_collision_capacity = -1,
+        int collider_capacity = -1,
+        int baseline_capacity = -1,
+        int self_point_triangle_capacity = -1,
+        int self_edge_edge_capacity = -1,
+        int self_triangle_point_capacity = -1
+    );
     void PreSimulationUpdate(
         const TeamManager& team_manager,
         const VirtualMeshManager& virtual_mesh_manager
@@ -119,6 +131,8 @@ public:
         const TeamManager& team_manager,
         VirtualMeshManager& virtual_mesh_manager
     );
+    void FeedbackTempFloat3Buffer(const std::vector<int>& particle_indices, int count = -1);
+    void FeedbackTempFloat3Buffer(const ExProcessingList<int>& processing_list);
     void MarkStepParticle(int particle_index);
     void MarkStepTriangleBending(std::uint32_t packed_team_and_pair_index);
     void MarkStepEdgeCollision(int edge_index);
@@ -152,6 +166,7 @@ private:
     ExNativeArray<float> friction_array_;
     ExNativeArray<float> static_friction_array_;
     ExNativeArray<float3> collision_normal_array_;
+    std::vector<float3> temp_float3_buffer_;
     ExNativeArray<int> count_array_;
     ExNativeArray<int> sum_array_;
 

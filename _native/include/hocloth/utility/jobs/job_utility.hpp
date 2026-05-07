@@ -44,6 +44,17 @@ void FillRun(std::vector<T>& array, int length, const T& value)
     Fill(array, length, value);
 }
 
+template <typename T>
+void FillRun(std::vector<T>& array, int start_index, int length, const T& value)
+{
+    Fill(array, start_index, length, value);
+}
+
+inline void Fill(int& reference, int value)
+{
+    reference = value;
+}
+
 inline void ClearReference(int& reference)
 {
     reference = 0;
@@ -162,6 +173,21 @@ inline void TransformPosition(std::vector<float3>& positions, int length, const 
 inline void TransformPositionRun(std::vector<float3>& positions, int length, const float4x4& to_matrix)
 {
     TransformPosition(positions, length, to_matrix);
+}
+
+inline void TransformPosition(
+    const std::vector<float3>& src_positions,
+    std::vector<float3>& dst_positions,
+    int length,
+    const float4x4& to_matrix
+)
+{
+    const int count = std::min(length, static_cast<int>(src_positions.size()));
+    dst_positions.resize(static_cast<std::size_t>(std::max(count, 0)));
+    for (int index = 0; index < count; ++index) {
+        dst_positions[static_cast<std::size_t>(index)] =
+            TransformPoint(src_positions[static_cast<std::size_t>(index)], to_matrix);
+    }
 }
 
 [[nodiscard]] inline std::vector<float3> TransformPosition(

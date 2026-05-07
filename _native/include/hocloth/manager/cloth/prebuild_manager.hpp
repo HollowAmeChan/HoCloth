@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hocloth/manager/i_manager.hpp"
+#include "hocloth/prebuild/prebuild_serialize_data.hpp"
 #include "hocloth/prebuild/share_prebuild_data.hpp"
 #include "hocloth/utility/result_code/result_code.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
@@ -33,8 +34,11 @@ public:
         void Deserialize(const SharePreBuildData& share_prebuild_data);
 
         [[nodiscard]] int RenderMeshCount() const;
+        [[nodiscard]] bool IsSuccess() const;
+        [[nodiscard]] bool IsFailed() const;
         [[nodiscard]] VirtualMeshContainer GetProxyMeshContainer() const;
         [[nodiscard]] VirtualMeshContainer GetRenderMeshContainer(int index) const;
+        [[nodiscard]] std::string ToString() const;
     };
 
     Result Initialize() override;
@@ -48,6 +52,8 @@ public:
     );
     [[nodiscard]] ShareDeserializationData* GetPreBuildData(const SharePreBuildData& share_data);
     void UnregisterPreBuildData(const SharePreBuildData& share_data);
+    int Warmup(const PreBuildDataLibrary& library, bool reference_increment = false);
+    int Warmup(const std::vector<SharePreBuildData>& share_data_list, bool reference_increment = false);
     void UnloadUnusedData();
     [[nodiscard]] std::string InformationString() const;
 

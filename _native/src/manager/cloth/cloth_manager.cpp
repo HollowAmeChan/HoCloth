@@ -31,7 +31,11 @@ ManagerStatus ClothManager::Status() const
     std::ostringstream detail;
     detail << "distance_connections=" << distance_constraint_.ConnectionCount()
            << " fixed=" << inertia_constraint_.FixedCount()
-           << " bending_pairs=" << triangle_bending_constraint_.DataCount();
+           << " bending_pairs=" << triangle_bending_constraint_.DataCount()
+           << " self_point=" << self_collision_constraint_.PointPrimitiveCount()
+           << " self_edge=" << self_collision_constraint_.EdgePrimitiveCount()
+           << " self_triangle=" << self_collision_constraint_.TrianglePrimitiveCount()
+           << " self_intersect=" << self_collision_constraint_.IntersectCount();
     return ManagerStatus{"ClothManager", initialized_, 0, detail.str()};
 }
 
@@ -115,9 +119,19 @@ const TriangleBendingConstraint& ClothManager::TriangleBending() const
     return triangle_bending_constraint_;
 }
 
-void ClothManager::PrepareStepWorkBuffers(const SimulationManager& simulation_manager)
+void ClothManager::PrepareStepWorkBuffers(SimulationManager& simulation_manager)
 {
     const int particle_count = simulation_manager.ParticleCount();
+    simulation_manager.PrepareProcessingBuffers(
+        particle_count,
+        triangle_bending_constraint_.DataCount(),
+        simulation_manager.ProcessingStepEdgeCollision().Count(),
+        simulation_manager.ProcessingStepColliders().Count(),
+        simulation_manager.ProcessingStepBaseLines().Count(),
+        self_collision_constraint_.PointPrimitiveCount(),
+        self_collision_constraint_.EdgePrimitiveCount(),
+        self_collision_constraint_.TrianglePrimitiveCount()
+    );
     angle_constraint_.WorkBufferUpdate(particle_count);
     collider_collision_constraint_.WorkBufferUpdate(
         particle_count,

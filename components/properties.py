@@ -865,7 +865,7 @@ def create_component(scene: bpy.types.Scene, component_type: str, display_name: 
 
     typed_item = getattr(scene, definition.container_name).add()
     typed_item.component_id = component_id
-    if component_type in {"SPRING_BONE", "BONE_CHAIN"}:
+    if component_type in {"BONE_CLOTH", "SPRING_BONE", "BONE_CHAIN"}:
         initialize_mc2_middle_spring_defaults(typed_item)
 
     main_item = scene.hocloth_components.add()

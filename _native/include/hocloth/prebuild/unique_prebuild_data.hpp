@@ -5,7 +5,10 @@
 #include "hocloth/utility/result_code/result_code.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_serialization.hpp"
 
+#include <sstream>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace hocloth::mc2 {
@@ -33,15 +36,21 @@ struct UniquePreBuildData {
     [[nodiscard]] std::vector<int> GetUsedTransforms() const
     {
         std::vector<int> result;
+        std::unordered_set<int> seen;
+        const auto append_unique = [&result, &seen](const std::vector<int>& values) {
+            for (int transform_id : values) {
+                if (transform_id < 0 || !seen.insert(transform_id).second) {
+                    continue;
+                }
+                result.push_back(transform_id);
+            }
+        };
         for (const RenderSetupData::UniqueSerializationData& render_setup : render_setup_data_list) {
-            const std::vector<int> used = render_setup.GetUsedTransforms();
-            result.insert(result.end(), used.begin(), used.end());
+            append_unique(render_setup.GetUsedTransforms());
         }
-        const std::vector<int> proxy_used = proxy_mesh.GetUsedTransforms();
-        result.insert(result.end(), proxy_used.begin(), proxy_used.end());
+        append_unique(proxy_mesh.GetUsedTransforms());
         for (const VirtualMeshSerializationData::UniqueSerializationData& render_mesh : render_mesh_list) {
-            const std::vector<int> used = render_mesh.GetUsedTransforms();
-            result.insert(result.end(), used.begin(), used.end());
+            append_unique(render_mesh.GetUsedTransforms());
         }
         return result;
     }
@@ -55,6 +64,18 @@ struct UniquePreBuildData {
         for (VirtualMeshSerializationData::UniqueSerializationData& render_mesh : render_mesh_list) {
             render_mesh.ReplaceTransform(replace_dict);
         }
+    }
+
+    [[nodiscard]] std::string ToString() const
+    {
+        std::ostringstream stream;
+        stream << "<<<<< UniquePreBuildData >>>>>\n";
+        stream << "Version:" << version << '\n';
+        stream << "BuildResult:" << build_result.GetResultString() << '\n';
+        stream << "renderSetupDataList:" << render_setup_data_list.size() << '\n';
+        stream << "renderMeshList:" << render_mesh_list.size() << '\n';
+        stream << "usedTransforms:" << GetUsedTransforms().size() << '\n';
+        return stream.str();
     }
 };
 

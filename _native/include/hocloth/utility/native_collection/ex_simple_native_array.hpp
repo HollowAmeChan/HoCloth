@@ -1,10 +1,12 @@
 #pragma once
 
 #include "hocloth/utility/native_collection/data_chunk.hpp"
+#include "hocloth/utility/native_collection/native_array_extensions.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +25,12 @@ public:
         if (!area_only) {
             count_ = data_length;
         }
+    }
+
+    explicit ExSimpleNativeArray(const std::vector<T>& data_array)
+        : storage_(data_array)
+        , count_(static_cast<int>(data_array.size()))
+    {
     }
 
     [[nodiscard]] bool IsValid() const
@@ -115,6 +123,33 @@ public:
         return count_++;
     }
 
+    [[nodiscard]] std::vector<T> ToArray() const
+    {
+        return storage_;
+    }
+
+    void CopyTo(std::vector<T>& values) const
+    {
+        values = storage_;
+    }
+
+    void CopyFrom(const std::vector<T>& values)
+    {
+        assert(static_cast<int>(values.size()) <= Length());
+        std::copy(values.begin(), values.end(), storage_.begin());
+        count_ = static_cast<int>(values.size());
+    }
+
+    template <typename U>
+    void CopyFromTypeChange(const std::vector<U>& values)
+    {
+        const std::vector<std::uint8_t> bytes = native_array_extensions::ToRawBytes(values);
+        const std::vector<T> converted = native_array_extensions::FromRawBytes<T>(bytes);
+        assert(static_cast<int>(converted.size()) <= Length());
+        std::copy(converted.begin(), converted.end(), storage_.begin());
+        count_ = static_cast<int>(converted.size());
+    }
+
     void Fill(int start_index, int data_length, const T& fill_data = T{})
     {
         assert(start_index >= 0);
@@ -185,6 +220,41 @@ public:
     [[nodiscard]] std::vector<T>& Data()
     {
         return storage_;
+    }
+
+    [[nodiscard]] const std::vector<T>& GetNativeArray() const
+    {
+        return storage_;
+    }
+
+    [[nodiscard]] std::vector<T>& GetNativeArray()
+    {
+        return storage_;
+    }
+
+    struct SerializationData {
+        int count = 0;
+        int length = 0;
+        std::vector<std::uint8_t> array_bytes;
+    };
+
+    [[nodiscard]] SerializationData Serialize() const
+    {
+        SerializationData data;
+        data.count = count_;
+        data.length = Length();
+        data.array_bytes = native_array_extensions::ToRawBytes(storage_);
+        return data;
+    }
+
+    bool Deserialize(const SerializationData& data)
+    {
+        storage_ = native_array_extensions::FromRawBytes<T>(data.array_bytes);
+        if (data.length > static_cast<int>(storage_.size())) {
+            storage_.resize(static_cast<std::size_t>(data.length));
+        }
+        count_ = std::min(data.count, Length());
+        return true;
     }
 
 private:

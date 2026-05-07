@@ -1,5 +1,8 @@
 #include "hocloth/manager/render/render_setup_data_serialization.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 namespace hocloth::mc2 {
 
 bool RenderSetupData::IsSuccess() const
@@ -24,8 +27,37 @@ void RenderSetupData::Dispose()
     bone_weight_array.clear();
     local_positions.clear();
     local_normals.clear();
+    root_transform_ids.clear();
+    transform_ids.clear();
+    transform_parent_ids.clear();
     is_managed = false;
     result.Clear();
+}
+
+int RenderSetupData::TransformCount() const
+{
+    return static_cast<int>(transform_ids.size());
+}
+
+int RenderSetupData::GetTransformIndexFromId(int id) const
+{
+    const auto found = std::find(transform_ids.begin(), transform_ids.end(), id);
+    if (found == transform_ids.end()) {
+        return -1;
+    }
+    return static_cast<int>(std::distance(transform_ids.begin(), found));
+}
+
+int RenderSetupData::GetParentTransformIndex(int index, bool center_excluded) const
+{
+    if (index < 0 || index >= static_cast<int>(transform_parent_ids.size())) {
+        return -1;
+    }
+    int parent_index = GetTransformIndexFromId(transform_parent_ids[static_cast<std::size_t>(index)]);
+    if (center_excluded && parent_index == render_transform_index) {
+        parent_index = -1;
+    }
+    return parent_index;
 }
 
 RenderSetupData RenderSetupData::ShareDeserialize(
@@ -54,6 +86,9 @@ RenderSetupData RenderSetupData::ShareDeserialize(
     setup.local_positions = data.local_positions;
     setup.local_normals = data.local_normals;
     setup.bone_connection_mode = data.bone_connection_mode;
+    setup.root_transform_ids = data.root_transform_ids;
+    setup.transform_ids = data.transform_ids;
+    setup.transform_parent_ids = data.transform_parent_ids;
     setup.render_transform_index = data.render_transform_index;
     setup.result.SetSuccess();
     return setup;

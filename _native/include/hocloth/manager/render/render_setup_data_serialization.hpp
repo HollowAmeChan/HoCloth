@@ -43,6 +43,9 @@ struct RenderSetupData {
         std::vector<float3> local_normals;
 
         BoneConnectionMode bone_connection_mode = BoneConnectionMode::Line;
+        std::vector<int> root_transform_ids;
+        std::vector<int> transform_ids;
+        std::vector<int> transform_parent_ids;
         int render_transform_index = -1;
     };
 
@@ -89,11 +92,17 @@ struct RenderSetupData {
     std::vector<float3> local_normals;
 
     BoneConnectionMode bone_connection_mode = BoneConnectionMode::Line;
+    std::vector<int> root_transform_ids;
+    std::vector<int> transform_ids;
+    std::vector<int> transform_parent_ids;
     int render_transform_index = -1;
 
     [[nodiscard]] bool IsSuccess() const;
     [[nodiscard]] bool IsFailed() const;
     [[nodiscard]] bool HasLocalPositions() const;
+    [[nodiscard]] int TransformCount() const;
+    [[nodiscard]] int GetTransformIndexFromId(int id) const;
+    [[nodiscard]] int GetParentTransformIndex(int index, bool center_excluded) const;
     void Dispose();
 
     [[nodiscard]] static RenderSetupData ShareDeserialize(

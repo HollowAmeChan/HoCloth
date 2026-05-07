@@ -5,6 +5,8 @@
 #include "hocloth/utility/math/math_utility.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <string>
 
@@ -39,6 +41,11 @@ struct ReductionSettings final : public IDataValidate {
         shape_distance = Clamp(shape_distance, 0.0f, 0.2f);
     }
 
+    [[nodiscard]] int GetHashCode() const
+    {
+        return FloatHash(simple_distance) + FloatHash(shape_distance);
+    }
+
     [[nodiscard]] std::string ToString() const
     {
         std::ostringstream stream;
@@ -47,6 +54,14 @@ struct ReductionSettings final : public IDataValidate {
                << ", shapeDist:" << shape_distance
                << " maxStep:" << define::system::ReductionMaxStep;
         return stream.str();
+    }
+
+private:
+    [[nodiscard]] static int FloatHash(float value)
+    {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return static_cast<int>(bits);
     }
 };
 
