@@ -6,6 +6,8 @@ from .exchange import empty_frame_inputs, frame_inputs_payload, wrap_compiled_sc
 
 
 _TAIL_TIP_SUFFIX = "__hocloth_tail_tip__"
+_BOOTSTRAP_COLLIDER_PROJECTION_SCALE = 0.35
+_BOOTSTRAP_COLLIDER_PUSH_LIMIT = 0.18
 
 
 def _quat_mul(a, b):
@@ -131,12 +133,17 @@ class NativeBridgeStub:
             "chain_states": self._make_chain_states(compiled_scene),
             "collision_object_lookup": self._build_collision_object_lookup(compiled_scene),
             "collision_binding_lookup": self._build_collision_binding_lookup(compiled_scene),
+            "mc2_collision_data": self._build_mc2_collision_data(compiled_scene),
+            "mc2_collision_binding_lookup": self._build_mc2_collision_binding_lookup(compiled_scene),
         }
+        scene_state = self._scenes[handle]
+        self._rebuild_mc2_collider_managers(scene_state)
         return {
             "handle": handle,
             "summary": compiled_scene.summary(),
             "backend": "stub",
             "build_message": self._import_error or "hocloth_native import failed; using Python stub backend.",
+            "backend_status": self._backend_status(scene_state),
         }
 
     def destroy_scene(self, handle):
@@ -151,6 +158,9 @@ class NativeBridgeStub:
             scene["chain_states"] = self._make_chain_states(scene["compiled_scene"])
             scene["collision_object_lookup"] = self._build_collision_object_lookup(scene["compiled_scene"])
             scene["collision_binding_lookup"] = self._build_collision_binding_lookup(scene["compiled_scene"])
+            scene["mc2_collision_data"] = self._build_mc2_collision_data(scene["compiled_scene"])
+            scene["mc2_collision_binding_lookup"] = self._build_mc2_collision_binding_lookup(scene["compiled_scene"])
+            self._rebuild_mc2_collider_managers(scene)
         return True
 
     def set_runtime_inputs(self, handle, runtime_inputs):
@@ -247,8 +257,83 @@ class NativeBridgeStub:
             ]
         return binding_lookup
 
+    def _mc2_collider_data_from_object(self, collision_object):
+        radius = max(0.001, float(getattr(collision_object, "radius", 0.0)))
+        shape_type = getattr(collision_object, "shape_type", "SPHERE")
+        if shape_type == "CAPSULE":
+            direction = getattr(collision_object, "capsule_direction", "Y")
+            suffix = "Center" if getattr(collision_object, "capsule_aligned_on_center", True) else "Start"
+            collider_type = f"Capsule{direction}{suffix}" if direction in {"X", "Y", "Z"} else f"CapsuleY{suffix}"
+            end_radius = max(0.001, float(getattr(collision_object, "capsule_end_radius", radius)))
+            size = (radius, end_radius, max(radius * 2.0, float(getattr(collision_object, "height", 0.0))))
+        elif shape_type == "PLANE":
+            collider_type = "Plane"
+            size = (0.0, 0.0, 0.0)
+        else:
+            collider_type = "Sphere"
+            size = (radius, 0.0, 0.0)
+        return {
+            "type": collider_type,
+            "enabled": True,
+            "reverse": bool(getattr(collision_object, "capsule_reverse_direction", False)),
+            "center": (0.0, 0.0, 0.0),
+            "size": size,
+            "frame_position": tuple(getattr(collision_object, "world_translation", (0.0, 0.0, 0.0))),
+            "frame_rotation": tuple(getattr(collision_object, "world_rotation", (1.0, 0.0, 0.0, 0.0))),
+            "frame_scale": (1.0, 1.0, 1.0),
+        }
+
+    def _build_mc2_collision_data(self, compiled_scene):
+        return [
+            self._mc2_collider_data_from_object(collision_object)
+            for collision_object in getattr(compiled_scene, "collision_objects", [])
+        ]
+
+    def _build_mc2_collision_binding_lookup(self, compiled_scene):
+        object_ids = {
+            collision_object.collision_object_id: index
+            for index, collision_object in enumerate(getattr(compiled_scene, "collision_objects", []))
+        }
+        return {
+            binding.binding_id: [
+                object_ids[collision_object_id]
+                for collision_object_id in binding.collision_object_ids
+                if collision_object_id in object_ids
+            ]
+            for binding in getattr(compiled_scene, "collision_bindings", [])
+        }
+
+    def _backend_status(self, scene):
+        return (
+            "python_stub:runtime_build managers=deferred "
+            f"mc2_collider_data={len(scene.get('mc2_collision_data', []))} "
+            f"mc2_collider_bindings={len(scene.get('mc2_collision_binding_lookup', {}))} "
+            f"mc2_collider_teams={len(scene.get('mc2_chain_team_ids', []))} "
+            f"mc2_registered_colliders={sum(len(indices) for indices in scene.get('mc2_chain_collider_indices', []))} "
+            f"mc2_particles={sum(len(chain.bones) for chain in scene['compiled_scene'].bone_chains)} "
+            f"mc2_proxy_vertices={sum(len(chain.bones) for chain in scene['compiled_scene'].bone_chains)}"
+        )
+
+    def _resolve_chain_collider_indices(self, scene, chain):
+        result = []
+        binding_lookup = scene.get("mc2_collision_binding_lookup", {})
+        collider_count = len(scene.get("mc2_collision_data", []))
+        for binding_id in getattr(chain, "collision_binding_ids", []):
+            for collider_index in binding_lookup.get(binding_id, []):
+                if 0 <= collider_index < collider_count and collider_index not in result:
+                    result.append(collider_index)
+        return result
+
+    def _rebuild_mc2_collider_managers(self, scene):
+        scene["mc2_chain_team_ids"] = []
+        scene["mc2_chain_collider_indices"] = []
+        for team_index, chain in enumerate(scene["compiled_scene"].bone_chains, start=1):
+            scene["mc2_chain_team_ids"].append(team_index)
+            scene["mc2_chain_collider_indices"].append(self._resolve_chain_collider_indices(scene, chain))
+
     def _apply_collision_object_inputs(self, scene, runtime_inputs):
         object_lookup = scene.get("collision_object_lookup", {})
+        compiled_objects = list(getattr(scene.get("compiled_scene"), "collision_objects", []))
         for collision_input in runtime_inputs.get("collision_objects", []):
             collision_object = object_lookup.get(collision_input.get("collision_object_id"))
             if collision_object is None:
@@ -257,6 +342,12 @@ class NativeBridgeStub:
             collision_object.world_rotation = tuple(collision_input.get("world_rotation", collision_object.world_rotation))
             if "linear_velocity" in collision_input:
                 collision_object.linear_velocity = tuple(collision_input.get("linear_velocity", collision_object.linear_velocity))
+            try:
+                collider_index = compiled_objects.index(collision_object)
+            except ValueError:
+                continue
+            if collider_index < len(scene.get("mc2_collision_data", [])):
+                scene["mc2_collision_data"][collider_index] = self._mc2_collider_data_from_object(collision_object)
 
     def _find_runtime_input(self, scene, component_id):
         runtime_inputs = scene.get("runtime_inputs") or {}
@@ -283,25 +374,27 @@ class NativeBridgeStub:
 
         point = (bone_state["roll"], bone_state["pitch"], 0.0)
         point_scale = max(0.05, bone.length)
+        shape_scale = _BOOTSTRAP_COLLIDER_PROJECTION_SCALE / point_scale
         for collision_object in collision_objects:
             world_translation = getattr(collision_object, "world_translation", (0.0, 0.0, 0.0))
             radius = max(0.0, float(getattr(collision_object, "radius", 0.0)))
             collider_center = (
-                world_translation[0] * 0.35,
-                world_translation[2] * 0.35,
+                world_translation[0] * shape_scale,
+                world_translation[2] * shape_scale,
                 0.0,
             )
             if getattr(collision_object, "shape_type", "SPHERE") == "CAPSULE":
                 height = max(0.0, float(getattr(collision_object, "height", 0.0)))
-                a = (collider_center[0], collider_center[1] - height * 0.2, 0.0)
-                b = (collider_center[0], collider_center[1] + height * 0.2, 0.0)
+                half_height = height * shape_scale * 0.5
+                a = (collider_center[0], collider_center[1] - half_height, 0.0)
+                b = (collider_center[0], collider_center[1] + half_height, 0.0)
                 closest = _closest_point_on_segment(point, a, b)
             else:
                 closest = collider_center
 
             delta = _vector_sub(point, closest)
             distance = _vector_length(delta)
-            influence_radius = max(0.01, radius / point_scale)
+            influence_radius = max(0.01, radius * shape_scale)
             if distance >= influence_radius:
                 continue
 
@@ -310,7 +403,8 @@ class NativeBridgeStub:
             else:
                 normal = _vector_scale(delta, 1.0 / distance)
             penetration = influence_radius - distance
-            point = _vector_add(point, _vector_scale(normal, penetration * 0.85))
+            push_distance = min(penetration * 0.85, _BOOTSTRAP_COLLIDER_PUSH_LIMIT)
+            point = _vector_add(point, _vector_scale(normal, push_distance))
 
         bone_state["roll"] = _clamp(point[0], -1.15, 1.15)
         bone_state["pitch"] = _clamp(point[1], -1.15, 1.15)

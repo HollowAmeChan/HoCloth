@@ -14,6 +14,7 @@ Status labels:
 - `partial`: some behavior or data ownership exists in the new MC2-style backend.
 - `legacy-partial`: related logic exists only in old `_native/src/hocloth_*.cpp` bootstrap code.
 - `defer`: Unity/editor/render specific code; reinterpret later at the Blender boundary.
+- `bl-boundary`: Unity-side object/Renderer/Transform/API behavior that belongs primarily to Blender Python authoring, compile, runtime exchange, or writeback layers.
 
 ## Module Summary
 
@@ -34,12 +35,24 @@ Status labels:
 | Reduction | partial | `_native/include/hocloth/reduction/`; settings/work data, Same/Simple/Shape reduction passes, base step flow, and VirtualMesh reduction handoff are present; full parity audit remains |
 | PreBuild | partial | `_native/include/hocloth/prebuild/`, `_native/include/hocloth/manager/cloth/prebuild_manager.hpp`; share/unique/serialize data containers, build-id lookup, validation, transform-id replacement, manager reference-cache ownership, structured VirtualMesh restoration, and RenderSetup share restoration are present |
 
+## Blender/Python Boundary Progress
+
+These MC2 files should not be forced into the native solver layer. Their Unity object access maps to stable compiled data, frame inputs, or writeback on the Blender side.
+
+| Boundary area | Status | HoCloth side |
+| --- | --- | --- |
+| Component wrapper / authoring state | partial | `components/`, `authoring/`; MC2 preset parameters, simplified UI, native backend default, build/debug controls, compiled-scene preview |
+| Mesh / renderer / transform acquisition | partial | `compile/compiler.py`, `compile/compiled.py`, `runtime/inputs.py`; Blender object ids, mesh/bone inputs, frame transform data |
+| Native bridge envelope | partial | `runtime/exchange.py`, `runtime/bridge.py`, `runtime/session.py`, `_native/src/hocloth_python_module.cpp`; session lifecycle and compiled/frame/native payload exchange |
+| Runtime stepping and writeback | partial | `runtime/live.py`, `runtime/pose_apply.py`; realtime step, returned transform summary, applied/missing counts, pose writeback path |
+| Debug artifacts | partial | `_build/compiled_scene_preview.json`, `_build/frame_inputs_preview.json`, `_build/runtime_debug_latest.json`; useful for BL/native boundary diagnosis |
+
 ## Cloth
 
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Cloth/CheckSliderSerializeData.cs` | complete | `cloth/parameters/check_slider_serialize_data.hpp` |
-| `Cloth/ClothBehaviour.cs` | defer | Blender component/runtime boundary |
+| `Cloth/ClothBehaviour.cs` | bl-boundary | `components/`, `authoring/`, `runtime/`; Blender component/runtime boundary, native owns only compiled data and solver state |
 | `Cloth/ClothForceMode.cs` | complete | `cloth/cloth_force_mode.hpp` |
 | `Cloth/ClothNormalAxis.cs` | complete | `cloth/cloth_normal_axis.hpp` |
 | `Cloth/ClothParameters.cs` | partial | `cloth/cloth_parameters.hpp`; native wind parameter ownership is present |
@@ -54,9 +67,9 @@ Status labels:
 | `Cloth/CurveSerializeData.cs` | partial | `cloth/parameters/curve_serialize_data.hpp`; native float4x4 curve-data path is present, Unity AnimationCurve copy remains a boundary |
 | `Cloth/CustomSkinningSettings.cs` | partial | `cloth/custom_skinning_settings.hpp`; Unity Transform list is represented as backend transform ids |
 | `Cloth/GizmoSerializeData.cs` | complete | `cloth/gizmo_serialize_data.hpp`; draw execution remains Blender authoring/gizmo layer |
-| `Cloth/MagicaCloth.cs` | defer | Blender component wrapper |
-| `Cloth/MagicaClothAnimationProperty.cs` | planned | `cloth/animation_property.*` |
-| `Cloth/MagicaClothAPI.cs` | defer | native API + Python bridge |
+| `Cloth/MagicaCloth.cs` | bl-boundary | Blender component wrapper; covered by HoCloth component properties, panel operators, compile entry points, and runtime session wiring |
+| `Cloth/MagicaClothAnimationProperty.cs` | bl-boundary | animation-driven property wrapper; maps to Blender component properties/driver updates and runtime parameter sync, not native solver ownership |
+| `Cloth/MagicaClothAPI.cs` | bl-boundary | native API + Python bridge; partially covered by `runtime/exchange.py`, `runtime/session.py`, `runtime/bridge.py`, and the nanobind module |
 | `Cloth/NormalAlignmentSettings.cs` | partial | `cloth/normal_alignment_settings.hpp`; Unity Transform reference is represented as a backend transform id |
 | `Cloth/SelectionData.cs` | partial | `cloth/selection_data.hpp`; data container/clone/compare/add/fill/merge are present, GridMap conversion remains deferred |
 
@@ -74,7 +87,7 @@ Status labels:
 | MC2 file | Status | HoCloth target |
 | --- | --- | --- |
 | `Cloth/Constraints/AngleConstraint.cs` | partial | `cloth/constraints/angle_constraint.*`; runtime solver/work buffers are ported, native baseline arrays plus Mesh/Bone parent-generation feed are present, full PreBuild/proxy conversion remains to close |
-| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver, collider work-data path, native collider authoring data, and manager registration bridge are present; Blender/API lifecycle wiring remains |
+| `Cloth/Constraints/ColliderCollisionConstraint.cs` | partial | `cloth/constraints/collider_collision_constraint.*`; point/edge solver, collider work-data path, native collider authoring data, and manager registration bridge are present; Blender/API lifecycle wiring remains. Current Blender BoneSpring runtime still uses the bootstrap collision response in `_native/src/hocloth_runtime_api.cpp` / `runtime/bridge.py`, not this full manager constraint yet |
 | `Cloth/Constraints/DistanceConstraint.cs` | complete | `cloth/constraints/distance_constraint.*`; params, data owner, `CreateData(...)`, register/exit, vertical/horizontal/shear runtime solver are present |
 | `Cloth/Constraints/InertiaConstraint.cs` | complete | `cloth/constraints/inertia_constraint.*`, `manager/team/team_manager.*`, `manager/simulation/simulation_manager.*`; CenterData/fixed list/CreateData plus per-frame inertia lifecycle are ported |
 | `Cloth/Constraints/MotionConstraint.cs` | complete | `cloth/constraints/motion_constraint.*`; max-distance/backstop/stiffness runtime path is ported, MC2's disabled friction block remains intentionally omitted |
@@ -99,7 +112,7 @@ Status labels:
 | `Define/SystemDefine.cs` | partial | `core/define/system_define.hpp`, `manager/simulation/time_manager.*` |
 | `Interface/ICount.cs` | complete | `core/interface/i_count.hpp` |
 | `Interface/IDataValidate.cs` | complete | `core/interface/i_data_validate.hpp` |
-| `Interface/ITransform.cs` | defer | Unity `Transform` collection/replacement boundary; reinterpret through Blender object ids later |
+| `Interface/ITransform.cs` | bl-boundary | Unity `Transform` collection/replacement boundary; represented by backend transform records plus Blender object ids and frame input transforms |
 | `Interface/IValid.cs` | complete | `core/interface/i_valid.hpp` |
 
 ## Manager
@@ -112,9 +125,9 @@ Status labels:
 | `Manager/MagicaSettings.cs` | complete | `manager/magica_settings.hpp`; refresh mode, simulation frequency, max frame step count, initialization location, update location, and validation are present |
 | `Manager/Cloth/ClothManager.cs` | partial | `manager/cloth/cloth_manager.*`, MC2 constraint solve order is centralized |
 | `Manager/Cloth/PreBuildManager.cs` | partial | `manager/cloth/prebuild_manager.*`; shared data cache, reference counting, unload-unused, status dump, constraint-data ownership, structured VirtualMesh share deserialization, and RenderSetup share deserialization are present; Unity renderer object restoration remains boundary |
-| `Manager/Render/RenderData.cs` | defer | `manager/render/render_data.*` |
-| `Manager/Render/RenderManager.cs` | defer | `manager/render/render_manager.*` |
-| `Manager/Render/RenderSetupData.cs` | defer | `manager/render/render_setup_data.*` |
+| `Manager/Render/RenderData.cs` | bl-boundary | Blender writeback/render-object boundary; native should keep only stable mapping/output buffers |
+| `Manager/Render/RenderManager.cs` | bl-boundary | Blender runtime writeback boundary; `runtime/pose_apply.py` and native output buffers cover the current exchange path |
+| `Manager/Render/RenderSetupData.cs` | bl-boundary | render setup comes from Blender compile data; native serialization shells exist where PreBuild needs stable ids/ranges |
 | `Manager/Render/RenderSetupDataSerialization.cs` | partial | `manager/render/render_setup_data_serialization.*`; PreBuild share/unique serialization containers and native share deserialize object are present, Unity renderer/mesh object collection remains a Blender boundary |
 | `Manager/Simulation/ColliderManager.cs` | partial | `manager/simulation/collider_manager.*`; collider arrays, work-data, pre/start/end/post simulation jobs, update-list population, native collider range registration/removal/update/enable bridge are present |
 | `Manager/Simulation/SimulationManager.cs` | partial | `manager/simulation/simulation_manager.*`, step lifecycle and processing-list population are now routed through native manager state |
@@ -152,16 +165,16 @@ Status labels:
 | `Utility/Data/DataUtility.cs` | partial | `utility/data/data_utility.*`; MC2 pack/unpack and remaining-data helpers are present, Unity object conversion remains a boundary |
 | `Utility/Data/MultiDataBuilder.cs` | complete | `utility/data/multi_data_builder.hpp` |
 | `Utility/Grid/GridMap.cs` | partial | `utility/grid/grid_map.hpp`; native hash-map helper exists, Unity job/container semantics are adapted |
-| `Utility/Jobs/InterlockUtility.cs` | defer | C++ threading abstraction |
-| `Utility/Jobs/JobUtility.cs` | defer | C++ scheduling abstraction |
+| `Utility/Jobs/InterlockUtility.cs` | partial | `utility/jobs/interlock_utility.hpp`; fixed-point aggregate add/read/max/clear helpers and synchronous aggregate solve helpers are present; Unity atomic job scheduling is adapted away |
+| `Utility/Jobs/JobUtility.cs` | partial | `utility/jobs/job_utility.hpp`; synchronous fill/serial-number/hashset-list/AABB/sphere-UV/transform-position/int-copy/index-to-multimap helpers are present; Unity JobHandle/Burst scheduling is adapted away |
 | `Utility/Math/AABB.cs` | complete | `utility/math/math_types.hpp`, `utility/math/math_utility.*` |
 | `Utility/Math/IntAABB.cs` | complete | `utility/math/int_aabb.hpp` |
 | `Utility/Math/MathExtensions.cs` | complete | `utility/math/math_extensions.*` |
 | `Utility/Math/MathUtility.cs` | partial | `utility/math/math_utility.*` |
 | `Utility/Math/MinimumData.cs` | complete | `utility/math/minimum_data.hpp` |
-| `Utility/Mesh/MeshUtility.cs` | planned | `utility/mesh/mesh_utility.*` |
+| `Utility/Mesh/MeshUtility.cs` | bl-boundary | Unity `Renderer`/`MeshFilter`/`SkinnedMeshRenderer` access maps to Blender mesh/object acquisition in `compile/`; no native solver module planned |
 | `Utility/Misc/Develop.cs` | complete | `utility/misc/develop.*`; native output/assert backend replaces Unity `Debug` |
-| `Utility/Misc/StaticStringBuilder.cs` | defer | C++ logging/dump utilities |
+| `Utility/Misc/StaticStringBuilder.cs` | complete | `utility/misc/static_string_builder.hpp`; shared static append/append-line/append-to-string helper is present |
 | `Utility/NativeCollection/DataChunk.cs` | complete | `utility/native_collection/data_chunk.*` |
 | `Utility/NativeCollection/ExBitFlag16.cs` | complete | `utility/native_collection/bit_flag.hpp` |
 | `Utility/NativeCollection/ExBitFlag8.cs` | complete | `utility/native_collection/bit_flag.hpp` |
@@ -170,19 +183,19 @@ Status labels:
 | `Utility/NativeCollection/ExNativeArray.cs` | partial | `utility/native_collection/ex_native_array.hpp`; chunk reuse, expand/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
 | `Utility/NativeCollection/ExProcessingList.cs` | complete | `utility/native_collection/ex_processing_list.*`; C++ counter pointer replaces Unity `NativeReference` job pointer |
 | `Utility/NativeCollection/ExSimpleNativeArray.cs` | partial | `utility/native_collection/ex_simple_native_array.hpp`; range add/fill/remove, summary/debug helpers are present, unsafe reinterpret/serialization is adapted |
-| `Utility/NativeCollection/ExTransformAccessArray.cs` | planned | `utility/native_collection/ex_transform_access_array.*` |
-| `Utility/NativeCollection/FixedList128BytesExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/FixedList32BytesExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/FixedList4096BytesExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/FixedList512BytesExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/FixedList64BytesExtensions.cs` | defer | C++ container compatibility |
+| `Utility/NativeCollection/ExTransformAccessArray.cs` | bl-boundary | Unity job transform-access wrapper; represented by `TransformManager` records plus Blender frame-input arrays |
+| `Utility/NativeCollection/FixedList128BytesExtensions.cs` | complete | `utility/native_collection/fixed_list.hpp`; MC2 set/remove-swapback/stack/queue helper surface is present |
+| `Utility/NativeCollection/FixedList32BytesExtensions.cs` | complete | `utility/native_collection/fixed_list.hpp`; MC2 set/remove-swapback/stack/queue helper surface is present |
+| `Utility/NativeCollection/FixedList4096BytesExtensions.cs` | complete | `utility/native_collection/fixed_list.hpp`; MC2 set/remove-swapback/stack/queue helper surface is present |
+| `Utility/NativeCollection/FixedList512BytesExtensions.cs` | complete | `utility/native_collection/fixed_list.hpp`; MC2 set/remove-swapback/stack/queue helper surface is present |
+| `Utility/NativeCollection/FixedList64BytesExtensions.cs` | complete | `utility/native_collection/fixed_list.hpp`; MC2 set/remove-swapback/stack/queue helper surface is present |
 | `Utility/NativeCollection/NativeArrayExtensions.cs` | partial | `utility/native_collection/native_array_extensions.hpp`; raw byte conversion helpers are present for trivially copyable values and BitFlag8, Unity allocator/dispose helpers remain irrelevant |
-| `Utility/NativeCollection/NativeMultiHashMapExtensions.cs` | defer | C++ container compatibility |
-| `Utility/NativeCollection/NativeReferenceExtensions.cs` | defer | C++ container compatibility |
+| `Utility/NativeCollection/NativeMultiHashMapExtensions.cs` | partial | `utility/native_collection/native_multi_hash_map_extensions.hpp`; contains/unique-add/remove/to-fixed-list/serialize/deserialize helpers are present, Unity Burst/job allocator details are adapted away |
+| `Utility/NativeCollection/NativeReferenceExtensions.cs` | complete | `utility/native_collection/native_reference_extensions.hpp`; interlocked start-index helper is present for atomic and local counters |
 | `Utility/ResultCode/Exception.cs` | complete | `utility/result_code/exception.*` |
 | `Utility/ResultCode/ResultCode.cs` | complete | `utility/result_code/result_code.*`; native debug logging is treated as the C++ logging boundary |
 | `Utility/Time/TimeSpan.cs` | complete | `utility/time/time_span.*`; DebugLog/Log are omitted at the C++ logging boundary |
-| `Utility/Time/UnityTimeSpan.cs` | defer | Blender/native profiling abstraction |
+| `Utility/Time/UnityTimeSpan.cs` | bl-boundary | Blender/native profiling abstraction; not part of solver behavior |
 
 ## VirtualMesh
 
@@ -228,6 +241,11 @@ Last completed step:
 - Extended `MathUtility` for AngleConstraint and later constraints: `AxisAngle(...)`, vector `FromToRotation(...)`, and vector `ClampAngle(...)`.
 - Added the first bottom-layer collider port: `ColliderManager` now owns MC2-style collider arrays, collider flags/types, `ColliderData`, `WorkData`, collider range registration/removal, and array accessors. `ColliderCollisionConstraintParams`, `ClothManager::ColliderCollision()`, and the `ColliderCollisionConstraint` ownership/work-buffer shell are present.
 - Ported the Point/Edge paths of `ColliderCollisionConstraint`: MC2-style `ColliderCollisionMode`, per-step point collider loop, per-step edge collider loop, particle/edge AABB filtering, Sphere/Plane/Capsule detection helpers, fixed-point aggregate buffers for edge writeback, friction/collision-normal writeback, and BoneSpring velocity/max-distance handling are now in C++. Edge processing-list population remains a later VirtualMesh/update-pipeline integration point.
+- Audited the Blender-visible collision path: the active BoneSpring backend currently routes compiled `collision_objects` / `collision_bindings` through the bootstrap angular-space solver. The bootstrap path now uses consistent world-to-angle scaling for collider center/radius/capsule height, clamps per-collider push distance, and no longer auto-binds every collider to every spring chain when no collider group exists. Full MC2 `ColliderManager + ColliderCollisionConstraint` runtime wiring remains the next collider integration step.
+- Started the active-runtime collider bridge toward full MC2 manager wiring: native `hocloth_runtime_api.cpp` now converts each compiled collision object into `mc2::ColliderManager::ColliderData`, keeps per-binding collider-index lookup caches, refreshes those data records from per-frame runtime collision inputs, and exposes `mc2_collider_data` / `mc2_collider_bindings` in backend status. The Python fallback mirrors this cache shape for debugging parity. Capsule exchange now carries MC2 direction/alignment/reverse/end-radius fields from Blender authoring properties, mapping to `CapsuleX/Y/ZCenter` or `CapsuleX/Y/ZStart`.
+- Extended the active-runtime bridge from raw collider data to MC2 manager registration: each compiled spring chain now gets a collider-only MC2 team, explicit collision bindings are registered into `ColliderManager::RegisterColliderDataRange(...)`, runtime collision inputs update the registered collider data, and the bridge runs the MC2 collider lifecycle through `PreSimulationUpdate(...)`, `CreateUpdateColliderList(...)`, `StartSimulationStep(...)`, and `EndSimulationStep(...)` to produce collider `WorkData`. Backend status now reports registered collider and work-data counts. The solver still uses bootstrap angular-space response until particle/VirtualMesh data is wired into `ColliderCollisionConstraint`.
+- Started the active-runtime particle-buffer bridge required by `ColliderCollisionConstraint`: each BoneSpring chain now builds a minimal MC2 proxy `VirtualMesh` with one vertex per joint, registers it through `VirtualMeshManager::RegisterProxyMesh(...)`, registers a matching `SimulationManager` particle range, initializes base/next/old/velocity/step-basic position and rotation buffers, marks step particles, and calls `ColliderCollisionConstraint::Solve(...)` in point mode after collider `WorkData` generation. The result is still not mapped back to Blender bone output; this stage exists to make MC2 particle-side collision buffers live before replacing bootstrap angular response.
+- Added the first native writeback path from MC2 particle buffers to BoneSpring output: after the existing spring/inertia joint-state update, runtime now writes joint states into MC2 particle `NextPositions`, runs MC2 collider work/point solve, then projects solved `NextPositions - BasePositions` back to compact pitch/roll joint state before `GetBoneTransforms(...)`. The old angular-space bootstrap collision response is no longer called in native step output; Python stub still mirrors the older fallback path.
 - Extended low-level `MathUtility` / `AABB` support for collider and later self-collision work: `ClampDistance(...)`, `Overlaps(...)`, `Expand(...)`, AABB encapsulation, `ClosestPtPointSegmentRatio(...)`, and `IntersectPointPlaneDist(...)`.
 - Extended the bottom-layer `ColliderManager` lifecycle from `Manager/Simulation/ColliderManager.cs`: `SimulationManager` now exposes/marks `processingStepCollider`, and `ColliderManager` has C++ `PreSimulationUpdate(...)`, `CreateUpdateColliderList(...)`, `StartSimulationStep(...)`, `EndSimulationStep(...)`, and `PostSimulationUpdate(...)` entry points. The Start step now builds MC2-style Sphere/Capsule/Plane `WorkData` with interpolated frame poses, inertia-shifted old poses, radius/AABB data, capsule endpoints, and plane normals. PreSimulationUpdate now also applies the MC2 negative-scale teleport path through the newly ported matrix transform helpers.
 - Extended low-level `MathUtility` with MC2 `ShiftPosition(...)` for inertia shift reuse.

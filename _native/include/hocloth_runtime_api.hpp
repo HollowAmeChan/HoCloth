@@ -107,6 +107,10 @@ struct CompiledCollisionObject {
     Vec3 angular_velocity;
     float radius = 0.0f;
     float height = 0.0f;
+    std::string capsule_direction = "Y";
+    bool capsule_aligned_on_center = true;
+    bool capsule_reverse_direction = false;
+    float capsule_end_radius = 0.0f;
     std::string source_object_name;
     std::vector<std::string> source_group_ids;
 };

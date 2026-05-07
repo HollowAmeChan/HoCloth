@@ -50,118 +50,84 @@ quaternion RotationFromNormalTangent(const quaternion& rotation)
 
 int TeamManager::TeamSyncParentList::Length() const
 {
-    return length;
+    return values.Length();
 }
 
 bool TeamManager::TeamSyncParentList::IsFull() const
 {
-    return length >= Capacity;
+    return values.IsFull();
 }
 
 bool TeamManager::TeamSyncParentList::Contains(int team_id) const
 {
-    for (int index = 0; index < length; ++index) {
-        if (values[static_cast<std::size_t>(index)] == team_id) {
-            return true;
-        }
-    }
-    return false;
+    return values.Contains(team_id);
 }
 
 int TeamManager::TeamSyncParentList::operator[](int index) const
 {
-    if (index < 0 || index >= length) {
+    if (index < 0 || index >= values.Length()) {
         return 0;
     }
-    return values[static_cast<std::size_t>(index)];
+    return values[index];
 }
 
 bool TeamManager::TeamSyncParentList::Add(int team_id)
 {
-    if (team_id <= 0 || Contains(team_id) || IsFull()) {
+    if (team_id <= 0) {
         return false;
     }
-    values[static_cast<std::size_t>(length)] = team_id;
-    ++length;
-    return true;
+    return values.SetLimit(team_id);
 }
 
 bool TeamManager::TeamSyncParentList::RemoveSwapBack(int team_id)
 {
-    for (int index = 0; index < length; ++index) {
-        if (values[static_cast<std::size_t>(index)] != team_id) {
-            continue;
-        }
-        --length;
-        values[static_cast<std::size_t>(index)] = values[static_cast<std::size_t>(length)];
-        values[static_cast<std::size_t>(length)] = 0;
-        return true;
-    }
-    return false;
+    return values.RemoveItemAtSwapBack(team_id);
 }
 
 void TeamManager::TeamSyncParentList::Clear()
 {
-    values.fill(0);
-    length = 0;
+    values.Clear();
 }
 
 int TeamManager::TeamMappingList::Length() const
 {
-    return length;
+    return values.Length();
 }
 
 bool TeamManager::TeamMappingList::IsFull() const
 {
-    return length >= Capacity;
+    return values.IsFull();
 }
 
 bool TeamManager::TeamMappingList::Contains(short mapping_index) const
 {
-    for (int index = 0; index < length; ++index) {
-        if (values[static_cast<std::size_t>(index)] == mapping_index) {
-            return true;
-        }
-    }
-    return false;
+    return values.Contains(mapping_index);
 }
 
 short TeamManager::TeamMappingList::operator[](int index) const
 {
-    if (index < 0 || index >= length) {
+    if (index < 0 || index >= values.Length()) {
         return -1;
     }
-    return values[static_cast<std::size_t>(index)];
+    return values[index];
 }
 
 bool TeamManager::TeamMappingList::Add(short mapping_index)
 {
-    if (mapping_index < 0 || Contains(mapping_index) || IsFull()) {
+    if (mapping_index < 0) {
         return false;
     }
-    values[static_cast<std::size_t>(length)] = mapping_index;
-    ++length;
-    return true;
+    return values.SetLimit(mapping_index);
 }
 
 bool TeamManager::TeamMappingList::RemoveSwapBack(short mapping_index)
 {
-    for (int index = 0; index < length; ++index) {
-        if (values[static_cast<std::size_t>(index)] != mapping_index) {
-            continue;
-        }
-        --length;
-        values[static_cast<std::size_t>(index)] = values[static_cast<std::size_t>(length)];
-        values[static_cast<std::size_t>(length)] = 0;
-        return true;
-    }
-    return false;
+    return values.RemoveItemAtSwapBack(mapping_index);
 }
 
 void TeamManager::TeamMappingList::Clear()
 {
-    values.fill(0);
-    length = 0;
+    values.Clear();
 }
 
 bool TeamManager::MappingData::IsValid() const

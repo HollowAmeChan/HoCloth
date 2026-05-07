@@ -101,6 +101,10 @@ class CompiledCollider:
     height: float
     world_translation: tuple[float, float, float]
     world_rotation: tuple[float, float, float, float]
+    capsule_direction: str = "Y"
+    capsule_aligned_on_center: bool = True
+    capsule_reverse_direction: bool = False
+    capsule_end_radius: float = 0.0
 
 
 @dataclass
@@ -121,6 +125,10 @@ class CompiledCollisionObject:
     angular_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
     radius: float = 0.0
     height: float = 0.0
+    capsule_direction: str = "Y"
+    capsule_aligned_on_center: bool = True
+    capsule_reverse_direction: bool = False
+    capsule_end_radius: float = 0.0
     source_object_name: str = ""
     source_group_ids: list[str] = field(default_factory=list)
 
@@ -271,6 +279,10 @@ class CompiledScene:
                     "shape_type": collider.shape_type,
                     "radius": collider.radius,
                     "height": collider.height,
+                    "capsule_direction": collider.capsule_direction,
+                    "capsule_aligned_on_center": collider.capsule_aligned_on_center,
+                    "capsule_reverse_direction": collider.capsule_reverse_direction,
+                    "capsule_end_radius": collider.capsule_end_radius,
                     "world_translation": collider.world_translation,
                     "world_rotation": collider.world_rotation,
                 }
@@ -295,6 +307,10 @@ class CompiledScene:
                     "angular_velocity": collision_object.angular_velocity,
                     "radius": collision_object.radius,
                     "height": collision_object.height,
+                    "capsule_direction": collision_object.capsule_direction,
+                    "capsule_aligned_on_center": collision_object.capsule_aligned_on_center,
+                    "capsule_reverse_direction": collision_object.capsule_reverse_direction,
+                    "capsule_end_radius": collision_object.capsule_end_radius,
                     "source_object_name": collision_object.source_object_name,
                     "source_group_ids": list(collision_object.source_group_ids),
                 }

@@ -661,6 +661,18 @@ class HoClothColliderComponent(bpy.types.PropertyGroup):
     )
     radius: bpy.props.FloatProperty(name="Radius", default=0.05, min=0.0)
     height: bpy.props.FloatProperty(name="Height", default=0.1, min=0.0)
+    capsule_direction: bpy.props.EnumProperty(
+        name="Capsule Direction",
+        items=(
+            ("X", "X", "Local X axis"),
+            ("Y", "Y", "Local Y axis"),
+            ("Z", "Z", "Local Z axis"),
+        ),
+        default="Y",
+    )
+    capsule_aligned_on_center: bpy.props.BoolProperty(name="Center Aligned", default=True)
+    capsule_reverse_direction: bpy.props.BoolProperty(name="Reverse Direction", default=False)
+    capsule_end_radius: bpy.props.FloatProperty(name="End Radius", default=0.05, min=0.0)
 
 
 class HoClothColliderGroupComponent(bpy.types.PropertyGroup):

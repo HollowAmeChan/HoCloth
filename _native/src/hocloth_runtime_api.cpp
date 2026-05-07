@@ -1,4 +1,11 @@
 #include "hocloth_runtime_api.hpp"
+#include "hocloth/cloth/constraints/collider_collision_constraint.hpp"
+#include "hocloth/manager/team/team_manager.hpp"
+#include "hocloth/manager/simulation/collider_manager.hpp"
+#include "hocloth/manager/simulation/simulation_manager.hpp"
+#include "hocloth/manager/transform/transform_manager.hpp"
+#include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_container.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -389,6 +396,68 @@ Vec3 ToAnglePoint(const JointState& state)
     return Vec3{state.roll, state.pitch, 0.0f};
 }
 
+mc2::float3 ToMc2Float3(const Vec3& value)
+{
+    return mc2::float3{value.x, value.y, value.z};
+}
+
+mc2::quaternion ToMc2Quaternion(const Quat& value)
+{
+    return mc2::quaternion{value.w, value.x, value.y, value.z};
+}
+
+mc2::ColliderManager::ColliderType CapsuleColliderType(
+    const std::string& direction,
+    bool aligned_on_center
+)
+{
+    if (direction == "X") {
+        return aligned_on_center
+            ? mc2::ColliderManager::ColliderType::CapsuleXCenter
+            : mc2::ColliderManager::ColliderType::CapsuleXStart;
+    }
+    if (direction == "Z") {
+        return aligned_on_center
+            ? mc2::ColliderManager::ColliderType::CapsuleZCenter
+            : mc2::ColliderManager::ColliderType::CapsuleZStart;
+    }
+    return aligned_on_center
+        ? mc2::ColliderManager::ColliderType::CapsuleYCenter
+        : mc2::ColliderManager::ColliderType::CapsuleYStart;
+}
+
+mc2::ColliderManager::ColliderData ToMc2ColliderData(const CompiledCollisionObject& collision_object)
+{
+    mc2::ColliderManager::ColliderData data;
+    data.enabled = true;
+    data.reverse = collision_object.capsule_reverse_direction;
+    data.center = mc2::float3{};
+    data.frame_position = ToMc2Float3(collision_object.world_translation);
+    data.frame_rotation = ToMc2Quaternion(collision_object.world_rotation);
+    data.frame_scale = mc2::float3{1.0f, 1.0f, 1.0f};
+
+    const float radius = std::max(0.001f, collision_object.radius);
+    if (collision_object.shape_type == "CAPSULE") {
+        data.type = CapsuleColliderType(
+            collision_object.capsule_direction,
+            collision_object.capsule_aligned_on_center
+        );
+        data.size = mc2::float3{
+            radius,
+            std::max(0.001f, collision_object.capsule_end_radius),
+            std::max(radius * 2.0f, collision_object.height),
+        };
+    } else if (collision_object.shape_type == "PLANE") {
+        data.type = mc2::ColliderManager::ColliderType::Plane;
+        data.size = mc2::float3{};
+    } else {
+        data.type = mc2::ColliderManager::ColliderType::Sphere;
+        data.size = mc2::float3{radius, 0.0f, 0.0f};
+    }
+
+    return data;
+}
+
 void FromAnglePoint(const Vec3& point, JointState& state)
 {
     state.roll = Clamp(point.x, -1.2f, 1.2f);
@@ -403,6 +472,18 @@ struct RuntimeModule::SceneState {
     std::vector<ChainCache> chain_caches;
     std::unordered_map<std::string, std::size_t> collision_object_lookup;
     std::unordered_map<std::string, std::vector<std::size_t>> collision_binding_lookup;
+    std::vector<mc2::ColliderManager::ColliderData> mc2_collision_data;
+    std::unordered_map<std::string, std::vector<std::size_t>> mc2_collision_binding_lookup;
+    mc2::TeamManager mc2_team_manager;
+    mc2::TransformManager mc2_transform_manager;
+    mc2::SimulationManager mc2_simulation_manager;
+    mc2::VirtualMeshManager mc2_virtual_mesh_manager;
+    mc2::ColliderManager mc2_collider_manager;
+    mc2::ColliderCollisionConstraint mc2_collider_collision_constraint;
+    std::vector<int> mc2_chain_team_ids;
+    std::vector<std::vector<std::size_t>> mc2_chain_collider_indices;
+    std::vector<mc2::SimulationManager::ParticleChunkSet> mc2_chain_particle_chunks;
+    std::vector<std::shared_ptr<mc2::VirtualMesh>> mc2_chain_proxy_meshes;
     SimulationTimeState time_state;
     std::uint64_t steps = 0;
 };
@@ -423,6 +504,295 @@ std::string CompiledScene::Summary() const
            << ", collision_bindings=" << collision_bindings.size()
            << ", cache_outputs=0";
     return stream.str();
+}
+
+std::string RuntimeBackendStatus(const RuntimeModule::SceneState& scene)
+{
+    std::ostringstream stream;
+    stream << "hocloth_mc2_core:runtime_build managers=deferred"
+           << " mc2_collider_data=" << scene.mc2_collision_data.size()
+           << " mc2_collider_bindings=" << scene.mc2_collision_binding_lookup.size()
+           << " mc2_collider_teams=" << scene.mc2_chain_team_ids.size()
+           << " mc2_registered_colliders=" << scene.mc2_collider_manager.DataCount()
+           << " mc2_collider_work=" << scene.mc2_collider_manager.WorkDataArray().Count()
+           << " mc2_particles=" << scene.mc2_simulation_manager.ParticleCount()
+           << " mc2_proxy_vertices=" << scene.mc2_virtual_mesh_manager.ProxyVertexCount()
+           << " mc2_step_particles=" << scene.mc2_simulation_manager.ProcessingStepParticles().Count();
+    return stream.str();
+}
+
+std::vector<std::size_t> ResolveChainColliderIndices(
+    const RuntimeModule::SceneState& scene,
+    const CompiledSpringBone& chain
+)
+{
+    std::vector<std::size_t> result;
+    for (const std::string& binding_id : chain.collision_binding_ids) {
+        auto binding_it = scene.mc2_collision_binding_lookup.find(binding_id);
+        if (binding_it == scene.mc2_collision_binding_lookup.end()) {
+            continue;
+        }
+
+        for (std::size_t collider_index : binding_it->second) {
+            if (collider_index < scene.mc2_collision_data.size()
+                && std::find(result.begin(), result.end(), collider_index) == result.end()) {
+                result.push_back(collider_index);
+            }
+        }
+    }
+    return result;
+}
+
+std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone& chain)
+{
+    auto mesh = std::make_shared<mc2::VirtualMesh>();
+    mesh->name = chain.component_id + "::runtime_proxy";
+    mesh->is_managed = true;
+    mesh->mesh_type = mc2::VirtualMesh::MeshType::ProxyBoneMesh;
+    mesh->is_bone_cloth = true;
+    mesh->center_transform_index = -1;
+
+    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+        const CompiledSpringJoint& joint = chain.joints[joint_index];
+        const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
+        const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
+        const bool is_root = joint.parent_index < 0;
+
+        mesh->attributes.Add(is_root ? mc2::VertexAttribute::Fixed() : mc2::VertexAttribute::Move());
+        mesh->local_positions.Add(position);
+        mesh->local_normals.Add(mc2::float3{0.0f, 1.0f, 0.0f});
+        mesh->local_tangents.Add(mc2::float3{1.0f, 0.0f, 0.0f});
+        mesh->uv.Add(mc2::float2{});
+        mesh->bone_weights.Add(mc2::VirtualMeshBoneWeight{});
+        mesh->vertex_bind_pose_positions.Add(position);
+        mesh->vertex_bind_pose_rotations.Add(rotation);
+        mesh->vertex_depths.Add(static_cast<float>(std::max(0, joint.depth)));
+        mesh->vertex_root_indices.Add(is_root ? static_cast<int>(joint_index) : 0);
+        mesh->vertex_parent_indices.Add(joint.parent_index);
+        mesh->vertex_local_positions.Add(position);
+        mesh->vertex_local_rotations.Add(rotation);
+        mesh->normal_adjustment_rotations.Add(mc2::quaternion{});
+        mesh->vertex_to_transform_rotations.Add(mc2::quaternion{});
+    }
+
+    for (const CompiledSpringLine& line : chain.lines) {
+        if (line.start_index >= 0 && line.end_index >= 0) {
+            mesh->edges.Add(mc2::int2{line.start_index, line.end_index});
+            mesh->edge_flags.Add(mc2::BitFlag8{});
+        }
+    }
+
+    return mesh;
+}
+
+void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
+{
+    scene.mc2_collider_collision_constraint.Dispose();
+    scene.mc2_collider_manager.Dispose();
+    scene.mc2_virtual_mesh_manager.Dispose();
+    scene.mc2_simulation_manager.Dispose();
+    scene.mc2_transform_manager.Dispose();
+    scene.mc2_team_manager.Dispose();
+    scene.mc2_collider_manager.Initialize();
+    scene.mc2_virtual_mesh_manager.Initialize();
+    scene.mc2_simulation_manager.Initialize();
+    scene.mc2_transform_manager.Initialize();
+    scene.mc2_team_manager.Initialize();
+
+    scene.mc2_chain_team_ids.clear();
+    scene.mc2_chain_collider_indices.clear();
+    scene.mc2_chain_particle_chunks.clear();
+    scene.mc2_chain_proxy_meshes.clear();
+    scene.mc2_chain_team_ids.reserve(scene.compiled_scene.spring_bones.size());
+    scene.mc2_chain_collider_indices.reserve(scene.compiled_scene.spring_bones.size());
+    scene.mc2_chain_particle_chunks.reserve(scene.compiled_scene.spring_bones.size());
+    scene.mc2_chain_proxy_meshes.reserve(scene.compiled_scene.spring_bones.size());
+
+    for (const CompiledSpringBone& chain : scene.compiled_scene.spring_bones) {
+        mc2::ClothParameters parameters;
+        parameters.collider_collision_constraint.mode = mc2::ColliderCollisionMode::Point;
+        parameters.collider_collision_constraint.dynamic_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
+        parameters.collider_collision_constraint.static_friction = Clamp(chain.collider_friction, 0.0f, 0.5f);
+
+        const int team_id = scene.mc2_team_manager.CreateTeam(parameters, true, true);
+        auto proxy_mesh = BuildRuntimeProxyMesh(chain);
+        mc2::VirtualMeshContainer proxy_container(proxy_mesh);
+        scene.mc2_virtual_mesh_manager.RegisterProxyMesh(
+            team_id,
+            proxy_container,
+            scene.mc2_team_manager,
+            scene.mc2_transform_manager
+        );
+
+        mc2::SimulationManager::ParticleChunkSet particle_chunks =
+            scene.mc2_simulation_manager.RegisterParticleRange(
+                team_id,
+                static_cast<int>(chain.joints.size())
+            );
+        mc2::TeamManager::TeamData& team_data = scene.mc2_team_manager.GetTeamData(team_id);
+        team_data.particle_chunk = particle_chunks.next_pos_chunk;
+
+        for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+            const int particle_index = particle_chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);
+            if (particle_index < 0 || particle_index >= scene.mc2_simulation_manager.NextPositions().Length()) {
+                continue;
+            }
+
+            const CompiledSpringJoint& joint = chain.joints[joint_index];
+            const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
+            const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
+            scene.mc2_simulation_manager.NextPositions()[particle_index] = position;
+            scene.mc2_simulation_manager.OldPositions()[particle_index] = position;
+            scene.mc2_simulation_manager.BasePositions()[particle_index] = position;
+            scene.mc2_simulation_manager.VelocityPositions()[particle_index] = position;
+            scene.mc2_simulation_manager.StepBasicPositions()[particle_index] = position;
+            scene.mc2_simulation_manager.BaseRotations()[particle_index] = rotation;
+            scene.mc2_simulation_manager.StepBasicRotations()[particle_index] = rotation;
+        }
+
+        std::vector<std::size_t> collider_indices = ResolveChainColliderIndices(scene, chain);
+        std::vector<mc2::ColliderManager::ColliderData> colliders;
+        colliders.reserve(collider_indices.size());
+        for (std::size_t collider_index : collider_indices) {
+            colliders.push_back(scene.mc2_collision_data[collider_index]);
+        }
+
+        if (!colliders.empty()) {
+            scene.mc2_collider_manager.RegisterColliderDataRange(
+                team_id,
+                scene.mc2_team_manager,
+                scene.mc2_transform_manager,
+                colliders
+            );
+        }
+
+        scene.mc2_chain_team_ids.push_back(team_id);
+        scene.mc2_chain_collider_indices.push_back(std::move(collider_indices));
+        scene.mc2_chain_particle_chunks.push_back(particle_chunks);
+        scene.mc2_chain_proxy_meshes.push_back(std::move(proxy_mesh));
+    }
+}
+
+void UpdateMc2ColliderWorkData(RuntimeModule::SceneState& scene)
+{
+    scene.mc2_simulation_manager.BeginSimulationStep();
+    const int update_count = scene.mc2_team_manager.AlwaysTeamUpdate(
+        scene.time_state.simulation_delta_time,
+        scene.time_state.simulation_delta_time,
+        scene.time_state.simulation_delta_time,
+        scene.time_state.global_time_scale,
+        scene.time_state.simulation_delta_time,
+        1
+    );
+    if (update_count <= 0) {
+        scene.mc2_simulation_manager.EndSimulationStep();
+        return;
+    }
+
+    for (const mc2::SimulationManager::ParticleChunkSet& chunks : scene.mc2_chain_particle_chunks) {
+        for (int offset = 0; offset < chunks.ParticleCount(); ++offset) {
+            scene.mc2_simulation_manager.MarkStepParticle(chunks.next_pos_chunk.start_index + offset);
+        }
+    }
+
+    scene.mc2_collider_manager.PreSimulationUpdate(scene.mc2_team_manager, scene.mc2_transform_manager);
+    scene.mc2_collider_manager.CreateUpdateColliderList(
+        0,
+        scene.mc2_team_manager,
+        scene.mc2_simulation_manager
+    );
+    scene.mc2_collider_manager.StartSimulationStep(scene.mc2_team_manager, scene.mc2_simulation_manager);
+    scene.mc2_collider_collision_constraint.WorkBufferUpdate(
+        scene.mc2_simulation_manager.ParticleCount(),
+        0
+    );
+    scene.mc2_collider_collision_constraint.Solve(
+        scene.mc2_team_manager,
+        scene.mc2_virtual_mesh_manager,
+        scene.mc2_collider_manager,
+        scene.mc2_simulation_manager
+    );
+    scene.mc2_collider_manager.EndSimulationStep(scene.mc2_simulation_manager);
+    scene.mc2_simulation_manager.EndSimulationStep();
+}
+
+void SyncJointStatesToMc2Particles(
+    RuntimeModule::SceneState& scene,
+    std::size_t chain_index
+)
+{
+    if (chain_index >= scene.compiled_scene.spring_bones.size()
+        || chain_index >= scene.chain_caches.size()
+        || chain_index >= scene.mc2_chain_particle_chunks.size()) {
+        return;
+    }
+
+    const CompiledSpringBone& chain = scene.compiled_scene.spring_bones[chain_index];
+    const ChainCache& cache = scene.chain_caches[chain_index];
+    const mc2::SimulationManager::ParticleChunkSet& chunks =
+        scene.mc2_chain_particle_chunks[chain_index];
+
+    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+        const int particle_index = chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);
+        if (particle_index < 0 || particle_index >= scene.mc2_simulation_manager.NextPositions().Length()) {
+            continue;
+        }
+
+        const CompiledSpringJoint& joint = chain.joints[joint_index];
+        const Vec3 point = ToAnglePoint(cache.joint_states[joint_index]);
+        const float point_scale = std::max(0.05f, joint.length);
+        const mc2::float3 base_position = ToMc2Float3(joint.rest_head_local);
+        const mc2::float3 offset{point.x * point_scale, point.y * point_scale, 0.0f};
+        const mc2::float3 next_position{
+            base_position.x + offset.x,
+            base_position.y + offset.y,
+            base_position.z + offset.z,
+        };
+
+        scene.mc2_simulation_manager.BasePositions()[particle_index] = base_position;
+        scene.mc2_simulation_manager.NextPositions()[particle_index] = next_position;
+        scene.mc2_simulation_manager.VelocityPositions()[particle_index] = next_position;
+        scene.mc2_simulation_manager.StepBasicPositions()[particle_index] = base_position;
+    }
+}
+
+void ApplyMc2ParticlesToJointStates(
+    RuntimeModule::SceneState& scene,
+    std::size_t chain_index
+)
+{
+    if (chain_index >= scene.compiled_scene.spring_bones.size()
+        || chain_index >= scene.chain_caches.size()
+        || chain_index >= scene.mc2_chain_particle_chunks.size()) {
+        return;
+    }
+
+    const CompiledSpringBone& chain = scene.compiled_scene.spring_bones[chain_index];
+    ChainCache& cache = scene.chain_caches[chain_index];
+    const mc2::SimulationManager::ParticleChunkSet& chunks =
+        scene.mc2_chain_particle_chunks[chain_index];
+
+    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
+        const CompiledSpringJoint& joint = chain.joints[joint_index];
+        if (joint.parent_index < 0) {
+            continue;
+        }
+
+        const int particle_index = chunks.next_pos_chunk.start_index + static_cast<int>(joint_index);
+        if (particle_index < 0 || particle_index >= scene.mc2_simulation_manager.NextPositions().Length()) {
+            continue;
+        }
+
+        const mc2::float3 next_position = scene.mc2_simulation_manager.NextPositions()[particle_index];
+        const mc2::float3 base_position = scene.mc2_simulation_manager.BasePositions()[particle_index];
+        const float point_scale = std::max(0.05f, joint.length);
+        const Vec3 point{
+            (next_position.x - base_position.x) / point_scale,
+            (next_position.y - base_position.y) / point_scale,
+            0.0f,
+        };
+        FromAnglePoint(point, cache.joint_states[joint_index]);
+    }
 }
 
 void SimulationTimeState::FrameUpdate(int requested_frequency)
@@ -471,7 +841,14 @@ void BuildSceneCaches(RuntimeModule::SceneState& scene)
         scene.collision_object_lookup[collision_object_id] = index;
     }
 
+    scene.mc2_collision_data.clear();
+    scene.mc2_collision_data.reserve(scene.compiled_scene.collision_objects.size());
+    for (const CompiledCollisionObject& collision_object : scene.compiled_scene.collision_objects) {
+        scene.mc2_collision_data.push_back(ToMc2ColliderData(collision_object));
+    }
+
     scene.collision_binding_lookup.clear();
+    scene.mc2_collision_binding_lookup.clear();
     for (const CompiledCollisionBinding& binding : scene.compiled_scene.collision_bindings) {
         std::vector<std::size_t> indices;
         indices.reserve(binding.collision_object_ids.size());
@@ -482,6 +859,7 @@ void BuildSceneCaches(RuntimeModule::SceneState& scene)
             }
         }
         scene.collision_binding_lookup[binding.binding_id] = std::move(indices);
+        scene.mc2_collision_binding_lookup[binding.binding_id] = scene.collision_binding_lookup[binding.binding_id];
     }
 }
 
@@ -497,64 +875,31 @@ void ApplyCollisionObjectInputs(RuntimeModule::SceneState& scene)
         collision_object.world_translation = collision_input.world_translation;
         collision_object.world_rotation = collision_input.world_rotation;
         collision_object.linear_velocity = collision_input.linear_velocity;
+        if (it->second < scene.mc2_collision_data.size()) {
+            scene.mc2_collision_data[it->second] = ToMc2ColliderData(collision_object);
+        }
     }
-}
 
-void ApplyCollisionResponse(
-    const RuntimeModule::SceneState& scene,
-    const CompiledSpringBone& chain,
-    const CompiledSpringJoint& joint,
-    JointState& joint_state
-)
-{
-    Vec3 point = ToAnglePoint(joint_state);
-    const float point_scale = std::max(0.05f, joint.length);
-    const float max_push_distance = std::max(0.0001f, chain.collider_limit_distance) / point_scale;
-
-    for (const std::string& binding_id : chain.collision_binding_ids) {
-        auto binding_it = scene.collision_binding_lookup.find(binding_id);
-        if (binding_it == scene.collision_binding_lookup.end()) {
+    for (std::size_t chain_index = 0; chain_index < scene.mc2_chain_team_ids.size(); ++chain_index) {
+        const int team_id = scene.mc2_chain_team_ids[chain_index];
+        if (!scene.mc2_team_manager.IsValidTeam(team_id)) {
             continue;
         }
 
-        for (std::size_t collision_index : binding_it->second) {
-            const CompiledCollisionObject& collision_object = scene.compiled_scene.collision_objects[collision_index];
-            const Vec3 collider_center{
-                collision_object.world_translation.x * 0.35f,
-                collision_object.world_translation.z * 0.35f,
-                0.0f,
-            };
-
-            Vec3 closest = collider_center;
-            if (collision_object.shape_type == "CAPSULE") {
-                const float half_height = std::max(0.0f, collision_object.height) * 0.2f;
-                const Vec3 a{collider_center.x, collider_center.y - half_height, 0.0f};
-                const Vec3 b{collider_center.x, collider_center.y + half_height, 0.0f};
-                closest = ClosestPointOnSegment(point, a, b);
-            }
-
-            const Vec3 delta = Sub(point, closest);
-            const float distance = Length(delta);
-            const float influence_radius = std::max(0.01f, collision_object.radius / point_scale);
-            if (distance >= influence_radius) {
+        const std::vector<std::size_t>& collider_indices = scene.mc2_chain_collider_indices[chain_index];
+        for (std::size_t local_index = 0; local_index < collider_indices.size(); ++local_index) {
+            const std::size_t collider_index = collider_indices[local_index];
+            if (collider_index >= scene.mc2_collision_data.size()) {
                 continue;
             }
-
-            Vec3 normal = distance <= 1.0e-6f ? Vec3{0.0f, 1.0f, 0.0f} : Scale(delta, 1.0f / distance);
-            const float penetration = influence_radius - distance;
-            const float push_scale = 1.0f - (Clamp(chain.collider_friction, 0.0f, 0.5f) * 0.3f);
-            point = Add(point, Scale(normal, penetration * push_scale));
-
-            // From MC2: MagicaCloth2/Scripts/Core/Cloth/Constraints/ColliderCollisionConstraint.cs
-            // BoneSpring limits how far collider push can move a particle away from its origin.
-            const float point_len = Length(point);
-            if (point_len > max_push_distance && point_len > 1.0e-6f) {
-                point = Scale(point, max_push_distance / point_len);
-            }
+            scene.mc2_collider_manager.UpdateColliderData(
+                team_id,
+                static_cast<int>(local_index),
+                scene.mc2_team_manager,
+                scene.mc2_collision_data[collider_index]
+            );
         }
     }
-
-    FromAnglePoint(point, joint_state);
 }
 
 void ApplyMc2SpringConstraint(
@@ -856,14 +1201,6 @@ void StepChain(
         child.roll = Clamp(child.roll * (1.0f - relax) + parent.roll * relax, -1.2f, 1.2f);
     }
 
-    for (std::size_t joint_index = 0; joint_index < chain.joints.size(); ++joint_index) {
-        const CompiledSpringJoint& joint = chain.joints[joint_index];
-        if (joint.parent_index < 0) {
-            continue;
-        }
-        ApplyCollisionResponse(scene, chain, joint, cache.joint_states[joint_index]);
-    }
-
     if (runtime_input != nullptr) {
         if (runtime_input->basic_rotations.size() == cache.last_basic_rotations.size()) {
             cache.last_basic_rotations = runtime_input->basic_rotations;
@@ -887,13 +1224,15 @@ BuildSceneResult RuntimeModule::BuildScene(CompiledScene compiled_scene)
     scene->time_state.max_simulation_count_per_frame = kMc2DefaultMaxSimulationCountPerFrame;
     scene->time_state.FrameUpdate(scene->time_state.simulation_frequency);
     BuildSceneCaches(*scene);
+    RebuildMc2ColliderManagers(*scene);
+    UpdateMc2ColliderWorkData(*scene);
 
     BuildSceneResult result;
     result.handle = handle;
     result.summary = scene->compiled_scene.Summary();
-    result.backend = "native_mc2_bootstrap";
-    result.build_message = "HoCloth native MC2 bootstrap active.";
-    result.backend_status = "hocloth_mc2_core:runtime_build managers=deferred";
+    result.backend = "native_mc2_particle_bridge";
+    result.build_message = "HoCloth native MC2 particle/collider bridge active.";
+    result.backend_status = RuntimeBackendStatus(*scene);
 
     scenes_[handle] = std::move(scene);
     return result;
@@ -914,6 +1253,8 @@ bool RuntimeModule::ResetScene(SceneHandle handle)
     scene.time_state.max_simulation_count_per_frame = kMc2DefaultMaxSimulationCountPerFrame;
     scene.time_state.FrameUpdate(scene.time_state.simulation_frequency);
     BuildSceneCaches(scene);
+    RebuildMc2ColliderManagers(scene);
+    UpdateMc2ColliderWorkData(scene);
     return true;
 }
 
@@ -922,6 +1263,7 @@ bool RuntimeModule::SetRuntimeInputs(SceneHandle handle, RuntimeInputs runtime_i
     SceneState& scene = RequireScene(handle);
     scene.runtime_inputs = std::move(runtime_inputs);
     ApplyCollisionObjectInputs(scene);
+    UpdateMc2ColliderWorkData(scene);
     return true;
 }
 
@@ -932,6 +1274,11 @@ StepSceneResult RuntimeModule::StepScene(SceneHandle handle, float dt, int simul
 
     for (std::size_t chain_index = 0; chain_index < scene.compiled_scene.spring_bones.size(); ++chain_index) {
         StepChain(scene, scene.compiled_scene.spring_bones[chain_index], scene.chain_caches[chain_index]);
+        SyncJointStatesToMc2Particles(scene, chain_index);
+    }
+    UpdateMc2ColliderWorkData(scene);
+    for (std::size_t chain_index = 0; chain_index < scene.compiled_scene.spring_bones.size(); ++chain_index) {
+        ApplyMc2ParticlesToJointStates(scene, chain_index);
     }
 
     scene.steps += 1;

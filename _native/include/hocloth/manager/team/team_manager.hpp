@@ -10,9 +10,9 @@
 #include "hocloth/utility/native_collection/data_chunk.hpp"
 #include "hocloth/utility/native_collection/ex_native_array.hpp"
 #include "hocloth/utility/native_collection/ex_simple_native_array.hpp"
+#include "hocloth/utility/native_collection/fixed_list.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -69,8 +69,7 @@ public:
 
     struct TeamSyncParentList {
         static constexpr int Capacity = 7;
-        std::array<int, Capacity> values{};
-        int length = 0;
+        FixedList<int, Capacity> values;
 
         [[nodiscard]] int Length() const;
         [[nodiscard]] bool IsFull() const;
@@ -83,8 +82,7 @@ public:
 
     struct TeamMappingList {
         static constexpr int Capacity = 31;
-        std::array<short, Capacity> values{};
-        int length = 0;
+        FixedList<short, Capacity> values;
 
         [[nodiscard]] int Length() const;
         [[nodiscard]] bool IsFull() const;

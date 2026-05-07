@@ -46,6 +46,15 @@ float ReadFloat(const nb::dict& dict, const char* key, float fallback = 0.0f)
     return nb::cast<float>(value);
 }
 
+bool ReadBool(const nb::dict& dict, const char* key, bool fallback = false)
+{
+    nb::object value = GetOptional(dict, key);
+    if (value.is_none()) {
+        return fallback;
+    }
+    return nb::cast<bool>(value);
+}
+
 nb::sequence ReadSequence(const nb::dict& dict, const char* key)
 {
     nb::object value = GetOptional(dict, key);
@@ -330,6 +339,13 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         collision_object.shape_type = ReadString(object_dict, "shape_type");
         collision_object.radius = ReadFloat(object_dict, "radius");
         collision_object.height = ReadFloat(object_dict, "height");
+        collision_object.capsule_direction = ReadString(object_dict, "capsule_direction", "Y");
+        collision_object.capsule_aligned_on_center =
+            ReadBool(object_dict, "capsule_aligned_on_center", true);
+        collision_object.capsule_reverse_direction =
+            ReadBool(object_dict, "capsule_reverse_direction", false);
+        collision_object.capsule_end_radius =
+            ReadFloat(object_dict, "capsule_end_radius", collision_object.radius);
         collision_object.source_object_name = ReadString(object_dict, "source_object_name");
         collision_object.source_group_ids = ReadStringArray(object_dict, "source_group_ids");
         if (object_dict.contains("world_translation")) {

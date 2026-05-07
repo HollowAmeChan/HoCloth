@@ -77,6 +77,10 @@ def _compile_collider(item, typed_item):
         height=typed_item.height,
         world_translation=tuple(world_matrix.to_translation()),
         world_rotation=tuple(world_matrix.to_quaternion()),
+        capsule_direction=getattr(typed_item, "capsule_direction", "Y"),
+        capsule_aligned_on_center=bool(getattr(typed_item, "capsule_aligned_on_center", True)),
+        capsule_reverse_direction=bool(getattr(typed_item, "capsule_reverse_direction", False)),
+        capsule_end_radius=float(getattr(typed_item, "capsule_end_radius", typed_item.radius)),
     )
 
 
@@ -90,6 +94,10 @@ def _compiled_collision_object_from_collider(compiled_collider: CompiledCollider
         world_rotation=compiled_collider.world_rotation,
         radius=float(compiled_collider.radius),
         height=float(compiled_collider.height),
+        capsule_direction=compiled_collider.capsule_direction,
+        capsule_aligned_on_center=compiled_collider.capsule_aligned_on_center,
+        capsule_reverse_direction=compiled_collider.capsule_reverse_direction,
+        capsule_end_radius=float(compiled_collider.capsule_end_radius),
         source_object_name=compiled_collider.object_name,
     )
 
@@ -258,26 +266,6 @@ def compile_scene_from_components(scene) -> CompiledScene:
             )
         )
 
-    if compiled.colliders and not compiled.collider_groups:
-        compiled.collider_groups.append(
-            CompiledColliderGroup(
-                component_id="__auto_all_colliders__",
-                collider_ids=[collider.component_id for collider in compiled.colliders],
-            )
-        )
-        compiled.collision_bindings.append(
-            CompiledCollisionBinding(
-                binding_id="__auto_all_colliders__",
-                owner_component_id="__auto_all_colliders__",
-                source_group_ids=["__auto_all_colliders__"],
-                collision_object_ids=[
-                    collision_object_id_by_collider_id[collider.component_id]
-                    for collider in compiled.colliders
-                    if collider.component_id in collision_object_id_by_collider_id
-                ],
-            )
-        )
-
     if compiled.collider_groups:
         all_group_ids = {group.component_id for group in compiled.collider_groups}
         all_binding_ids = {binding.binding_id for binding in compiled.collision_bindings}
@@ -289,9 +277,6 @@ def compile_scene_from_components(scene) -> CompiledScene:
                 spring_bone.collision_binding_ids = [
                     binding_id for binding_id in spring_bone.collision_binding_ids if binding_id in all_binding_ids
                 ]
-            elif "__auto_all_colliders__" in all_group_ids:
-                spring_bone.collider_group_ids = ["__auto_all_colliders__"]
-                spring_bone.collision_binding_ids = ["__auto_all_colliders__"]
 
     for component_id, typed_item in deferred_cache_outputs:
         source_object = typed_item.source_object

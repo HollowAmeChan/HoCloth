@@ -243,6 +243,10 @@ def _draw_collider_details(layout, scene, item):
     body.prop(collider, "radius", text="半径")
     if collider.shape_type == "CAPSULE":
         body.prop(collider, "height", text="胶囊高度")
+        body.prop(collider, "capsule_end_radius", text="末端半径")
+        body.prop(collider, "capsule_direction", text="胶囊方向")
+        body.prop(collider, "capsule_aligned_on_center", text="中心对齐")
+        body.prop(collider, "capsule_reverse_direction", text="反向")
 
     if collider_object is None:
         body.label(text="指定一个对象作为碰撞体", icon="INFO")
