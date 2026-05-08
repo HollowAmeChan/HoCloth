@@ -122,12 +122,12 @@ float3 CalcWindForce(
     int particle_index,
     float depth,
     float friction,
-    const ExSimpleNativeArray<int>& vertex_root_indices
+    const ExNativeArray<int>& vertex_root_indices
 )
 {
     float3 wind_force{};
     const int root_index =
-        vertex_index >= 0 && vertex_index < vertex_root_indices.Count()
+        vertex_index >= 0 && vertex_index < vertex_root_indices.Length()
             ? vertex_root_indices[vertex_index]
             : -1;
     const float sync_scale = (1.0f - wind_params.synchronization) * 100.0f;
