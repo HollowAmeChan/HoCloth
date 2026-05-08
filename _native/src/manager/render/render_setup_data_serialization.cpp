@@ -29,6 +29,10 @@ void RenderSetupData::Dispose()
     bone_weight_array.clear();
     local_positions.clear();
     local_normals.clear();
+    local_tangents.clear();
+    uv.clear();
+    triangles.clear();
+    mesh_bone_weights.clear();
     root_transform_ids.clear();
     transform_ids.clear();
     transform_parent_ids.clear();
@@ -147,6 +151,10 @@ RenderSetupData RenderSetupData::ShareDeserialize(
     setup.bone_weight_array = data.bone_weight_array;
     setup.local_positions = data.local_positions;
     setup.local_normals = data.local_normals;
+    setup.local_tangents = data.local_tangents;
+    setup.uv = data.uv;
+    setup.triangles = data.triangles;
+    setup.mesh_bone_weights = data.mesh_bone_weights;
     setup.bone_connection_mode = data.bone_connection_mode;
     setup.root_transform_ids = data.root_transform_ids;
     setup.transform_ids = data.transform_ids;

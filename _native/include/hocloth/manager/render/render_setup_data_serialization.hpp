@@ -3,6 +3,7 @@
 #include "hocloth/utility/math/math_types.hpp"
 #include "hocloth/manager/transform/transform_record.hpp"
 #include "hocloth/utility/result_code/result_code.hpp"
+#include "hocloth/virtual_mesh/virtual_mesh_bone_weight.hpp"
 
 #include <cstdint>
 #include <unordered_map>
@@ -42,6 +43,10 @@ struct RenderSetupData {
         std::vector<std::uint8_t> bone_weight_array;
         std::vector<float3> local_positions;
         std::vector<float3> local_normals;
+        std::vector<float3> local_tangents;
+        std::vector<float2> uv;
+        std::vector<int3> triangles;
+        std::vector<VirtualMeshBoneWeight> mesh_bone_weights;
 
         BoneConnectionMode bone_connection_mode = BoneConnectionMode::Line;
         std::vector<int> root_transform_ids;
@@ -105,6 +110,10 @@ struct RenderSetupData {
     std::vector<std::uint8_t> bone_weight_array;
     std::vector<float3> local_positions;
     std::vector<float3> local_normals;
+    std::vector<float3> local_tangents;
+    std::vector<float2> uv;
+    std::vector<int3> triangles;
+    std::vector<VirtualMeshBoneWeight> mesh_bone_weights;
 
     BoneConnectionMode bone_connection_mode = BoneConnectionMode::Line;
     std::vector<int> root_transform_ids;

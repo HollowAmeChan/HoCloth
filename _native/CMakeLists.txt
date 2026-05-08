@@ -77,8 +77,14 @@ add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_bone_weight.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_container.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_input_output.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_mapping.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_optimization.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_proxy.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_reduction.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_serialization.cpp"
     "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_transform.cpp"
+    "${HOCLOTH_NATIVE_ROOT}/src/virtual_mesh/virtual_mesh_work.cpp"
 )
 target_include_directories(hocloth_mc2_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
 

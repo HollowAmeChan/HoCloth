@@ -97,8 +97,8 @@ VirtualMesh VirtualMeshSerializationData::ShareDeserialize(
 )
 {
     // Port target: Scripts/Core/VirtualMesh/Function/VirtualMeshSerialization.cs
-    // ShareDeserialize(). Packed byte dictionaries stay as serialized payload until the native
-    // binary decoder is ported; structured MC2 arrays are restored here.
+    // ShareDeserialize(). Raw-byte proxy arrays and edge-to-triangle key/value dictionaries
+    // are restored into the native VirtualMesh data layout.
     VirtualMesh mesh;
     mesh.name = data.name;
     mesh.mesh_type = static_cast<VirtualMesh::MeshType>(data.mesh_type);

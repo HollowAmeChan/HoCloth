@@ -79,6 +79,7 @@ public:
     float average_vertex_distance = 0.0f;
     float max_vertex_distance = 0.0f;
     DataChunk merge_chunk;
+    ExSimpleNativeArray<int> join_indices;
     float4x4 to_proxy_matrix{};
     quaternion to_proxy_rotation{};
     int mapping_id = -1;
@@ -107,6 +108,13 @@ public:
 
     void Dispose();
     void ImportFromRenderSetup(const RenderSetupData& render_setup);
+    void SetTransform(
+        const TransformRecord& center_record,
+        const TransformRecord* skin_root_record = nullptr
+    );
+    void SetCenterTransform(const TransformRecord& record);
+    void SetSkinRoot(const TransformRecord& record);
+    void AddMesh(VirtualMesh& source_mesh);
     void CreateProxyFixedListAndAABB();
     void CreateVertexBindPose();
     void CreateVertexToTransformRotations();
@@ -127,6 +135,8 @@ public:
     void BuildMeshBaseLinesFromEdges();
     void BuildTransformBaseLines();
     void BuildBaseLinesFromParents();
+    void CreateBaseLinePose();
+    void CreateVertexRootAndDepth();
     void SetCustomSkinningBones(
         const TransformRecord& cloth_transform_record,
         std::vector<TransformRecord>& custom_skinning_bone_records
@@ -188,6 +198,7 @@ private:
     };
 
     static float4 CalcMappingVertexWeights(float4 distances);
+    void ImportMeshType(const RenderSetupData& render_setup);
     void ImportBoneType(const RenderSetupData& render_setup);
     void DirectMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);
     void SearchMapping(VirtualMesh& proxy_mesh, const float4x4& to_proxy, std::vector<MappingWorkData>& mapping_work_data);

@@ -198,7 +198,19 @@ BoneSpring 只是其中一个使用场景。后续 ClothBone 和 MeshCloth 需�
 
 Blender 的网格、骨骼、权重最终要编译成这里的稳定数据，而不是在每帧临时推导。
 
-当前 `VirtualMesh` 底层已不再只是数组壳：固定点/AABB、顶点 bind pose、BoneCloth transform restore rotation、MeshCloth edge baseline parent 生成、BoneCloth transform baseline 生成、baseline local pose/root/depth 已进入 native。后续应继续按 `VirtualMeshProxy.cs` 的函数顺序补齐 proxy conversion、normal/tangent、edge flag、mapping、reduction、custom skinning，而不是在约束里临时拼 topology。
+当前 `VirtualMesh` 底层已不再只是数组壳：固定点/AABB、顶点 bind pose、BoneCloth transform restore rotation、MeshCloth edge baseline parent 生成、BoneCloth transform baseline 生成、baseline local pose/root/depth 已进入 native。文件结构也已按 MC2 partial class 边界拆开：core、InputOutput、Proxy、Reduction、Mapping、Optimization、Serialization、Work 分文件推进。后续继续补行为时，优先在对应 MC2 文件归属下补齐，不要在约束里临时拼 topology。
+
+### 5.4.1 VirtualMesh 文件边界校正
+
+重新核对 `_ReferenceProject/MagicaCloth2/Scripts/Core/VirtualMesh` 后，VirtualMesh 不能继续按“一个大 `virtual_mesh.cpp` + 少数辅助文件”的方式规划。MC2 自己已经用 partial class 把职责拆在 `Function/*.cs` 中，HoCloth C++ 也要按这个边界推进：
+
+- `VirtualMesh.cs`：只对应 class core、字段生命周期、Dispose、有效性/计数/调试查询；C++ 为 core-only 的 `virtual_mesh.cpp`。
+- `VirtualMeshInputOutput.cs`：不只是 import。它还拥有 `ImportMeshType`、`ImportBoneType`、`BuildBoneConnection`、`AddMesh`、`SetTransform`/`SetCenterTransform`/`SetSkinRoot`、`SetCustomSkinningBones`、`CompareSpace`、`CenterTransformTo`、selection mesh feed、导入/导出边界；当前已落到 `virtual_mesh_input_output.cpp`。
+- `VirtualMeshProxy.cs`：拥有 proxy conversion、固定点/AABB、拓扑缓存、法线/切线、baseline、root/depth、selection attribute、custom-skinning weight、angle local rotation 等；当前已落到 `virtual_mesh_proxy.cpp`。
+- `VirtualMeshReduction.cs`：拥有 reduction orchestration、work data 初始化、Organization 系列、remap/store-back；当前已落到 `virtual_mesh_reduction.cpp`。
+- `VirtualMeshMapping.cs` 只保留 mapping 计算本身；`CompareSpace` 和 `CenterTransformTo` 虽然被 mapping 使用，但 MC2 原归属是 InputOutput，当前已移到 `virtual_mesh_input_output.cpp`。
+
+这条边界是后续碰撞、ParticleBuffer、PreBuild 排查的前置条件。否则一个碰撞问题很容易被误修到 Blender 写回层、约束层或临时 topology 生成里。
 
 ### 5.5 API / Binding 层
 
