@@ -4,6 +4,15 @@ from ..components import mc2
 from ..runtime.blender_bone_refs import resolve_bone_forest_names
 
 
+def _draw_curve_parameter(layout, cloth, parameter_path: str, label: str, *, show_use_toggle: bool = True):
+    parameter = mc2.resolve_curve_parameter(cloth, parameter_path)
+
+    row = layout.row(align=True)
+    row.prop(parameter, "value", text=label)
+    if show_use_toggle:
+        row.prop(parameter, "use_curve", text="曲线")
+
+
 def _draw_collider_reference_list(layout, scene, item, cloth):
     collider_box = layout.box()
     collider = cloth.collider_collision_constraint
@@ -76,19 +85,20 @@ def _draw_mc2_cloth(layout, scene, item):
         _draw_root_bone_reference_list(body, item, cloth)
         body.prop(cloth, "bone_connection_mode", text="连接模式")
     elif armature_object is not None and armature_object.data is not None:
-        body.prop_search(cloth, "root_bone_name", armature_object.data, "bones", text="根骨骼")
+        body.prop_search(cloth, "root_bone_name", armature_object.data, "bones", text="根骨名称")
     else:
-        body.prop(cloth, "root_bone_name", text="根骨骼")
+        body.prop(cloth, "root_bone_name", text="根骨名称")
 
     preset_row = body.row(align=True)
     preset_row.prop(cloth, "preset_profile", text="MC2 预设")
     preset = preset_row.operator("hocloth.apply_spring_bone_preset", text="应用")
     preset.component_id = item.component_id
 
-    body.prop(cloth, "joint_radius", text="粒子半径")
-    body.prop(cloth.damping_curve, "value", text="阻尼")
+    body.label(text="参数曲线由 C++ Inspector 编辑，Blender 侧仅保留数值与启用状态。", icon="INFO")
+    _draw_curve_parameter(body, cloth, "radius_curve", "粒子半径")
+    _draw_curve_parameter(body, cloth, "damping_curve", "阻尼")
     body.prop(cloth, "gravity_strength", text="重力")
-    body.prop(cloth.distance_constraint.stiffness, "value", text="距离刚度")
+    _draw_curve_parameter(body, cloth, "distance_constraint.stiffness", "距离刚度")
     body.prop(cloth.tether_constraint, "distance_compression", text="压缩限制")
     body.prop(cloth.spring_constraint, "spring_power", text="弹簧强度")
     _draw_collider_reference_list(body, scene, item, cloth)
@@ -96,7 +106,7 @@ def _draw_mc2_cloth(layout, scene, item):
     if scene.hocloth_ui_details_expanded:
         detail = body.box()
         if cloth.authoring_mode == "BONE_CLOTH":
-            sync = detail.operator("hocloth.sync_spring_bone_joints", text="同步骨属性")
+            sync = detail.operator("hocloth.sync_spring_bone_joints", text="同步骨骼属性")
             sync.component_id = item.component_id
             for override in cloth.joint_overrides:
                 row = detail.row(align=True)
@@ -116,10 +126,12 @@ def _draw_mc2_cloth(layout, scene, item):
         detail.prop(cloth.inertia_constraint, "world_inertia", text="世界惯性")
         detail.prop(cloth.inertia_constraint, "movement_inertia_smoothing", text="移动惯性平滑")
         detail.prop(cloth.angle_restoration_constraint, "use_angle_restoration", text="角度复原")
-        detail.prop(cloth.angle_restoration_constraint.stiffness, "value", text="角度刚度")
+        _draw_curve_parameter(detail, cloth, "angle_restoration_constraint.stiffness", "角度刚度")
+        detail.prop(cloth.angle_limit_constraint, "use_angle_limit", text="角度限制")
+        _draw_curve_parameter(detail, cloth, "angle_limit_constraint.limit_angle", "限制角度")
         detail.prop(cloth.collider_collision_constraint, "mode", text="碰撞模式")
         detail.prop(cloth.collider_collision_constraint, "friction", text="碰撞摩擦")
-        detail.prop(cloth.collider_collision_constraint.limit_distance, "value", text="碰撞限制距离")
+        _draw_curve_parameter(detail, cloth, "collider_collision_constraint.limit_distance", "碰撞限制距离")
 
 
 def _draw_mc2_collider(layout, item):

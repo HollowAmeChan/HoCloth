@@ -55,9 +55,16 @@ class HoClothSpringJointOverride(bpy.types.PropertyGroup):
     gravity_scale: bpy.props.FloatProperty(name="Gravity Scale", default=1.0, min=0.0, soft_max=2.0)
 
 
+class HoClothCurveControlPoint(bpy.types.PropertyGroup):
+    time: bpy.props.FloatProperty(name="Time", default=0.0, min=0.0, max=1.0)
+    value: bpy.props.FloatProperty(name="Value", default=1.0, min=0.0)
+
+
 class HoClothCurveParameter(bpy.types.PropertyGroup):
     use_curve: bpy.props.BoolProperty(name="Use Curve", default=False)
     value: bpy.props.FloatProperty(name="Value", default=0.0)
+    control_points: bpy.props.CollectionProperty(type=HoClothCurveControlPoint)
+    control_point_index: bpy.props.IntProperty(name="Control Point Index", default=0, min=0)
     curve_samples: bpy.props.FloatVectorProperty(name="Curve Samples", size=16, default=(1.0,) * 16)
 
 
@@ -270,6 +277,7 @@ class HoClothMC2MagicaClothComponent(bpy.types.PropertyGroup):
     collider_ids: bpy.props.StringProperty(name="Collider List")
     collider_references: bpy.props.CollectionProperty(type=HoClothMC2ColliderReference)
     collider_reference_index: bpy.props.IntProperty(name="Collider Index", default=0, min=0)
+    radius_curve: bpy.props.PointerProperty(name="Radius", type=HoClothCurveParameter)
     joint_radius: bpy.props.FloatProperty(name="Radius", default=0.02, min=0.0)
     gravity_strength: bpy.props.FloatProperty(name="Gravity", default=5.0, min=0.0, soft_max=10.0)
     gravity_direction: bpy.props.FloatVectorProperty(
@@ -352,6 +360,7 @@ class HoClothMC2CacheOutputComponent(bpy.types.PropertyGroup):
 
 CLASSES = (
     HoClothSpringJointOverride,
+    HoClothCurveControlPoint,
     HoClothCurveParameter,
     HoClothCheckSliderParameter,
     HoClothBoneSpringSpringConstraint,
@@ -385,6 +394,12 @@ def create_magica_cloth(scene, authoring_mode: str, display_name: str = ""):
     component_id = generate_component_id()
     cloth = scene.hocloth_mc2_magica_cloths.add()
     cloth.component_id = component_id
+    reset_curve_parameter(cloth.radius_curve, 0.02, None, False)
+    reset_curve_parameter(cloth.damping_curve, 0.0, None, False)
+    reset_curve_parameter(cloth.distance_constraint.stiffness, 0.0, None, False)
+    reset_curve_parameter(cloth.angle_restoration_constraint.stiffness, 0.0, None, False)
+    reset_curve_parameter(cloth.angle_limit_constraint.limit_angle, 15.0, None, False)
+    reset_curve_parameter(cloth.collider_collision_constraint.limit_distance, 0.05, None, False)
     cloth.authoring_mode = authoring_mode
     apply_preset(cloth, "MIDDLE_SPRING")
     if authoring_mode == "BONE_CLOTH":
@@ -484,28 +499,163 @@ def cloth_runtime_defaults(cloth) -> tuple[float, float, float]:
     return stiffness, damping, drag
 
 
+def curve_parameter_value(parameter) -> float:
+    return float(getattr(parameter, "value", 0.0))
+
+
+def resolve_curve_parameter(owner, path: str):
+    target = owner
+    for segment in [part for part in path.split(".") if part]:
+        target = getattr(target, segment)
+    return target
+
+
+def ensure_curve_control_points(parameter) -> int:
+    if len(parameter.control_points) > 0:
+        return len(parameter.control_points)
+    start = parameter.control_points.add()
+    start.time = 0.0
+    start.value = 1.0
+    end = parameter.control_points.add()
+    end.time = 1.0
+    end.value = 1.0
+    parameter.control_point_index = 0
+    return len(parameter.control_points)
+
+
+def _clamp_curve_point_value(value: float) -> float:
+    return max(0.0, float(value))
+
+
+def normalize_curve_control_points(parameter) -> int:
+    ensure_curve_control_points(parameter)
+    points = parameter.control_points
+    normalized = []
+    for point in points:
+        normalized.append(
+            (
+                max(0.0, min(1.0, float(point.time))),
+                _clamp_curve_point_value(point.value),
+            )
+        )
+    normalized.sort(key=lambda item: item[0])
+    if not normalized:
+        normalized = [(0.0, 1.0), (1.0, 1.0)]
+    if len(normalized) == 1:
+        normalized = [(0.0, normalized[0][1]), (1.0, normalized[0][1])]
+    normalized[0] = (0.0, normalized[0][1])
+    normalized[-1] = (1.0, normalized[-1][1])
+
+    while len(points) > len(normalized):
+        points.remove(len(points) - 1)
+    while len(points) < len(normalized):
+        points.add()
+    for index, (time, value) in enumerate(normalized):
+        points[index].time = time
+        points[index].value = value
+    parameter.control_point_index = min(parameter.control_point_index, max(len(points) - 1, 0))
+    return len(points)
+
+
+def _sorted_curve_control_points(parameter) -> list[tuple[float, float]]:
+    normalize_curve_control_points(parameter)
+    control_points = []
+    for point in getattr(parameter, "control_points", []):
+        control_points.append((max(0.0, min(1.0, float(point.time))), _clamp_curve_point_value(point.value)))
+    control_points.sort(key=lambda item: item[0])
+    return control_points
+
+
+def _evaluate_curve_control_points(control_points: list[tuple[float, float]], time: float) -> float:
+    if not control_points:
+        return 1.0
+    if time <= control_points[0][0]:
+        return control_points[0][1]
+    if time >= control_points[-1][0]:
+        return control_points[-1][1]
+    for index in range(len(control_points) - 1):
+        left_time, left_value = control_points[index]
+        right_time, right_value = control_points[index + 1]
+        if time > right_time:
+            continue
+        span = right_time - left_time
+        if abs(span) <= 1.0e-8:
+            return right_value
+        factor = (time - left_time) / span
+        return left_value + (right_value - left_value) * factor
+    return control_points[-1][1]
+
+
+def sync_curve_parameter_samples(parameter) -> tuple[float, ...]:
+    normalize_curve_control_points(parameter)
+    control_points = _sorted_curve_control_points(parameter)
+    samples = tuple(_evaluate_curve_control_points(control_points, index / 15.0) for index in range(16))
+    parameter.curve_samples = samples
+    return samples
+
+
+def reset_curve_parameter(parameter, value: float, curve: tuple[float, float] | None = None, use_curve: bool | None = None) -> None:
+    parameter.value = float(value)
+    parameter.use_curve = curve is not None if use_curve is None else bool(use_curve)
+    parameter.control_points.clear()
+    start_value, end_value = curve if curve is not None else (1.0, 1.0)
+    start = parameter.control_points.add()
+    start.time = 0.0
+    start.value = float(start_value)
+    end = parameter.control_points.add()
+    end.time = 1.0
+    end.value = float(end_value)
+    parameter.control_point_index = 0
+    sync_curve_parameter_samples(parameter)
+
+
+def add_curve_control_point(parameter, time: float = 0.5, value: float = 1.0) -> int:
+    normalize_curve_control_points(parameter)
+    points = [(float(point.time), _clamp_curve_point_value(point.value)) for point in parameter.control_points]
+    insert_time = max(0.001, min(0.999, float(time)))
+    insert_value = _clamp_curve_point_value(value)
+    insert_index = len(points) - 1
+    for index in range(1, len(points)):
+        if insert_time < points[index][0]:
+            insert_index = index
+            break
+    points.insert(insert_index, (insert_time, insert_value))
+    parameter.control_points.clear()
+    for point_time, point_value in points:
+        point = parameter.control_points.add()
+        point.time = point_time
+        point.value = point_value
+    parameter.control_point_index = insert_index
+    sync_curve_parameter_samples(parameter)
+    return parameter.control_point_index
+
+
+def remove_curve_control_point(parameter, index: int | None = None) -> int:
+    if len(parameter.control_points) <= 2:
+        return len(parameter.control_points)
+    target_index = parameter.control_point_index if index is None else index
+    if target_index < 0 or target_index >= len(parameter.control_points):
+        return len(parameter.control_points)
+    parameter.control_points.remove(target_index)
+    parameter.control_point_index = min(target_index, max(len(parameter.control_points) - 1, 0))
+    sync_curve_parameter_samples(parameter)
+    return len(parameter.control_points)
+
+
 def _sync_joint_override_defaults(cloth) -> None:
     stiffness, damping, drag = cloth_runtime_defaults(cloth)
+    radius = curve_parameter_value(cloth.radius_curve)
     for entry in cloth.joint_overrides:
         if entry.enabled:
             continue
-        entry.radius = cloth.joint_radius
+        entry.radius = radius
         entry.stiffness = stiffness
         entry.damping = damping
         entry.drag = drag
 
 
-def _linear_curve_samples(start: float = 1.0, end: float = 1.0) -> tuple[float, ...]:
-    return tuple(float(start) + (float(end) - float(start)) * (index / 15.0) for index in range(16))
-
-
 def _set_curve_parameter(parameter, value: float, curve: tuple[float, float] | None = None) -> None:
-    parameter.value = float(value)
-    parameter.use_curve = curve is not None
-    if curve is None:
-        parameter.curve_samples = _linear_curve_samples(1.0, 1.0)
-    else:
-        parameter.curve_samples = _linear_curve_samples(curve[0], curve[1])
+    reset_curve_parameter(parameter, value, curve, curve is not None)
 
 
 def apply_preset(cloth, preset_id: str | None = None) -> None:
@@ -513,7 +663,8 @@ def apply_preset(cloth, preset_id: str | None = None) -> None:
     preset = HOCLOTH_MC2_BONE_SPRING_PRESETS[preset_id]
     curves = preset.get("curves", {})
     cloth.preset_profile = preset_id
-    cloth.joint_radius = preset["radius"]
+    _set_curve_parameter(cloth.radius_curve, preset["radius"], curves.get("radius"))
+    cloth.joint_radius = curve_parameter_value(cloth.radius_curve)
     cloth.gravity_strength = preset["gravity"]
     cloth.gravity_direction = (0.0, -1.0, 0.0)
     _set_curve_parameter(cloth.damping_curve, preset["damping"], curves.get("damping"))
@@ -547,6 +698,12 @@ def apply_preset(cloth, preset_id: str | None = None) -> None:
     cloth.collider_collision_constraint.friction = preset["friction"]
     _set_curve_parameter(cloth.collider_collision_constraint.limit_distance, 0.05, curves.get("collider_limit"))
     _sync_joint_override_defaults(cloth)
+    sync_curve_parameter_samples(cloth.radius_curve)
+    sync_curve_parameter_samples(cloth.damping_curve)
+    sync_curve_parameter_samples(cloth.distance_constraint.stiffness)
+    sync_curve_parameter_samples(cloth.angle_restoration_constraint.stiffness)
+    sync_curve_parameter_samples(cloth.angle_limit_constraint.limit_angle)
+    sync_curve_parameter_samples(cloth.collider_collision_constraint.limit_distance)
 
 
 def sync_joint_override_names(cloth, bone_names: list[str]) -> int:
@@ -572,7 +729,7 @@ def sync_joint_override_names(cloth, bone_names: list[str]) -> int:
         state = previous.get(bone_name)
         if state is None:
             entry.enabled = False
-            entry.radius = cloth.joint_radius
+            entry.radius = curve_parameter_value(cloth.radius_curve)
             entry.stiffness = default_stiffness
             entry.damping = default_damping
             entry.drag = default_drag

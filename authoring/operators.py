@@ -363,7 +363,7 @@ class HOCLOTH_OT_reset_spring_joint_override(bpy.types.Operator):
             return {"CANCELLED"}
         default_stiffness, default_damping, default_drag = mc2.cloth_runtime_defaults(cloth)
         entry.enabled = False
-        entry.radius = cloth.joint_radius
+        entry.radius = mc2.curve_parameter_value(cloth.radius_curve)
         entry.stiffness = default_stiffness
         entry.damping = default_damping
         entry.drag = default_drag

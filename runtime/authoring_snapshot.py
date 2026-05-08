@@ -16,7 +16,7 @@ def _quat(value) -> tuple[float, float, float, float]:
 
 
 def _curve_parameter(value) -> dict:
-    samples = list(getattr(value, "curve_samples", []))
+    samples = list(mc2.sync_curve_parameter_samples(value))
     if len(samples) != 16:
         samples = [1.0] * 16
     return {
@@ -114,7 +114,7 @@ def _sample_chain_bones(
                 "parent_index": int(parent_index),
                 "depth": int(depth),
                 "length": float((tail_world - head_world).length),
-                "radius": float(override.radius) if use_override else float(typed_item.joint_radius),
+                "radius": float(override.radius) if use_override else float(typed_item.radius_curve.value),
                 "stiffness": float(override.stiffness) if use_override else runtime_stiffness,
                 "damping": float(override.damping) if use_override else runtime_damping,
                 "drag": float(override.drag) if use_override else runtime_drag,
@@ -157,6 +157,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
     runtime_stiffness = float(typed_item.distance_constraint.stiffness.value)
     runtime_damping = float(typed_item.damping_curve.value)
     runtime_drag = max(0.0, min(1.0, 1.0 - float(typed_item.angle_restoration_constraint.velocity_attenuation)))
+    radius_curve = _curve_parameter(typed_item.radius_curve)
     serialize_data = {
         "clothType": "BoneCloth" if typed_item.authoring_mode == "BONE_CLOTH" else "BoneSpring",
         "rootBones": list(root_bone_names),
@@ -164,11 +165,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "gravity": float(typed_item.gravity_strength),
         "gravityDirection": _vec3(typed_item.gravity_direction),
         "damping": _curve_parameter(typed_item.damping_curve),
-        "radius": {
-            "value": float(typed_item.joint_radius),
-            "useCurve": False,
-            "samples": [1.0] * 16,
-        },
+        "radius": radius_curve,
         "inertiaConstraint": {
             "worldInertia": float(typed_item.inertia_constraint.world_inertia),
             "movementInertiaSmoothing": float(typed_item.inertia_constraint.movement_inertia_smoothing),
@@ -250,7 +247,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "pose_space": "WORLD",
         "center_object_name": center_object_name,
         "center_bone_name": center_bone_name,
-        "joint_radius": float(typed_item.joint_radius),
+        "joint_radius": float(typed_item.radius_curve.value),
         "collider_ids": collider_ids,
         "collider_group_ids": [],
         "stiffness": runtime_stiffness,

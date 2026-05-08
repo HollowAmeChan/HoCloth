@@ -506,6 +506,23 @@ InverseAffine(TRS(q)) * Rotate(q, up)      -> up
 InverseAffine(TRS(q)) * Rotate(q, forward) -> forward
 ```
 
+## 2026-05-09 Interaction Architecture Addendum
+
+This document now adopts the interaction split defined in:
+
+```text
+_docs/HoCloth交互架构重定义.md
+```
+
+Effective decisions:
+
+- Blender is no longer treated as a Unity Inspector replacement.
+- Blender only handles scene binding, build triggers, and build-output display.
+- Interactive authoring, curve editing, and future inspector UX move to the C++ side.
+- Blender-side curve HUD, curve point dragging, and other authoring-oriented realtime GPU overlays are removed.
+- Build-time particle attribute input should prefer Blender vertex groups and bone custom properties, then convert to MC2 `SelectionData` / `VertexAttribute` / runtime indices during native build.
+- PreBuild continues as a cache/build layer, not as Blender's primary editing surface.
+
 调试规则：
 - 不要用 Python 首帧跳过、slerp、软启动、全骨 local position 写回等方式掩盖这个问题。
 - BoneCloth 首帧横转复现时，先打开 UI 里的 `Native Matrix Debug`，看 `has_rest_matrix`、`proxy_input_delta`、`p_pnor`、`p_ptan`、`p_wnor`、`p_wtan`。
