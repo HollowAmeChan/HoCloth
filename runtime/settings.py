@@ -26,6 +26,7 @@ SCENE_PROPERTIES = (
     "hocloth_apply_pose_on_step",
     "hocloth_runtime_live_running",
     "hocloth_ui_details_expanded",
+    "hocloth_debug_detailed_native",
     "hocloth_viewport_overlay_enabled",
     "hocloth_viewport_draw_bones",
     "hocloth_viewport_draw_particle_radius",
@@ -151,6 +152,10 @@ def register():
     )
     bpy.types.Scene.hocloth_ui_details_expanded = bpy.props.BoolProperty(
         name="Show Details",
+        default=False,
+    )
+    bpy.types.Scene.hocloth_debug_detailed_native = bpy.props.BoolProperty(
+        name="Detailed Native Debug",
         default=False,
     )
     bpy.types.Scene.hocloth_viewport_overlay_enabled = bpy.props.BoolProperty(

@@ -584,19 +584,19 @@ float4x4 InverseAffine(const float4x4& matrix)
     float4x4 inverse;
     inverse.c0 = float4{
         b01 * det,
-        (-a22 * a01 + a02 * a21) * det,
-        (a12 * a01 - a02 * a11) * det,
+        b11 * det,
+        b21 * det,
         0.0f,
     };
     inverse.c1 = float4{
-        b11 * det,
+        (-a22 * a01 + a02 * a21) * det,
         (a22 * a00 - a02 * a20) * det,
-        (-a12 * a00 + a02 * a10) * det,
+        (-a21 * a00 + a01 * a20) * det,
         0.0f,
     };
     inverse.c2 = float4{
-        b21 * det,
-        (-a21 * a00 + a01 * a20) * det,
+        (a12 * a01 - a02 * a11) * det,
+        (-a12 * a00 + a02 * a10) * det,
         (a11 * a00 - a01 * a10) * det,
         0.0f,
     };

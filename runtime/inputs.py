@@ -17,6 +17,10 @@ def _matrix_translation_rotation(matrix: Matrix) -> tuple[tuple[float, float, fl
     return translation, rotation
 
 
+def _matrix_tuple(matrix: Matrix) -> tuple[float, ...]:
+    return tuple(float(matrix[row][column]) for row in range(4) for column in range(4))
+
+
 def _vector_subtract(a, b) -> tuple[float, float, float]:
     return (
         float(a[0]) - float(b[0]),
@@ -132,8 +136,7 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
             center_object = scene.objects.get(center_object_name)
             center_translation, center_rotation, center_scale = _object_transform_input(center_object)
         else:
-            center_translation = translation
-            center_rotation = rotation
+            center_translation, center_rotation = _matrix_translation_rotation(armature_object.matrix_world)
             center_scale = armature_scale
 
         linear_velocity = (0.0, 0.0, 0.0)
@@ -151,6 +154,7 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
         basic_rotations: list[float] = []
         basic_local_positions: list[float] = []
         basic_local_rotations: list[float] = []
+        basic_local_to_world_matrices: list[float] = []
         pose_bones = armature_object.pose.bones
         for bone in chain_data.get("bones", []):
             bone_name = bone.get("name", "")
@@ -169,18 +173,21 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
                     local_matrix = armature_object.matrix_world.inverted_safe() @ pose_matrix
                 local_position = _vector_tuple(local_matrix.to_translation())
                 local_rotation = _quat_tuple(local_matrix.to_quaternion())
+                local_to_world_matrix = _matrix_tuple(pose_matrix)
             else:
                 head = translation
                 tail = translation
                 bone_rotation = tuple(bone.get("rest_world_rotation", (1.0, 0.0, 0.0, 0.0)))
                 local_position = tuple(bone.get("rest_local_translation", (0.0, 0.0, 0.0)))
                 local_rotation = tuple(bone.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0)))
+                local_to_world_matrix = _matrix_tuple(Matrix.Identity(4))
 
             _append_vec3(basic_head_positions, head)
             _append_vec3(basic_tail_positions, tail)
             _append_quat(basic_rotations, bone_rotation)
             _append_vec3(basic_local_positions, local_position)
             _append_quat(basic_local_rotations, local_rotation)
+            basic_local_to_world_matrices.extend(local_to_world_matrix)
 
         next_chain_states[component_id] = {
             "translation": translation,
@@ -208,6 +215,7 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
                 "basic_rotations": tuple(basic_rotations),
                 "basic_local_positions": tuple(basic_local_positions),
                 "basic_local_rotations": tuple(basic_local_rotations),
+                "basic_local_to_world_matrices": tuple(basic_local_to_world_matrices),
             }
         )
 

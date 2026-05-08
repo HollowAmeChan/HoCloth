@@ -1400,7 +1400,9 @@ void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
         transform_data.local_position_array[index] = local_position;
         transform_data.local_rotation_array[index] = local_rotation;
         transform_data.local_to_world_matrix_array[index] =
-            TRS(world_position, world_rotation, world_scale);
+            index < static_cast<int>(render_setup.transform_local_to_world_matrices.size())
+                ? render_setup.transform_local_to_world_matrices[static_cast<std::size_t>(index)]
+                : TRS(world_position, world_rotation, world_scale);
         transform_data.team_id_array[index] = 0;
     }
     if (transform_data.root_id_list.empty()) {
@@ -1455,7 +1457,8 @@ void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
             int4{vertex_index, -1, -1, -1},
             float4{1.0f, 0.0f, 0.0f, 0.0f}
         };
-        skin_bone_bind_poses[vertex_index] = InverseAffine(local_to_world);
+        skin_bone_bind_poses[vertex_index] =
+            Multiply(InverseAffine(local_to_world), init_local_to_world);
         (void)world_scale;
     }
 
@@ -1463,13 +1466,6 @@ void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
     if (render_setup.setup_type == RenderSetupData::SetupType::BoneCloth) {
         ApplyBoneClothDefaultSelection();
     }
-    BuildVertexToTriangles();
-    BuildVertexToVertexFromTopology();
-    BuildEdgeToTriangles();
-    BuildTransformBaseLines();
-    CreateProxyFixedListAndAABB();
-    CreateVertexBindPose();
-    CreateVertexToTransformRotations();
     result = Result::Ok();
 }
 

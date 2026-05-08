@@ -446,9 +446,9 @@ void VirtualMeshManager::PreProxyMeshUpdate(
             const VirtualMeshBoneWeight& bone_weight = bone_weights_[mesh_index];
             const int weight_count = bone_weight.Count();
             float total_weight = 0.0f;
-            float3 world_position{};
-            float3 world_normal{};
-            float3 world_tangent{};
+            float3 world_pose_position{};
+            float3 world_pose_normal{};
+            float3 world_pose_tangent{};
 
             for (int weight_index = 0; weight_index < weight_count; ++weight_index) {
                 const float weight = bone_weight.weights[static_cast<std::size_t>(weight_index)];
@@ -473,18 +473,23 @@ void VirtualMeshManager::PreProxyMeshUpdate(
                 const float4x4 bone_pose = skin_bone_bind_poses_[skin_index];
                 const float4x4 local_to_world =
                     transform_data.local_to_world_matrix_array[transform_index];
-                const float4x4 matrix = Multiply(local_to_world, bone_pose);
-                world_position = Add(
-                    world_position,
-                    Scale(TransformPoint(local_positions_[mesh_index], matrix), weight)
+                const float3 local_position = local_positions_[mesh_index];
+                const float3 local_normal = local_normals_[mesh_index];
+                const float3 local_tangent = local_tangents_[mesh_index];
+                const float3 posed_position = TransformPoint(local_position, bone_pose);
+                const float3 posed_normal = TransformVector(local_normal, bone_pose);
+                const float3 posed_tangent = TransformVector(local_tangent, bone_pose);
+                world_pose_position = Add(
+                    world_pose_position,
+                    Scale(TransformPoint(posed_position, local_to_world), weight)
                 );
-                world_normal = Add(
-                    world_normal,
-                    Scale(TransformDirection(local_normals_[mesh_index], matrix), weight)
+                world_pose_normal = Add(
+                    world_pose_normal,
+                    Scale(TransformVector(posed_normal, local_to_world), weight)
                 );
-                world_tangent = Add(
-                    world_tangent,
-                    Scale(TransformDirection(local_tangents_[mesh_index], matrix), weight)
+                world_pose_tangent = Add(
+                    world_pose_tangent,
+                    Scale(TransformVector(posed_tangent, local_to_world), weight)
                 );
                 total_weight += weight;
             }
@@ -500,9 +505,11 @@ void VirtualMeshManager::PreProxyMeshUpdate(
             }
 
             const float inv_weight = 1.0f / total_weight;
-            positions_[vertex_index] = Scale(world_position, inv_weight);
-            world_normal = Normalize(Scale(world_normal, inv_weight), float3{0.0f, 1.0f, 0.0f});
-            world_tangent = Normalize(Scale(world_tangent, inv_weight), float3{1.0f, 0.0f, 0.0f});
+            positions_[vertex_index] = Scale(world_pose_position, inv_weight);
+            const float3 world_normal =
+                Normalize(Scale(world_pose_normal, inv_weight), float3{0.0f, 1.0f, 0.0f});
+            const float3 world_tangent =
+                Normalize(Scale(world_pose_tangent, inv_weight), float3{1.0f, 0.0f, 0.0f});
             rotations_[vertex_index] = ToRotation(world_normal, world_tangent);
         }
     }
@@ -818,7 +825,7 @@ void VirtualMeshManager::PostProxyMeshUpdate(
                 && parent_transform_index < transform_data.scale_array.Length()) {
                 const quaternion inverse_parent_rotation =
                     Inverse(transform_data.rotation_array[parent_transform_index]);
-                transform_data.local_position_array[transform_index] =
+                float3 local_position =
                     Rotate(
                         inverse_parent_rotation,
                         Subtract(
@@ -826,14 +833,18 @@ void VirtualMeshManager::PostProxyMeshUpdate(
                             transform_data.position_array[parent_transform_index]
                         )
                     );
-                const quaternion local_rotation =
+                const float3 parent_scale = transform_data.scale_array[parent_transform_index];
+                local_position.x /= std::abs(parent_scale.x) > 1.0e-8f ? parent_scale.x : 1.0f;
+                local_position.y /= std::abs(parent_scale.y) > 1.0e-8f ? parent_scale.y : 1.0f;
+                local_position.z /= std::abs(parent_scale.z) > 1.0e-8f ? parent_scale.z : 1.0f;
+                transform_data.local_position_array[transform_index] = local_position;
+                quaternion local_rotation =
                     Multiply(inverse_parent_rotation, transform_data.rotation_array[transform_index]);
+                local_rotation = ApplyNegativeScaleQuaternion(
+                    local_rotation,
+                    team_data.negative_scale_quaternion_value
+                );
                 transform_data.local_rotation_array[transform_index] = Normalize(local_rotation);
-            } else {
-                transform_data.local_position_array[transform_index] =
-                    transform_data.position_array[transform_index];
-                transform_data.local_rotation_array[transform_index] =
-                    transform_data.rotation_array[transform_index];
             }
         }
     }
@@ -1055,6 +1066,41 @@ const ExNativeArray<float3>& VirtualMeshManager::Positions() const
 const ExNativeArray<quaternion>& VirtualMeshManager::Rotations() const
 {
     return rotations_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::LocalPositions() const
+{
+    return local_positions_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::LocalNormals() const
+{
+    return local_normals_;
+}
+
+const ExNativeArray<float3>& VirtualMeshManager::LocalTangents() const
+{
+    return local_tangents_;
+}
+
+const ExNativeArray<VirtualMeshBoneWeight>& VirtualMeshManager::BoneWeights() const
+{
+    return bone_weights_;
+}
+
+const ExNativeArray<float4x4>& VirtualMeshManager::SkinBoneBindPoses() const
+{
+    return skin_bone_bind_poses_;
+}
+
+const ExNativeArray<int>& VirtualMeshManager::SkinBoneTransformIndices() const
+{
+    return skin_bone_transform_indices_;
+}
+
+const ExNativeArray<quaternion>& VirtualMeshManager::VertexToTransformRotations() const
+{
+    return vertex_to_transform_rotations_;
 }
 
 ExNativeArray<float3>& VirtualMeshManager::Positions()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mathutils import Quaternion, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 from .blender_bone_refs import resolve_bone_forest_names
 from ..components import mc2
@@ -52,6 +52,10 @@ def _quaternion_to_tuple(value: Quaternion) -> tuple[float, float, float, float]
     return (float(value.w), float(value.x), float(value.y), float(value.z))
 
 
+def _matrix_to_tuple(matrix: Matrix) -> tuple[float, ...]:
+    return tuple(float(matrix[row][column]) for row in range(4) for column in range(4))
+
+
 def _bone_parent_local_matrix(armature_object, bone, world_matrix):
     if bone.parent is not None:
         parent_pose_bone = armature_object.pose.bones.get(bone.parent.name) if armature_object.pose else None
@@ -69,13 +73,12 @@ def _sample_chain_bones(
     armature_object,
     typed_item,
     root_bone_names: list[str],
-) -> tuple[list[dict], tuple[float, float, float]]:
+) -> list[dict]:
     bone_names = resolve_bone_forest_names(scene, armature_object, root_bone_names)
     if not bone_names:
-        return [], (1.0, 1.0, 1.0)
+        return []
 
     armature_matrix = armature_object.matrix_world.copy()
-    armature_scale = tuple(float(axis) for axis in armature_matrix.to_scale())
     name_to_index = {name: index for index, name in enumerate(bone_names)}
     overrides = _joint_override_map(typed_item)
     runtime_stiffness = float(typed_item.distance_constraint.stiffness.value)
@@ -123,9 +126,11 @@ def _sample_chain_bones(
                 "rest_local_translation": rest_local_translation,
                 "rest_local_rotation": rest_local_rotation,
                 "rest_world_rotation": _quaternion_to_tuple(world_matrix.to_quaternion()),
+                "rest_world_scale": _vector_to_tuple(world_matrix.to_scale()),
+                "rest_local_to_world_matrix": _matrix_to_tuple(world_matrix),
             }
         )
-    return sampled, tuple(float(axis) for axis in armature_scale)
+    return sampled
 
 
 def _bone_chain_snapshot(scene, item, typed_item):
@@ -134,7 +139,11 @@ def _bone_chain_snapshot(scene, item, typed_item):
         return None
 
     root_bone_names = mc2.resolve_cloth_root_bone_names(typed_item)
-    bones, armature_scale = _sample_chain_bones(scene, armature_object, typed_item, root_bone_names)
+    bones = _sample_chain_bones(scene, armature_object, typed_item, root_bone_names)
+    armature_matrix = armature_object.matrix_world.copy()
+    armature_position = _vector_to_tuple(armature_matrix.to_translation())
+    armature_rotation = _quaternion_to_tuple(armature_matrix.to_quaternion())
+    armature_scale = _vector_to_tuple(armature_matrix.to_scale())
     center_object_name = ""
     center_bone_name = ""
     if typed_item.center_source == "OBJECT" and typed_item.center_object is not None:
@@ -289,6 +298,8 @@ def _bone_chain_snapshot(scene, item, typed_item):
         else "None",
         "gravity_strength": float(typed_item.gravity_strength),
         "gravity_direction": _vec3(typed_item.gravity_direction),
+        "armature_position": armature_position,
+        "armature_rotation": armature_rotation,
         "armature_scale": armature_scale,
         "bones": bones,
         "bone_attribute_overrides": _bone_attribute_overrides(typed_item),

@@ -461,3 +461,42 @@ _native/src/blender/authoring_snapshot_transfer.cpp
 4. `compiled_scene` payload 降级为 legacy/debug 路径，直到 native Build 能覆盖 BoneSpring/BoneCloth/MeshCloth。
 5. 视口绘制切到 `build_output`，不再依赖 Python 编译层实时推导。
 6. Python 侧只保留 `authoring_snapshot` 采样、运行时帧输入、导出/调试和 build/step 调用胶水。
+
+## 2026-05-08 BoneCloth 首帧大旋转复盘
+
+这次问题表现为：BoneCloth 在第一帧 `Step` 后发生大横转，常见输出为 `local_delta` 70 度以上，甚至 `mc2_local_delta_max` 接近 149 度；但骨骼世界位置几乎没有明显偏移。
+
+排查顺序和结论：
+- 先怀疑 Blender 写回层，后来确认不是。native 返回的 `proxy_rot` 已经是错误旋转，Blender 只是忠实应用。
+- 怀疑 fixed/move 属性、根骨列表、旧的单根 root 逻辑，后来确认不是。重新删除组件并默认创建 BoneCloth 仍可复现。
+- 怀疑 `vertexToTransformRotations`，后来确认不是主要根因。失败样本里 `v2t` 基本为 identity，错误发生在 proxy vertex rotation 之前。
+- 怀疑 frame input / authoring snapshot 没带真实矩阵，于是补了 per-bone `rest_local_to_world_matrix` 和 runtime `basic_local_to_world_matrices`。这一步是必要的 MC2 语义对齐，但不是最终根因；debug 里 `has_rest_matrix=1` 后问题仍存在。
+- 最终通过矩阵级 debug 确认：`p_lnor/p_ltan` 是正确的输入世界 up/forward，但经过 `skin_bone_bind_pose` 后的 `p_pnor/p_ptan` 没有回到局部 `(0,1,0)` / `(0,0,1)`，说明 bind pose 的方向逆变换坏了，而不是写回或模拟力坏了。
+
+根因是 `_native/src/utility/math/math_utility.cpp::InverseAffine()`。项目的 `float4x4` 是 column-major，`TRS()` 生成的列矩阵是正确的，但 `InverseAffine()` 把 3x3 逆矩阵按行/列错位写回，导致方向逆变换不自洽：
+
+```text
+InverseAffine(TRS(q)) * Rotate(q, up)      != up
+InverseAffine(TRS(q)) * Rotate(q, forward) != forward
+```
+
+这直接破坏 MC2 BoneCloth 的核心公式：
+
+```text
+skin_bone_bind_pose = inverse(boneLocalToWorld) * renderLocalToWorld
+PreProxyMeshUpdate: local normal/tangent -> bind pose -> current localToWorld -> proxy rotation
+```
+
+修复后必须保持这个数学回归：
+
+```text
+InverseAffine(TRS(q)) * Rotate(q, up)      -> up
+InverseAffine(TRS(q)) * Rotate(q, forward) -> forward
+```
+
+调试规则：
+- 不要用 Python 首帧跳过、slerp、软启动、全骨 local position 写回等方式掩盖这个问题。
+- BoneCloth 首帧横转复现时，先打开 UI 里的 `Native Matrix Debug`，看 `has_rest_matrix`、`proxy_input_delta`、`p_pnor`、`p_ptan`、`p_wnor`、`p_wtan`。
+- 如果 `has_rest_matrix=0`，先查 authoring snapshot / build transfer 是否走新协议。
+- 如果 `has_rest_matrix=1` 但 `p_pnor/p_ptan` 不是局部 up/forward，先查底层矩阵布局、`InverseAffine()`、`TRS()`、`TransformVector()`，不要先动写回层。
+- 这类问题属于 MC2 底层数学/VirtualMesh proxy skinning parity，不属于 Blender UI 或属性配置问题。

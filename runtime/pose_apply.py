@@ -130,10 +130,53 @@ def _multiply_quaternion(a: Quaternion, b: Quaternion) -> Quaternion:
     ))
 
 
+def _pose_local_matrix(pose_bone) -> Matrix:
+    if pose_bone.parent is not None:
+        return pose_bone.parent.matrix.inverted_safe() @ pose_bone.matrix
+    return pose_bone.matrix.copy()
+
+
+def _compose_pose_local_matrix(pose_bone, local_rotation: Quaternion) -> Matrix:
+    current_local = _pose_local_matrix(pose_bone)
+    translation = Matrix.Translation(current_local.to_translation())
+    scale = Matrix.Diagonal((*current_local.to_scale(), 1.0))
+    return translation @ local_rotation.to_matrix().to_4x4() @ scale
+
+
+def _set_pose_from_mc2_local_rotation(pose_bone, local_rotation: Quaternion, translation: Vector) -> bool:
+    target_local = _compose_pose_local_matrix(pose_bone, local_rotation)
+    if translation.length_squared > 0.0:
+        target_local.translation = target_local.to_translation() + translation
+    target_pose = pose_bone.parent.matrix @ target_local if pose_bone.parent is not None else target_local
+
+    pose_bone.matrix = target_pose
+    return True
+
+
+def _set_pose_from_mc2_world_rotation(
+    armature_object,
+    pose_bone,
+    world_rotation: Quaternion,
+    translation: Vector,
+) -> bool:
+    current_world = armature_object.matrix_world @ pose_bone.matrix
+    target_world = (
+        Matrix.Translation(current_world.to_translation())
+        @ world_rotation.to_matrix().to_4x4()
+        @ Matrix.Diagonal((*current_world.to_scale(), 1.0))
+    )
+    if translation.length_squared > 0.0:
+        target_world.translation = target_world.to_translation() + translation
+    pose_bone.matrix = armature_object.matrix_world.inverted_safe() @ target_world
+    return True
+
+
 def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, transforms: list[dict], pose_baseline: dict | None = None) -> dict:
     armature_cache = {}
     touched_armatures = set()
     applied_count = 0
+    world_write_applied_count = 0
+    local_write_applied_count = 0
     missing_bone_count = 0
     missing_armature_count = 0
     pose_baseline = pose_baseline or {}
@@ -170,8 +213,16 @@ def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, transforms: list[d
 
         if pose_bone.rotation_mode != "QUATERNION":
             pose_bone.rotation_mode = "QUATERNION"
-        pose_bone.location = baseline_location + translation
-        pose_bone.rotation_quaternion = _multiply_quaternion(baseline_rotation, rotation_delta)
+        write_mode = str(transform.get("write_mode", "") or "")
+        if write_mode == "mc2_world_rotation":
+            continue
+        elif write_mode == "mc2_local_rotation":
+            if not _set_pose_from_mc2_local_rotation(pose_bone, rotation_delta, translation):
+                continue
+            local_write_applied_count += 1
+        else:
+            pose_bone.location = baseline_location + translation
+            pose_bone.rotation_quaternion = _multiply_quaternion(baseline_rotation, rotation_delta)
 
         touched_armatures.add(armature_object.name)
         applied_count += 1
@@ -183,6 +234,8 @@ def apply_runtime_transforms_to_scene(scene: bpy.types.Scene, transforms: list[d
 
     return {
         "applied_count": applied_count,
+        "world_write_applied_count": world_write_applied_count,
+        "local_write_applied_count": local_write_applied_count,
         "missing_bone_count": missing_bone_count,
         "missing_armature_count": missing_armature_count,
         "armature_count": len(touched_armatures),

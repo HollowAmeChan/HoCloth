@@ -375,6 +375,7 @@ BoneCloth initial-state / reset lifecycle rule:
 
 ```text
 AlwaysTeamUpdate
+  -> TransformManager.RestoreTransform / restore authored local pose
   -> ReadTransform / runtime transform input
   -> VirtualMeshManager.PreProxyMeshUpdate
   -> TeamManager.CalcCenterAndInertiaAndWind / UpdateCenterAndInertia
@@ -388,7 +389,49 @@ AlwaysTeamUpdate
 ```
 
 - `TeamManager` reset/time-reset flags, center old/current/frame data, `velocityWeight`, `blendWeight`, and `SimulationManager` particle buffers must be allowed to flow through the MC2 reset jobs. Python should only provide current Blender transform/frame inputs.
+- `TransformManager.RestoreTransform` is part of MC2's early-frame lifecycle before transform read. In the Blender bridge it restores native `localPosition/localRotation` from `initLocalPosition/initLocalRotation`; the next runtime frame input then acts as MC2 `ReadTransform`.
+- MC2 `ReadTransformJob` reads `transform.localToWorldMatrix` directly and derives lossy scale as `inverse(rotation) * localToWorldMatrix` diagonal. The Blender frame protocol must therefore send per-bone `basic_local_to_world_matrices`; native runtime must not reconstruct proxy skinning matrices only from position/rotation/average scale.
+- `Flag_WorldRotWrite` remains a native diagnostic/output flag, but Blender must not blindly apply it as a pose writeback path. A 2026-05-08 test showed that routing this flag through a separate Blender world-rotation write mode amplified the first-step `Y-` snap (`mc2_local_delta_max` rose to roughly 149 degrees), which means the active error had already happened inside native proxy/writeback space. Keep Blender continuous-bone writeback on MC2 local rotation unless a future disconnected/root-only mode is designed deliberately.
+- BoneCloth render/bind-pose parity is critical. MC2 `RenderSetupData.ReadTransformInformation()` captures the actual render transform and `VirtualMeshInputOutput.Import_BoneVertexJob` stores `bindPose = worldToLocal * renderLocalToWorld`. HoCloth must therefore send armature/world render transform data from Blender and build `skin_bone_bind_poses` with `InverseAffine(boneLocalToWorld) * initRenderLocalToWorld`; treating the render transform as identity is a known source of double/offset-space bugs.
+- BoneCloth proxy finalization must run once, in MC2 order. `ImportBoneType()` corresponds to MC2 `VirtualMeshInputOutput.ImportBoneType`: import bone vertices, bind poses, attributes, and line/triangle topology only. `ConvertProxyMesh()` corresponds to MC2 `VirtualMeshProxy.ConvertProxyMesh`: build vertex adjacency, create fixed list/AABB, create transform baselines, run normal adjustment, calculate `vertexToTransformRotations`, then calculate vertex bind pose. Do not rebuild baseline/bind/v2t inside `ImportBoneType()` and then call `ConvertProxyMesh()` again; that is a direct double-processing hazard for first-step BoneCloth rotation.
+- Active diagnostic: native BoneCloth transform outputs now expose `input_local_rotation` and `local_rotation_delta_degrees`; Blender runtime summaries append `mc2_local_delta_max`. If first-step curl appears again, use this to distinguish native proxy/writeback error from Blender pose-application error.
 - Audit native-only bootstrap helpers before adding new fixes. `_native/src/hocloth_runtime_api.cpp` previously contained `InitializeRuntimePoseFromInputs(...)` and `ResetMc2ParticlesToCurrentProxyPose(...)`, but those HoCloth-added shortcuts were removed because they were not direct MC2 lifecycle jobs and could hide or conflict with `SimulationManager::PreSimulationUpdate(...)`. Do not restore a partial reset shortcut: MC2's reset path writes `nextPos`, `oldPos`, `oldRot`, `basePos`, `baseRot`, `oldPosition`, `oldRotation`, `velocityPos`, `dispPos`, `velocity`, `realVelocity`, friction, static friction, and collision normal together.
 - Do not solve initial kick by skipping the first Blender frame, slerping Blender pose deltas, writing all local positions to `pose_bone.location`, or adding Python-side "soft start" logic. Those can be diagnostics only. The proper fix is to make the native manager sequence and reset buffers match MC2.
 - When debugging this class of issue, inspect these native states together: transform flags, proxy vertex position/rotation before and after `PreProxyMeshUpdate`, center `oldWorld/nowWorld/frameWorld/stepVector/inertiaVector`, team `IsReset/IsTimeReset/velocityWeight/blendWeight/frameInterpolation`, particle `oldPos/oldPosition/basePos/nextPos/dispPos/velocityPos`, and the final `PostProxyMeshUpdate` local rotation output.
 - 2026-05-08 audit note: do not treat `VirtualMeshProxy` as behavior-complete until BoneCloth startup is verified. MC2 builds compressed vertex adjacency before `ProxyCreateFixedListAndAABB()`, and the fixed center list must remain owned by that fixed-list/AABB step. HoCloth now mirrors this by building `vertex_to_vertex_index_array` / `vertex_to_vertex_data_array` from line/triangle topology and by preventing `BuildTransformBaseLines()` from overwriting `center_fixed_list`; keep checking this path before changing Team/Simulation inertia code.
+
+BoneCloth first-frame rotation bug postmortem (2026-05-08):
+
+- Symptom: a freshly rebuilt BoneCloth could rotate sharply on the first `Step`, commonly snapping the first movable child toward Blender `Y-`. The debug summary showed large deltas such as `mc2_local_delta_max ~= 149deg` or `local_delta ~= 71deg`, while world positions were nearly unchanged.
+- Confirmed non-causes:
+  - Blender pose writeback was not the root cause. The returned `proxy_rot` already contained the bad rotation before Blender applied it.
+  - Fixed/move attribute setup was not the root cause. Recreating BoneCloth with default root/move data still reproduced the first-step rotation.
+  - `vertexToTransformRotations` was not the root cause in the failing cases; debug output showed `v2t` was identity, so the wrong rotation was already in the proxy vertex rotation.
+  - Python-side soft-start, first-frame skip, slerp, local-position suppression, and special world-rotation writeback are not acceptable fixes. They only hide the native error and can make the snap worse.
+  - Render/bind-pose matrix transfer was necessary but not sufficient. After `rest_local_to_world_matrix` was added to `authoring_snapshot -> RenderSetupData`, debug showed `has_rest_matrix=1` while the snap remained.
+- Decisive diagnostic: detailed native matrix debug exposed the proxy skinning chain:
+
+```text
+p_lnor = world-space bone up vector sampled from input rotation
+p_ltan = world-space bone forward vector sampled from input rotation
+p_pnor / p_ptan = local normal/tangent after skin bind pose
+p_wnor / p_wtan = normal/tangent after current localToWorld
+```
+
+  In the failing case, `p_posed` was correctly near zero for position, but `p_pnor` was not `(0,1,0)` and `p_ptan` was not `(0,0,1)`. Therefore position bind-pose inversion looked plausible while direction bind-pose inversion was mathematically wrong.
+- Root cause: `_native/src/utility/math/math_utility.cpp::InverseAffine()` wrote the inverse 3x3 matrix into `float4x4` with row/column layout transposed for the project’s column-major `float4x4`. `TRS()` itself was correct, and `ToRotation(normal,tangent)` was self-consistent. The bad inverse meant:
+
+```text
+InverseAffine(TRS(q)) * Rotate(q, up)      != up
+InverseAffine(TRS(q)) * Rotate(q, forward) != forward
+```
+
+  This broke `VirtualMeshInputOutput.Import_BoneVertexJob` parity because BoneCloth stores `skin_bone_bind_poses = inverse(boneLocalToWorld) * renderLocalToWorld`, then `PreProxyMeshUpdate` transforms local normals/tangents through bind pose and current transform. Positions could still appear nearly correct, making the bug easy to misread as writeback or initialization.
+- Fix: `InverseAffine()` now writes inverse columns in column-major order. After the fix:
+
+```text
+InverseAffine(TRS(q)) * Rotate(q, up)      -> up
+InverseAffine(TRS(q)) * Rotate(q, forward) -> forward
+```
+
+- Regression rule: whenever BoneCloth first-frame curl/snap returns, first enable `Scene.hocloth_debug_detailed_native` from the UI debug foldout and inspect `has_rest_matrix`, `proxy_input_delta`, `p_pnor`, `p_ptan`, `p_wnor`, and `p_wtan`. If `has_rest_matrix=0`, the authoring snapshot/build path is stale. If `has_rest_matrix=1` but `p_pnor/p_ptan` are not near local up/forward on the first frame, inspect matrix layout/inversion before touching writeback, fixed attributes, or reset timing.

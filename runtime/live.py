@@ -12,8 +12,9 @@ from .session import (
     get_last_authoring_snapshot,
     get_pose_baseline,
     reset_runtime,
-    set_runtime_inputs_only,
+    set_detailed_native_debug_enabled,
     set_pose_baseline,
+    set_runtime_inputs_only,
     step_runtime,
 )
 
@@ -184,6 +185,7 @@ def on_frame_change_post(scene, depsgraph):
 
     source_pose = capture_pose_state(scene, authoring_snapshot)
     runtime_inputs = build_runtime_inputs(scene, authoring_snapshot)
+    set_detailed_native_debug_enabled(getattr(scene, "hocloth_debug_detailed_native", False))
 
     try:
         result = step_runtime(

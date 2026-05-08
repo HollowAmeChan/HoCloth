@@ -209,7 +209,10 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         reset_row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置运行时")
         reset_row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁运行时")
 
-        layout.prop(scene, "hocloth_ui_details_expanded", text="详细信息")
+        debug = layout.box()
+        debug.prop(scene, "hocloth_ui_details_expanded", text="详细信息")
+        if scene.hocloth_ui_details_expanded:
+            debug.prop(scene, "hocloth_debug_detailed_native", text="Native Matrix Debug")
 
         components = layout.box()
         components.label(text="MC2 Components")

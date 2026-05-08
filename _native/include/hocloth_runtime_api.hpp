@@ -23,6 +23,25 @@ struct Quat {
     float z = 0.0f;
 };
 
+struct Mat4 {
+    float m00 = 1.0f;
+    float m01 = 0.0f;
+    float m02 = 0.0f;
+    float m03 = 0.0f;
+    float m10 = 0.0f;
+    float m11 = 1.0f;
+    float m12 = 0.0f;
+    float m13 = 0.0f;
+    float m20 = 0.0f;
+    float m21 = 0.0f;
+    float m22 = 1.0f;
+    float m23 = 0.0f;
+    float m30 = 0.0f;
+    float m31 = 0.0f;
+    float m32 = 0.0f;
+    float m33 = 1.0f;
+};
+
 struct CompiledSpringJoint {
     std::string name;
     int parent_index = -1;
@@ -38,7 +57,10 @@ struct CompiledSpringJoint {
     Vec3 rest_local_translation;
     Quat rest_local_rotation;
     Quat rest_world_rotation;
+    Vec3 rest_world_scale{1.0f, 1.0f, 1.0f};
+    Mat4 rest_local_to_world_matrix;
     bool has_rest_world_rotation = false;
+    bool has_rest_local_to_world_matrix = false;
 };
 
 struct CompiledSpringLine {
@@ -127,6 +149,8 @@ struct CompiledSpringBone {
     std::vector<std::string> collider_group_ids;
     std::vector<std::string> collision_binding_ids;
     std::vector<int> collision_bone_indices;
+    Vec3 armature_position{0.0f, 0.0f, 0.0f};
+    Quat armature_rotation{};
     Vec3 armature_scale{1.0f, 1.0f, 1.0f};
     std::vector<CompiledSpringJoint> joints;
     std::vector<CompiledSpringLine> lines;
@@ -198,6 +222,7 @@ struct RuntimeChainInput {
     std::vector<Quat> basic_rotations;
     std::vector<Vec3> basic_local_positions;
     std::vector<Quat> basic_local_rotations;
+    std::vector<Mat4> basic_local_to_world_matrices;
 };
 
 struct RuntimeCollisionObjectInput {
@@ -216,10 +241,39 @@ struct BoneTransform {
     std::string component_id;
     std::string armature_name;
     std::string bone_name;
+    std::string parent_bone_name;
+    int joint_index = -1;
+    int parent_index = -1;
     Vec3 translation;
     Quat rotation_quaternion;
+    Quat world_rotation_quaternion;
+    Quat parent_world_rotation_quaternion;
+    Vec3 input_world_position;
+    Vec3 output_world_position;
+    Vec3 input_local_position;
+    Vec3 output_local_position;
     std::string write_mode;
     int transform_flags = 0;
+    int vertex_attribute = 0;
+    Quat input_local_rotation;
+    Quat input_world_rotation;
+    Quat output_local_rotation;
+    Quat proxy_vertex_rotation;
+    Quat vertex_to_transform_rotation;
+    Vec3 proxy_local_position;
+    Vec3 proxy_local_normal;
+    Vec3 proxy_local_tangent;
+    Vec3 proxy_posed_position;
+    Vec3 proxy_posed_normal;
+    Vec3 proxy_posed_tangent;
+    Vec3 proxy_world_normal;
+    Vec3 proxy_world_tangent;
+    bool has_rest_local_to_world_matrix = false;
+    float proxy_to_input_world_delta_degrees = 0.0f;
+    float local_rotation_delta_degrees = 0.0f;
+    float world_rotation_delta_degrees = 0.0f;
+    float local_position_delta = 0.0f;
+    float world_position_delta = 0.0f;
 };
 
 struct MeshOutput {

@@ -82,6 +82,13 @@ public:
     [[nodiscard]] const ExNativeArray<std::uint16_t>& BaseLineData() const;
     [[nodiscard]] const ExNativeArray<float3>& Positions() const;
     [[nodiscard]] const ExNativeArray<quaternion>& Rotations() const;
+    [[nodiscard]] const ExNativeArray<float3>& LocalPositions() const;
+    [[nodiscard]] const ExNativeArray<float3>& LocalNormals() const;
+    [[nodiscard]] const ExNativeArray<float3>& LocalTangents() const;
+    [[nodiscard]] const ExNativeArray<VirtualMeshBoneWeight>& BoneWeights() const;
+    [[nodiscard]] const ExNativeArray<float4x4>& SkinBoneBindPoses() const;
+    [[nodiscard]] const ExNativeArray<int>& SkinBoneTransformIndices() const;
+    [[nodiscard]] const ExNativeArray<quaternion>& VertexToTransformRotations() const;
     [[nodiscard]] ExNativeArray<float3>& Positions();
     [[nodiscard]] ExNativeArray<quaternion>& Rotations();
     [[nodiscard]] const ExNativeArray<short>& MappingIds() const;

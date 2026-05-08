@@ -56,6 +56,7 @@ struct RenderSetupData {
         std::vector<float3> transform_local_positions;
         std::vector<quaternion> transform_local_rotations;
         std::vector<quaternion> transform_inverse_rotations;
+        std::vector<float4x4> transform_local_to_world_matrices;
         float4x4 init_render_local_to_world;
         float4x4 init_render_world_to_local;
         quaternion init_render_rotation;
@@ -118,6 +119,7 @@ struct RenderSetupData {
     std::vector<float3> transform_local_positions;
     std::vector<quaternion> transform_local_rotations;
     std::vector<quaternion> transform_inverse_rotations;
+    std::vector<float4x4> transform_local_to_world_matrices;
     float4x4 init_render_local_to_world;
     float4x4 init_render_world_to_local;
     quaternion init_render_rotation;

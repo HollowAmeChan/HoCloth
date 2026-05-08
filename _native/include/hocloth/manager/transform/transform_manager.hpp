@@ -7,6 +7,7 @@
 
 namespace hocloth::mc2 {
 
+class TeamManager;
 class VirtualMeshContainer;
 
 // Port target for Magica Cloth 2: Scripts/Core/Manager/TransformManager/TransformManager.cs
@@ -36,6 +37,7 @@ public:
     void RemoveTransform(DataChunk chunk);
     void EnableTransform(DataChunk chunk, bool enabled);
     void EnableTransform(int index, bool enabled);
+    void RestoreTransform(const TeamManager& team_manager);
     [[nodiscard]] DataChunk Expand(DataChunk chunk, int new_length);
 
     [[nodiscard]] TransformRecord GetRecord(int index) const;

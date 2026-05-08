@@ -108,6 +108,62 @@ Quat ReadQuat(nb::handle handle)
     return value;
 }
 
+Mat4 ReadMat4(nb::handle handle)
+{
+    nb::sequence seq = nb::cast<nb::sequence>(handle);
+    const std::size_t size = nb::len(seq);
+    Mat4 value;
+    if (size > 0) {
+        value.m00 = nb::cast<float>(seq[0]);
+    }
+    if (size > 1) {
+        value.m01 = nb::cast<float>(seq[1]);
+    }
+    if (size > 2) {
+        value.m02 = nb::cast<float>(seq[2]);
+    }
+    if (size > 3) {
+        value.m03 = nb::cast<float>(seq[3]);
+    }
+    if (size > 4) {
+        value.m10 = nb::cast<float>(seq[4]);
+    }
+    if (size > 5) {
+        value.m11 = nb::cast<float>(seq[5]);
+    }
+    if (size > 6) {
+        value.m12 = nb::cast<float>(seq[6]);
+    }
+    if (size > 7) {
+        value.m13 = nb::cast<float>(seq[7]);
+    }
+    if (size > 8) {
+        value.m20 = nb::cast<float>(seq[8]);
+    }
+    if (size > 9) {
+        value.m21 = nb::cast<float>(seq[9]);
+    }
+    if (size > 10) {
+        value.m22 = nb::cast<float>(seq[10]);
+    }
+    if (size > 11) {
+        value.m23 = nb::cast<float>(seq[11]);
+    }
+    if (size > 12) {
+        value.m30 = nb::cast<float>(seq[12]);
+    }
+    if (size > 13) {
+        value.m31 = nb::cast<float>(seq[13]);
+    }
+    if (size > 14) {
+        value.m32 = nb::cast<float>(seq[14]);
+    }
+    if (size > 15) {
+        value.m33 = nb::cast<float>(seq[15]);
+    }
+    return value;
+}
+
 std::vector<std::string> ReadStringArray(const nb::dict& dict, const char* key)
 {
     std::vector<std::string> result;
@@ -200,6 +256,39 @@ std::vector<Quat> ReadQuatArray(const nb::dict& dict, const char* key)
             nb::cast<float>(values[index + 1]),
             nb::cast<float>(values[index + 2]),
             nb::cast<float>(values[index + 3]),
+        });
+    }
+    return result;
+}
+
+std::vector<Mat4> ReadMat4Array(const nb::dict& dict, const char* key)
+{
+    std::vector<Mat4> result;
+    nb::sequence values = ReadSequence(dict, key);
+    const std::size_t size = nb::len(values);
+    if (size % 16 != 0) {
+        throw std::runtime_error("Expected a flat 4x4 matrix array.");
+    }
+
+    result.reserve(size / 16);
+    for (std::size_t index = 0; index < size; index += 16) {
+        result.push_back(Mat4{
+            nb::cast<float>(values[index + 0]),
+            nb::cast<float>(values[index + 1]),
+            nb::cast<float>(values[index + 2]),
+            nb::cast<float>(values[index + 3]),
+            nb::cast<float>(values[index + 4]),
+            nb::cast<float>(values[index + 5]),
+            nb::cast<float>(values[index + 6]),
+            nb::cast<float>(values[index + 7]),
+            nb::cast<float>(values[index + 8]),
+            nb::cast<float>(values[index + 9]),
+            nb::cast<float>(values[index + 10]),
+            nb::cast<float>(values[index + 11]),
+            nb::cast<float>(values[index + 12]),
+            nb::cast<float>(values[index + 13]),
+            nb::cast<float>(values[index + 14]),
+            nb::cast<float>(values[index + 15]),
         });
     }
     return result;
@@ -365,6 +454,12 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);
         }
+        if (chain_dict.contains("armature_position")) {
+            chain.armature_position = ReadVec3(chain_dict["armature_position"]);
+        }
+        if (chain_dict.contains("armature_rotation")) {
+            chain.armature_rotation = ReadQuat(chain_dict["armature_rotation"]);
+        }
         if (chain_dict.contains("armature_scale")) {
             chain.armature_scale = ReadVec3(chain_dict["armature_scale"]);
         }
@@ -406,6 +501,14 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
                 joint.has_rest_world_rotation = true;
             } else {
                 joint.rest_world_rotation = joint.rest_local_rotation;
+            }
+            if (joint_dict.contains("rest_world_scale")) {
+                joint.rest_world_scale = ReadVec3(joint_dict["rest_world_scale"]);
+            }
+            if (joint_dict.contains("rest_local_to_world_matrix")) {
+                joint.rest_local_to_world_matrix =
+                    ReadMat4(joint_dict["rest_local_to_world_matrix"]);
+                joint.has_rest_local_to_world_matrix = true;
             }
             chain.joints.push_back(joint);
         }
@@ -529,6 +632,8 @@ RuntimeInputs ParseRuntimeInputs(const nb::dict& root)
         chain.basic_rotations = ReadQuatArray(chain_dict, "basic_rotations");
         chain.basic_local_positions = ReadVec3Array(chain_dict, "basic_local_positions");
         chain.basic_local_rotations = ReadQuatArray(chain_dict, "basic_local_rotations");
+        chain.basic_local_to_world_matrices =
+            ReadMat4Array(chain_dict, "basic_local_to_world_matrices");
         inputs.bone_chains.push_back(std::move(chain));
     }
 
@@ -654,10 +759,39 @@ nb::list ToPython(const std::vector<BoneTransform>& transforms)
         item["component_id"] = transform.component_id;
         item["armature_name"] = transform.armature_name;
         item["bone_name"] = transform.bone_name;
+        item["parent_bone_name"] = transform.parent_bone_name;
+        item["joint_index"] = transform.joint_index;
+        item["parent_index"] = transform.parent_index;
         item["translation"] = ToTuple(transform.translation);
         item["rotation_quaternion"] = ToTuple(transform.rotation_quaternion);
+        item["world_rotation_quaternion"] = ToTuple(transform.world_rotation_quaternion);
+        item["parent_world_rotation_quaternion"] = ToTuple(transform.parent_world_rotation_quaternion);
+        item["input_world_position"] = ToTuple(transform.input_world_position);
+        item["output_world_position"] = ToTuple(transform.output_world_position);
+        item["input_local_position"] = ToTuple(transform.input_local_position);
+        item["output_local_position"] = ToTuple(transform.output_local_position);
         item["write_mode"] = transform.write_mode;
         item["transform_flags"] = transform.transform_flags;
+        item["vertex_attribute"] = transform.vertex_attribute;
+        item["input_local_rotation"] = ToTuple(transform.input_local_rotation);
+        item["input_world_rotation"] = ToTuple(transform.input_world_rotation);
+        item["output_local_rotation"] = ToTuple(transform.output_local_rotation);
+        item["proxy_vertex_rotation"] = ToTuple(transform.proxy_vertex_rotation);
+        item["vertex_to_transform_rotation"] = ToTuple(transform.vertex_to_transform_rotation);
+        item["proxy_local_position"] = ToTuple(transform.proxy_local_position);
+        item["proxy_local_normal"] = ToTuple(transform.proxy_local_normal);
+        item["proxy_local_tangent"] = ToTuple(transform.proxy_local_tangent);
+        item["proxy_posed_position"] = ToTuple(transform.proxy_posed_position);
+        item["proxy_posed_normal"] = ToTuple(transform.proxy_posed_normal);
+        item["proxy_posed_tangent"] = ToTuple(transform.proxy_posed_tangent);
+        item["proxy_world_normal"] = ToTuple(transform.proxy_world_normal);
+        item["proxy_world_tangent"] = ToTuple(transform.proxy_world_tangent);
+        item["has_rest_local_to_world_matrix"] = transform.has_rest_local_to_world_matrix;
+        item["proxy_to_input_world_delta_degrees"] = transform.proxy_to_input_world_delta_degrees;
+        item["local_rotation_delta_degrees"] = transform.local_rotation_delta_degrees;
+        item["world_rotation_delta_degrees"] = transform.world_rotation_delta_degrees;
+        item["local_position_delta"] = transform.local_position_delta;
+        item["world_position_delta"] = transform.world_position_delta;
         items.append(item);
     }
     return items;

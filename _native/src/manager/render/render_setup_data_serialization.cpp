@@ -41,6 +41,7 @@ void RenderSetupData::Dispose()
     transform_local_positions.clear();
     transform_local_rotations.clear();
     transform_inverse_rotations.clear();
+    transform_local_to_world_matrices.clear();
     is_managed = false;
     result.Clear();
 }
@@ -96,7 +97,10 @@ TransformRecord RenderSetupData::GetTransformRecordFromIndex(int index) const
     record.position = read_float3(transform_positions, record.local_position);
     record.rotation = read_quaternion(transform_rotations, record.local_rotation);
     record.scale = read_float3(transform_scales, float3{1.0f, 1.0f, 1.0f});
-    record.local_to_world_matrix = TRS(record.position, record.rotation, record.scale);
+    record.local_to_world_matrix =
+        index < static_cast<int>(transform_local_to_world_matrices.size())
+            ? transform_local_to_world_matrices[static_cast<std::size_t>(index)]
+            : TRS(record.position, record.rotation, record.scale);
     record.world_to_local_matrix = InverseAffine(record.local_to_world_matrix);
     return record;
 }
@@ -156,6 +160,7 @@ RenderSetupData RenderSetupData::ShareDeserialize(
     setup.transform_local_positions = data.transform_local_positions;
     setup.transform_local_rotations = data.transform_local_rotations;
     setup.transform_inverse_rotations = data.transform_inverse_rotations;
+    setup.transform_local_to_world_matrices = data.transform_local_to_world_matrices;
     setup.init_render_local_to_world = data.init_render_local_to_world;
     setup.init_render_world_to_local = data.init_render_world_to_local;
     setup.init_render_rotation = data.init_render_rotation;

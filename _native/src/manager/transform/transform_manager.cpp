@@ -1,5 +1,6 @@
 #include "hocloth/manager/transform/transform_manager.hpp"
 
+#include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
 #include "hocloth/virtual_mesh/virtual_mesh_container.hpp"
 
@@ -244,6 +245,50 @@ void TransformManager::EnableTransform(int index, bool enabled)
     }
     flag.SetFlag(FlagEnable, enabled);
     data_.flag_array[index] = flag;
+    data_.is_dirty = true;
+}
+
+void TransformManager::RestoreTransform(const TeamManager& team_manager)
+{
+    // MC2 RestoreTransformJob: restore authored local pose before the frame's
+    // transform read. In the Blender bridge this updates the native transform
+    // cache; ApplyRuntimeInputsToMc2Transforms then plays the role of ReadTransform.
+    if (!initialized_) {
+        return;
+    }
+
+    for (int index = 0; index < data_.flag_array.Length(); ++index) {
+        const BitFlag8 flag = data_.flag_array[index];
+        if (!flag.IsSet(FlagRestore)) {
+            continue;
+        }
+
+        const int team_id =
+            index < data_.team_id_array.Length()
+                ? static_cast<int>(data_.team_id_array[index])
+                : 0;
+        if (!team_manager.IsValidTeam(team_id)) {
+            continue;
+        }
+
+        const TeamManager::TeamData& team_data = team_manager.GetTeamData(team_id);
+        if (!flag.IsSet(FlagEnable) && !team_data.flag.IsSet(TeamManager::FlagRestoreTransformOnlyOnce)) {
+            continue;
+        }
+        if ((team_data.IsCameraCullingInvisible() && team_data.IsCameraCullingKeep())
+            || team_data.IsDistanceCullingInvisible()) {
+            continue;
+        }
+
+        if (index < data_.init_local_position_array.Length()
+            && index < data_.local_position_array.Length()) {
+            data_.local_position_array[index] = data_.init_local_position_array[index];
+        }
+        if (index < data_.init_local_rotation_array.Length()
+            && index < data_.local_rotation_array.Length()) {
+            data_.local_rotation_array[index] = data_.init_local_rotation_array[index];
+        }
+    }
     data_.is_dirty = true;
 }
 

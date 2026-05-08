@@ -259,6 +259,15 @@ mc2::float3 AverageScaleToMc2(const Vec3& scale)
     return mc2::float3{uniform_scale, uniform_scale, uniform_scale};
 }
 
+mc2::float3 ScaleToMc2(const Vec3& scale)
+{
+    return mc2::float3{
+        std::abs(scale.x) > 0.0001f ? scale.x : 0.0001f,
+        std::abs(scale.y) > 0.0001f ? scale.y : 0.0001f,
+        std::abs(scale.z) > 0.0001f ? scale.z : 0.0001f,
+    };
+}
+
 Quat QuaternionFromPitchRoll(float pitch, float roll)
 {
     // Blender pose bones use local +Y as the head-to-tail axis. The compact
@@ -331,12 +340,17 @@ Quat Slerp(const Quat& a, const Quat& b, float t)
 
 float QuaternionAngle(const Quat& a, const Quat& b)
 {
-    const float dot = QuaternionDot(NormalizeQuat(a), NormalizeQuat(b));
+    const float dot = std::abs(QuaternionDot(NormalizeQuat(a), NormalizeQuat(b)));
     if (std::abs(dot) < 0.9999f) {
         const float angle = std::acos(Clamp(dot, -1.0f, 1.0f)) * 2.0f;
         return angle > kPi ? (kPi * 2.0f) - angle : angle;
     }
     return 0.0f;
+}
+
+float Distance(const Vec3& a, const Vec3& b)
+{
+    return Length(Sub(a, b));
 }
 
 void QuaternionToAngleAxis(const Quat& q, float& angle, Vec3& axis)
@@ -505,6 +519,29 @@ mc2::quaternion ToMc2Quaternion(const Quat& value)
     return mc2::quaternion{value.w, value.x, value.y, value.z};
 }
 
+mc2::float4x4 ToMc2Float4x4(const Mat4& value)
+{
+    // Blender/Python Matrix is flattened row-major; MC2/math stores float4x4
+    // as columns matching Unity.Mathematics float4x4 layout.
+    return mc2::float4x4{
+        mc2::float4{value.m00, value.m10, value.m20, value.m30},
+        mc2::float4{value.m01, value.m11, value.m21, value.m31},
+        mc2::float4{value.m02, value.m12, value.m22, value.m32},
+        mc2::float4{value.m03, value.m13, value.m23, value.m33},
+    };
+}
+
+mc2::float3 LossyScaleFromLocalToWorld(
+    const mc2::float4x4& local_to_world,
+    const mc2::quaternion& rotation
+)
+{
+    const mc2::float4x4 inverse_rotation_matrix =
+        mc2::TRS(mc2::float3{}, mc2::Inverse(rotation), mc2::float3{1.0f, 1.0f, 1.0f});
+    const mc2::float4x4 matrix = mc2::Multiply(inverse_rotation_matrix, local_to_world);
+    return mc2::float3{matrix.c0.x, matrix.c1.y, matrix.c2.z};
+}
+
 mc2::float3 ResolveParticleBasePosition(
     const CompiledSpringBone& chain,
     const RuntimeChainInput* runtime_input,
@@ -589,6 +626,128 @@ Vec3 ResolveRuntimeLocalPosition(
     return RotateVector(Conjugate(parent_world_rotation), world_delta);
 }
 
+Vec3 ResolveRuntimeWorldPosition(
+    const CompiledSpringBone& chain,
+    const RuntimeChainInput* runtime_input,
+    std::size_t joint_index
+)
+{
+    if (runtime_input != nullptr
+        && joint_index < runtime_input->basic_head_positions.size()) {
+        return runtime_input->basic_head_positions[joint_index];
+    }
+    if (joint_index < chain.joints.size()) {
+        return chain.joints[joint_index].rest_head_local;
+    }
+    return Vec3{};
+}
+
+Quat ResolveRuntimeWorldRotation(
+    const CompiledSpringBone& chain,
+    const RuntimeChainInput* runtime_input,
+    std::size_t joint_index
+)
+{
+    if (runtime_input != nullptr
+        && joint_index < runtime_input->basic_rotations.size()) {
+        return NormalizeQuat(runtime_input->basic_rotations[joint_index]);
+    }
+    if (joint_index < chain.joints.size()) {
+        const CompiledSpringJoint& joint = chain.joints[joint_index];
+        return NormalizeQuat(
+            joint.has_rest_world_rotation
+                ? joint.rest_world_rotation
+                : joint.rest_local_rotation
+        );
+    }
+    return Quat{};
+}
+
+BoneTransform MakeBoneTransformDiagnostic(
+    const CompiledSpringBone& chain,
+    const RuntimeChainInput* runtime_input,
+    std::size_t joint_index,
+    const Vec3& translation,
+    const Quat& rotation,
+    const Quat& world_rotation,
+    const std::string& write_mode,
+    int transform_flags,
+    int vertex_attribute,
+    const Vec3& output_world_position,
+    const Vec3& output_local_position,
+    const Quat& proxy_vertex_rotation = Quat{},
+    const Quat& vertex_to_transform_rotation = Quat{},
+    const Vec3& proxy_local_position = Vec3{},
+    const Vec3& proxy_local_normal = Vec3{},
+    const Vec3& proxy_local_tangent = Vec3{},
+    const Vec3& proxy_posed_position = Vec3{},
+    const Vec3& proxy_posed_normal = Vec3{},
+    const Vec3& proxy_posed_tangent = Vec3{},
+    const Vec3& proxy_world_normal = Vec3{},
+    const Vec3& proxy_world_tangent = Vec3{}
+)
+{
+    BoneTransform transform;
+    if (joint_index >= chain.joints.size()) {
+        return transform;
+    }
+
+    const CompiledSpringJoint& joint = chain.joints[joint_index];
+    transform.component_id = chain.component_id;
+    transform.armature_name = chain.armature_name;
+    transform.bone_name = joint.name;
+    transform.joint_index = static_cast<int>(joint_index);
+    transform.parent_index = joint.parent_index;
+    if (joint.parent_index >= 0
+        && static_cast<std::size_t>(joint.parent_index) < chain.joints.size()) {
+        transform.parent_bone_name =
+            chain.joints[static_cast<std::size_t>(joint.parent_index)].name;
+        transform.parent_world_rotation_quaternion = ResolveRuntimeWorldRotation(
+            chain,
+            runtime_input,
+            static_cast<std::size_t>(joint.parent_index)
+        );
+    }
+    transform.translation = translation;
+    transform.rotation_quaternion = NormalizeQuat(rotation);
+    transform.world_rotation_quaternion = NormalizeQuat(world_rotation);
+    transform.input_world_position = ResolveRuntimeWorldPosition(chain, runtime_input, joint_index);
+    transform.output_world_position = output_world_position;
+    transform.input_local_position = ResolveRuntimeLocalPosition(chain, runtime_input, joint_index);
+    transform.output_local_position = output_local_position;
+    transform.write_mode = write_mode;
+    transform.transform_flags = transform_flags;
+    transform.vertex_attribute = vertex_attribute;
+    transform.input_local_rotation = ResolveRuntimeLocalRotation(chain, runtime_input, joint_index);
+    transform.input_world_rotation = ResolveRuntimeWorldRotation(chain, runtime_input, joint_index);
+    transform.output_local_rotation = NormalizeQuat(rotation);
+    transform.proxy_vertex_rotation = NormalizeQuat(proxy_vertex_rotation);
+    transform.vertex_to_transform_rotation = NormalizeQuat(vertex_to_transform_rotation);
+    transform.proxy_local_position = proxy_local_position;
+    transform.proxy_local_normal = proxy_local_normal;
+    transform.proxy_local_tangent = proxy_local_tangent;
+    transform.proxy_posed_position = proxy_posed_position;
+    transform.proxy_posed_normal = proxy_posed_normal;
+    transform.proxy_posed_tangent = proxy_posed_tangent;
+    transform.proxy_world_normal = proxy_world_normal;
+    transform.proxy_world_tangent = proxy_world_tangent;
+    transform.has_rest_local_to_world_matrix = joint.has_rest_local_to_world_matrix;
+    transform.proxy_to_input_world_delta_degrees =
+        QuaternionAngle(transform.input_world_rotation, transform.proxy_vertex_rotation)
+        * 57.29577951308232f;
+    transform.local_rotation_delta_degrees =
+        QuaternionAngle(transform.input_local_rotation, transform.output_local_rotation)
+        * 57.29577951308232f;
+    transform.world_rotation_delta_degrees =
+        QuaternionAngle(transform.input_world_rotation, transform.world_rotation_quaternion)
+        * 57.29577951308232f;
+    transform.local_position_delta =
+        Distance(transform.input_local_position, transform.output_local_position);
+    transform.world_position_delta =
+        Distance(transform.input_world_position, transform.output_world_position);
+    return transform;
+}
+
 mc2::ColliderManager::ColliderType CapsuleColliderType(
     const std::string& direction,
     bool aligned_on_center
@@ -666,6 +825,7 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
     setup.transform_local_positions.reserve(static_cast<std::size_t>(joint_count + 1));
     setup.transform_local_rotations.reserve(static_cast<std::size_t>(joint_count + 1));
     setup.transform_inverse_rotations.reserve(static_cast<std::size_t>(joint_count + 1));
+    setup.transform_local_to_world_matrices.reserve(static_cast<std::size_t>(joint_count + 1));
     setup.transform_child_ids.resize(static_cast<std::size_t>(joint_count + 1));
     setup.collision_bone_indices = chain.collision_bone_indices;
 
@@ -701,10 +861,15 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
         setup.transform_names.push_back(joint.name);
         setup.transform_positions.push_back(position);
         setup.transform_rotations.push_back(world_rotation);
-        setup.transform_scales.push_back(mc2::float3{1.0f, 1.0f, 1.0f});
+        setup.transform_scales.push_back(ScaleToMc2(joint.rest_world_scale));
         setup.transform_local_positions.push_back(ToMc2Float3(joint.rest_local_translation));
         setup.transform_local_rotations.push_back(local_rotation);
         setup.transform_inverse_rotations.push_back(mc2::Inverse(world_rotation));
+        setup.transform_local_to_world_matrices.push_back(
+            joint.has_rest_local_to_world_matrix
+                ? ToMc2Float4x4(joint.rest_local_to_world_matrix)
+                : mc2::TRS(position, world_rotation, ScaleToMc2(joint.rest_world_scale))
+        );
         if (is_root) {
             setup.root_transform_ids.push_back(transform_id);
         } else if (joint.parent_index >= 0 && joint.parent_index < joint_count) {
@@ -716,12 +881,18 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
     setup.transform_ids.push_back(render_transform_id);
     setup.transform_parent_ids.push_back(0);
     setup.transform_names.push_back(chain.armature_name.empty() ? "render" : chain.armature_name);
-    setup.transform_positions.push_back(mc2::float3{});
-    setup.transform_rotations.push_back(mc2::quaternion{});
-    setup.transform_scales.push_back(mc2::float3{1.0f, 1.0f, 1.0f});
-    setup.transform_local_positions.push_back(mc2::float3{});
-    setup.transform_local_rotations.push_back(mc2::quaternion{});
-    setup.transform_inverse_rotations.push_back(mc2::quaternion{});
+    const mc2::float3 render_position = ToMc2Float3(chain.armature_position);
+    const mc2::quaternion render_rotation = ToMc2Quaternion(chain.armature_rotation);
+    const mc2::float3 render_scale = ScaleToMc2(chain.armature_scale);
+    setup.transform_positions.push_back(render_position);
+    setup.transform_rotations.push_back(render_rotation);
+    setup.transform_scales.push_back(render_scale);
+    setup.transform_local_positions.push_back(render_position);
+    setup.transform_local_rotations.push_back(render_rotation);
+    setup.transform_inverse_rotations.push_back(mc2::Inverse(render_rotation));
+    setup.transform_local_to_world_matrices.push_back(
+        mc2::TRS(render_position, render_rotation, render_scale)
+    );
     if (!chain.root_bone_names.empty()) {
         std::vector<int> explicit_root_transform_ids;
         explicit_root_transform_ids.reserve(chain.root_bone_names.size());
@@ -754,10 +925,10 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
         setup.root_transform_ids.push_back(1);
     }
 
-    setup.init_render_local_to_world = mc2::float4x4{};
-    setup.init_render_world_to_local = mc2::float4x4{};
-    setup.init_render_rotation = mc2::quaternion{};
-    setup.init_render_scale = mc2::float3{1.0f, 1.0f, 1.0f};
+    setup.init_render_local_to_world = mc2::TRS(render_position, render_rotation, render_scale);
+    setup.init_render_world_to_local = mc2::InverseAffine(setup.init_render_local_to_world);
+    setup.init_render_rotation = render_rotation;
+    setup.init_render_scale = render_scale;
     setup.result.SetSuccess();
     return setup;
 }
@@ -1173,6 +1344,8 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
 
 void ApplyRuntimeInputsToMc2Transforms(RuntimeModule::SceneState& scene)
 {
+    scene.mc2_transform_manager.RestoreTransform(scene.mc2_team_manager);
+
     mc2::TransformData& transform_data = scene.mc2_transform_manager.Data();
     for (std::size_t chain_index = 0; chain_index < scene.compiled_scene.spring_bones.size(); ++chain_index) {
         if (chain_index >= scene.mc2_chain_team_ids.size()) {
@@ -1224,9 +1397,21 @@ void ApplyRuntimeInputsToMc2Transforms(RuntimeModule::SceneState& scene)
                 rotation = ToMc2Quaternion(runtime_input->basic_rotations[static_cast<std::size_t>(joint_index)]);
             }
 
-            const mc2::float3 scale = runtime_input != nullptr
-                ? AverageScaleToMc2(runtime_input->root_scale)
-                : AverageScaleToMc2(chain.armature_scale);
+            const mc2::float4x4 local_to_world_matrix =
+                runtime_input != nullptr
+                    && static_cast<std::size_t>(joint_index)
+                        < runtime_input->basic_local_to_world_matrices.size()
+                    ? ToMc2Float4x4(
+                        runtime_input
+                            ->basic_local_to_world_matrices[static_cast<std::size_t>(joint_index)]
+                    )
+                    : mc2::TRS(position, rotation, ScaleToMc2(joint.rest_world_scale));
+            const mc2::float3 scale =
+                runtime_input != nullptr
+                    && static_cast<std::size_t>(joint_index)
+                        < runtime_input->basic_local_to_world_matrices.size()
+                    ? LossyScaleFromLocalToWorld(local_to_world_matrix, rotation)
+                    : ScaleToMc2(joint.rest_world_scale);
             transform_data.position_array[transform_index] = position;
             transform_data.rotation_array[transform_index] = rotation;
             transform_data.inverse_rotation_array[transform_index] = mc2::Inverse(rotation);
@@ -1243,8 +1428,7 @@ void ApplyRuntimeInputsToMc2Transforms(RuntimeModule::SceneState& scene)
                     runtime_input,
                     static_cast<std::size_t>(joint_index)
                 ));
-            transform_data.local_to_world_matrix_array[transform_index] =
-                mc2::TRS(position, rotation, scale);
+            transform_data.local_to_world_matrix_array[transform_index] = local_to_world_matrix;
         }
 
         const int center_transform_index = team_data.center_transform_index;
@@ -2113,14 +2297,177 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
                 const int transform_index = transform_chunk.start_index + static_cast<int>(joint_index);
                 if (transform_index >= 0
                     && transform_index < transform_data.flag_array.Length()
+                    && transform_index < transform_data.position_array.Length()
                     && transform_index < transform_data.rotation_array.Length()
                     && transform_index < transform_data.local_position_array.Length()
                     && transform_index < transform_data.local_rotation_array.Length()) {
                     const mc2::BitFlag8 transform_flag = transform_data.flag_array[transform_index];
-                    Quat base_rotation = ResolveRuntimeLocalRotation(chain, runtime_input, joint_index);
+                    const Quat world_rotation =
+                        Mc2ToQuat(transform_data.rotation_array[transform_index]);
                     Quat output_rotation =
                         Mc2ToQuat(transform_data.local_rotation_array[transform_index]);
+                    const Vec3 output_world_position =
+                        Mc2ToVec3(transform_data.position_array[transform_index]);
+                    const Vec3 output_local_position =
+                        Mc2ToVec3(transform_data.local_position_array[transform_index]);
+                    const int team_id_for_debug =
+                        chain_index < scene.mc2_chain_team_ids.size()
+                            ? scene.mc2_chain_team_ids[chain_index]
+                            : 0;
+                    const mc2::TeamManager::TeamData* team_data_for_debug =
+                        scene.mc2_team_manager.IsValidTeam(team_id_for_debug)
+                            ? &scene.mc2_team_manager.GetTeamData(team_id_for_debug)
+                            : nullptr;
+                    Quat proxy_vertex_rotation;
+                    Quat vertex_to_transform_rotation;
+                    Vec3 proxy_local_position;
+                    Vec3 proxy_local_normal;
+                    Vec3 proxy_local_tangent;
+                    Vec3 proxy_posed_position;
+                    Vec3 proxy_posed_normal;
+                    Vec3 proxy_posed_tangent;
+                    Vec3 proxy_world_normal;
+                    Vec3 proxy_world_tangent;
+                    if (team_data_for_debug != nullptr) {
+                        const int vertex_index =
+                            team_data_for_debug->proxy_common_chunk.start_index
+                            + static_cast<int>(joint_index);
+                        if (vertex_index >= 0
+                            && vertex_index < scene.mc2_virtual_mesh_manager.Rotations().Length()) {
+                            proxy_vertex_rotation =
+                                Mc2ToQuat(scene.mc2_virtual_mesh_manager.Rotations()[vertex_index]);
+                        }
+                        const int mesh_index =
+                            team_data_for_debug->proxy_mesh_chunk.start_index
+                            + static_cast<int>(joint_index);
+                        if (mesh_index >= 0
+                            && mesh_index < scene.mc2_virtual_mesh_manager.LocalPositions().Length()
+                            && mesh_index < scene.mc2_virtual_mesh_manager.LocalNormals().Length()
+                            && mesh_index < scene.mc2_virtual_mesh_manager.LocalTangents().Length()
+                            && mesh_index < scene.mc2_virtual_mesh_manager.BoneWeights().Length()) {
+                            const mc2::VirtualMeshBoneWeight& bone_weight =
+                                scene.mc2_virtual_mesh_manager.BoneWeights()[mesh_index];
+                            proxy_local_position =
+                                Mc2ToVec3(scene.mc2_virtual_mesh_manager.LocalPositions()[mesh_index]);
+                            proxy_local_normal =
+                                Mc2ToVec3(scene.mc2_virtual_mesh_manager.LocalNormals()[mesh_index]);
+                            proxy_local_tangent =
+                                Mc2ToVec3(scene.mc2_virtual_mesh_manager.LocalTangents()[mesh_index]);
+                            for (int weight_index = 0; weight_index < bone_weight.Count(); ++weight_index) {
+                                const float weight =
+                                    bone_weight.weights[static_cast<std::size_t>(weight_index)];
+                                const int local_bone_index =
+                                    bone_weight.bone_indices[static_cast<std::size_t>(weight_index)];
+                                const int skin_index =
+                                    team_data_for_debug->proxy_skin_bone_chunk.start_index
+                                    + local_bone_index;
+                                if (weight <= 0.0f
+                                    || local_bone_index < 0
+                                    || skin_index < 0
+                                    || skin_index
+                                        >= scene.mc2_virtual_mesh_manager.SkinBoneBindPoses().Length()
+                                    || skin_index
+                                        >= scene.mc2_virtual_mesh_manager.SkinBoneTransformIndices().Length()) {
+                                    continue;
+                                }
+                                const int skin_transform_index =
+                                    team_data_for_debug->proxy_transform_chunk.start_index
+                                    + scene.mc2_virtual_mesh_manager
+                                          .SkinBoneTransformIndices()[skin_index];
+                                if (skin_transform_index < 0
+                                    || skin_transform_index
+                                        >= transform_data.local_to_world_matrix_array.Length()) {
+                                    continue;
+                                }
+                                const mc2::float4x4 bone_pose =
+                                    scene.mc2_virtual_mesh_manager.SkinBoneBindPoses()[skin_index];
+                                const mc2::float4x4 local_to_world =
+                                    transform_data.local_to_world_matrix_array[skin_transform_index];
+                                const mc2::float3 local_position =
+                                    scene.mc2_virtual_mesh_manager.LocalPositions()[mesh_index];
+                                const mc2::float3 local_normal =
+                                    scene.mc2_virtual_mesh_manager.LocalNormals()[mesh_index];
+                                const mc2::float3 local_tangent =
+                                    scene.mc2_virtual_mesh_manager.LocalTangents()[mesh_index];
+                                const mc2::float3 posed_position =
+                                    mc2::TransformPoint(local_position, bone_pose);
+                                const mc2::float3 posed_normal =
+                                    mc2::TransformVector(local_normal, bone_pose);
+                                const mc2::float3 posed_tangent =
+                                    mc2::TransformVector(local_tangent, bone_pose);
+                                proxy_posed_position = Mc2ToVec3(posed_position);
+                                proxy_posed_normal = Mc2ToVec3(posed_normal);
+                                proxy_posed_tangent = Mc2ToVec3(posed_tangent);
+                                proxy_world_normal = Mc2ToVec3(
+                                    mc2::Normalize(
+                                        mc2::TransformVector(posed_normal, local_to_world),
+                                        mc2::float3{0.0f, 1.0f, 0.0f}
+                                    )
+                                );
+                                proxy_world_tangent = Mc2ToVec3(
+                                    mc2::Normalize(
+                                        mc2::TransformVector(posed_tangent, local_to_world),
+                                        mc2::float3{0.0f, 0.0f, 1.0f}
+                                    )
+                                );
+                                break;
+                            }
+                        }
+                        const int bone_index =
+                            team_data_for_debug->proxy_bone_chunk.start_index
+                            + static_cast<int>(joint_index);
+                        if (team_data_for_debug->proxy_bone_chunk.IsValid()
+                            && bone_index >= 0
+                            && bone_index
+                                < scene.mc2_virtual_mesh_manager.VertexToTransformRotations().Length()) {
+                            vertex_to_transform_rotation = Mc2ToQuat(
+                                scene.mc2_virtual_mesh_manager.VertexToTransformRotations()[bone_index]
+                            );
+                        }
+                    }
+                    const int vertex_attribute =
+                        chain_index < scene.mc2_chain_team_ids.size()
+                            && scene.mc2_team_manager.IsValidTeam(scene.mc2_chain_team_ids[chain_index])
+                            ? [&scene, chain_index, joint_index]() {
+                                const mc2::TeamManager::TeamData& team_data =
+                                    scene.mc2_team_manager.GetTeamData(
+                                        scene.mc2_chain_team_ids[chain_index]
+                                    );
+                                const int vertex_index =
+                                    team_data.proxy_common_chunk.start_index
+                                    + static_cast<int>(joint_index);
+                                return vertex_index >= 0
+                                    && vertex_index < scene.mc2_virtual_mesh_manager.Attributes().Length()
+                                    ? static_cast<int>(
+                                        scene.mc2_virtual_mesh_manager.Attributes()[vertex_index].Value()
+                                    )
+                                    : 0;
+                            }()
+                            : 0;
                     if (transform_flag.IsSet(mc2::TransformManager::FlagWorldRotWrite)) {
+                        transforms.push_back(MakeBoneTransformDiagnostic(
+                            chain,
+                            runtime_input,
+                            joint_index,
+                            Vec3{0.0f, 0.0f, 0.0f},
+                            NormalizeQuat(world_rotation),
+                            NormalizeQuat(world_rotation),
+                            "mc2_world_rotation",
+                            transform_flag.Value(),
+                            vertex_attribute,
+                            output_world_position,
+                            output_local_position,
+                            proxy_vertex_rotation,
+                            vertex_to_transform_rotation,
+                            proxy_local_position,
+                            proxy_local_normal,
+                            proxy_local_tangent,
+                            proxy_posed_position,
+                            proxy_posed_normal,
+                            proxy_posed_tangent,
+                            proxy_world_normal,
+                            proxy_world_tangent
+                        ));
                         continue;
                     }
                     if (!transform_flag.IsSet(mc2::TransformManager::FlagLocalPosRotWrite)) {
@@ -2128,45 +2475,73 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
                             continue;
                         }
                         const JointState& state = cache.joint_states[joint_index];
-                        transforms.push_back(BoneTransform{
-                            chain.component_id,
-                            chain.armature_name,
-                            joint.name,
+                        transforms.push_back(MakeBoneTransformDiagnostic(
+                            chain,
+                            runtime_input,
+                            joint_index,
                             Vec3{0.0f, 0.0f, 0.0f},
                             QuaternionFromPitchRoll(state.pitch, state.roll),
+                            world_rotation,
                             "fallback_pitch_roll",
                             transform_flag.Value(),
-                        });
+                            vertex_attribute,
+                            output_world_position,
+                            output_local_position,
+                            proxy_vertex_rotation,
+                            vertex_to_transform_rotation,
+                            proxy_local_position,
+                            proxy_local_normal,
+                            proxy_local_tangent,
+                            proxy_posed_position,
+                            proxy_posed_normal,
+                            proxy_posed_tangent,
+                            proxy_world_normal,
+                            proxy_world_tangent
+                        ));
                         continue;
                     }
 
-                    const Quat rotation_delta = NormalizeQuat(Mul(
-                        Conjugate(NormalizeQuat(base_rotation)),
-                        NormalizeQuat(output_rotation)
-                    ));
-                    transforms.push_back(BoneTransform{
-                        chain.component_id,
-                        chain.armature_name,
-                        joint.name,
+                    transforms.push_back(MakeBoneTransformDiagnostic(
+                        chain,
+                        runtime_input,
+                        joint_index,
                         Vec3{0.0f, 0.0f, 0.0f},
-                        rotation_delta,
-                        "local_rotation",
+                        NormalizeQuat(output_rotation),
+                        NormalizeQuat(world_rotation),
+                        "mc2_local_rotation",
                         transform_flag.Value(),
-                    });
+                        vertex_attribute,
+                        output_world_position,
+                        output_local_position,
+                        proxy_vertex_rotation,
+                        vertex_to_transform_rotation,
+                        proxy_local_position,
+                        proxy_local_normal,
+                        proxy_local_tangent,
+                        proxy_posed_position,
+                        proxy_posed_normal,
+                        proxy_posed_tangent,
+                        proxy_world_normal,
+                        proxy_world_tangent
+                    ));
                     continue;
                 }
             }
 
             const JointState& state = cache.joint_states[joint_index];
-            transforms.push_back(BoneTransform{
-                chain.component_id,
-                chain.armature_name,
-                joint.name,
+            transforms.push_back(MakeBoneTransformDiagnostic(
+                chain,
+                runtime_input,
+                joint_index,
                 Vec3{0.0f, 0.0f, 0.0f},
                 QuaternionFromPitchRoll(state.pitch, state.roll),
+                Quat{},
                 is_bone_cloth ? "fallback_pitch_roll" : "bone_spring_pitch_roll",
                 0,
-            });
+                0,
+                ResolveRuntimeWorldPosition(chain, runtime_input, joint_index),
+                ResolveRuntimeLocalPosition(chain, runtime_input, joint_index)
+            ));
         }
     }
 

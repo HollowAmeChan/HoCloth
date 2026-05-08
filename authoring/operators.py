@@ -21,6 +21,7 @@ from ..runtime.session import (
     get_last_transforms,
     get_pose_baseline,
     reset_runtime,
+    set_detailed_native_debug_enabled,
     set_pose_baseline,
     set_runtime_inputs_only,
     step_runtime,
@@ -69,6 +70,7 @@ def _current_authoring_snapshot(scene):
 
 def _build_runtime_from_scene(context, report=None) -> bool:
     scene = context.scene
+    set_detailed_native_debug_enabled(getattr(scene, "hocloth_debug_detailed_native", False))
     stop_live_runtime(scene, "Live runtime stopped")
     screen = context.screen
     if screen is not None and getattr(screen, "is_animation_playing", False):
@@ -486,6 +488,9 @@ class HOCLOTH_OT_step_runtime(bpy.types.Operator):
     bl_description = "Execute one fixed simulation step through the runtime API"
 
     def execute(self, context):
+        set_detailed_native_debug_enabled(
+            getattr(context.scene, "hocloth_debug_detailed_native", False)
+        )
         if not context.scene.hocloth_runtime_handle:
             if not _build_runtime_from_scene(context, self.report):
                 return {"CANCELLED"}

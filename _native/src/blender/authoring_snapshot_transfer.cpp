@@ -154,6 +154,62 @@ Quat ReadQuat(nb::handle handle)
     return value;
 }
 
+Mat4 ReadMat4(nb::handle handle)
+{
+    nb::sequence seq = nb::cast<nb::sequence>(handle);
+    const std::size_t size = nb::len(seq);
+    Mat4 value;
+    if (size > 0) {
+        value.m00 = nb::cast<float>(seq[0]);
+    }
+    if (size > 1) {
+        value.m01 = nb::cast<float>(seq[1]);
+    }
+    if (size > 2) {
+        value.m02 = nb::cast<float>(seq[2]);
+    }
+    if (size > 3) {
+        value.m03 = nb::cast<float>(seq[3]);
+    }
+    if (size > 4) {
+        value.m10 = nb::cast<float>(seq[4]);
+    }
+    if (size > 5) {
+        value.m11 = nb::cast<float>(seq[5]);
+    }
+    if (size > 6) {
+        value.m12 = nb::cast<float>(seq[6]);
+    }
+    if (size > 7) {
+        value.m13 = nb::cast<float>(seq[7]);
+    }
+    if (size > 8) {
+        value.m20 = nb::cast<float>(seq[8]);
+    }
+    if (size > 9) {
+        value.m21 = nb::cast<float>(seq[9]);
+    }
+    if (size > 10) {
+        value.m22 = nb::cast<float>(seq[10]);
+    }
+    if (size > 11) {
+        value.m23 = nb::cast<float>(seq[11]);
+    }
+    if (size > 12) {
+        value.m30 = nb::cast<float>(seq[12]);
+    }
+    if (size > 13) {
+        value.m31 = nb::cast<float>(seq[13]);
+    }
+    if (size > 14) {
+        value.m32 = nb::cast<float>(seq[14]);
+    }
+    if (size > 15) {
+        value.m33 = nb::cast<float>(seq[15]);
+    }
+    return value;
+}
+
 std::vector<std::string> ReadStringArray(const nb::dict& dict, const char* key)
 {
     std::vector<std::string> result;
@@ -293,6 +349,13 @@ void AppendJointFromAuthoringBone(
     } else {
         joint.rest_world_rotation = joint.rest_local_rotation;
     }
+    if (bone_dict.contains("rest_world_scale")) {
+        joint.rest_world_scale = ReadVec3(bone_dict["rest_world_scale"]);
+    }
+    if (bone_dict.contains("rest_local_to_world_matrix")) {
+        joint.rest_local_to_world_matrix = ReadMat4(bone_dict["rest_local_to_world_matrix"]);
+        joint.has_rest_local_to_world_matrix = true;
+    }
     chain.joints.push_back(std::move(joint));
 }
 
@@ -341,6 +404,13 @@ void ReadLegacyJoints(CompiledSpringBone& chain, const nb::dict& chain_dict)
             joint.has_rest_world_rotation = true;
         } else {
             joint.rest_world_rotation = joint.rest_local_rotation;
+        }
+        if (joint_dict.contains("rest_world_scale")) {
+            joint.rest_world_scale = ReadVec3(joint_dict["rest_world_scale"]);
+        }
+        if (joint_dict.contains("rest_local_to_world_matrix")) {
+            joint.rest_local_to_world_matrix = ReadMat4(joint_dict["rest_local_to_world_matrix"]);
+            joint.has_rest_local_to_world_matrix = true;
         }
         chain.joints.push_back(std::move(joint));
     }
@@ -590,6 +660,12 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.gravity_strength = ReadFloat(chain_dict, "gravity_strength");
         if (chain_dict.contains("gravity_direction")) {
             chain.gravity_direction = ReadVec3(chain_dict["gravity_direction"]);
+        }
+        if (chain_dict.contains("armature_position")) {
+            chain.armature_position = ReadVec3(chain_dict["armature_position"]);
+        }
+        if (chain_dict.contains("armature_rotation")) {
+            chain.armature_rotation = ReadQuat(chain_dict["armature_rotation"]);
         }
         if (chain_dict.contains("armature_scale")) {
             chain.armature_scale = ReadVec3(chain_dict["armature_scale"]);
