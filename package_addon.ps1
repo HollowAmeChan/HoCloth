@@ -7,6 +7,7 @@ param(
     [switch]$RunNativeSmoke,
     [switch]$CreateZip,
     [switch]$FreshConfigure,
+    [switch]$CleanNativeBuild,
     [string]$CMakeExecutable = "",
     [string]$PythonExecutable = "",
     [string]$ConfigurePreset = "vs2022-release-native",
@@ -79,6 +80,37 @@ function Resolve-CMakeExecutable {
     }
 
     return $null
+}
+
+function Get-ConfigurePresetBinaryDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$PresetName
+    )
+
+    $presetFile = Join-Path $RepoRoot "CMakePresets.json"
+    if (-not (Test-Path -LiteralPath $presetFile)) {
+        throw "CMakePresets.json not found: $presetFile"
+    }
+
+    $presetJson = Get-Content -LiteralPath $presetFile -Raw | ConvertFrom-Json
+    $configurePreset = $presetJson.configurePresets | Where-Object { $_.name -eq $PresetName } | Select-Object -First 1
+    if (-not $configurePreset) {
+        throw "Configure preset not found in CMakePresets.json: $PresetName"
+    }
+
+    $binaryDir = [string]$configurePreset.binaryDir
+    if ([string]::IsNullOrWhiteSpace($binaryDir)) {
+        throw "Configure preset does not define binaryDir: $PresetName"
+    }
+
+    $repoRootNormalized = $RepoRoot -replace "\\", "/"
+    $binaryDir = $binaryDir.Replace('${sourceDir}', $repoRootNormalized)
+    $binaryDir = $binaryDir.Replace('${sourceParentDir}', (Split-Path -Parent $repoRootNormalized))
+
+    return $binaryDir
 }
 
 function Test-PythonExecutable {
@@ -295,6 +327,11 @@ if ($IncludeNativeBuild) {
 
     $resolvedPython = Resolve-PythonExecutable -RequestedPath $PythonExecutable
     $configureArgs = @("-S", $RepoRoot, "--preset", $ConfigurePreset)
+    $nativeBuildTargets = @(
+        "hocloth_native",
+        "hocloth_mc2_core_smoke",
+        "hocloth_inspector_app"
+    )
     if ($FreshConfigure) {
         $configureArgs = @("--fresh") + $configureArgs
     }
@@ -319,8 +356,17 @@ if ($IncludeNativeBuild) {
 
     Assert-NativeOutputUnlocked -RepoRoot $RepoRoot
 
+    $buildBinaryDir = Get-ConfigurePresetBinaryDir -RepoRoot $RepoRoot -PresetName $ConfigurePreset
     Write-Host "Building native module with preset: $BuildPreset"
-    & $resolvedCMake --build --preset $BuildPreset --config $BuildConfiguration
+    $buildArgs = @("--build", $buildBinaryDir, "--config", $BuildConfiguration)
+    if ($CleanNativeBuild) {
+        Write-Host "Native build mode: clean-first"
+        $buildArgs += "--clean-first"
+    } else {
+        Write-Host "Native build mode: incremental"
+    }
+    $buildArgs += @("--target") + $nativeBuildTargets
+    & $resolvedCMake @buildArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Native build failed with exit code $LASTEXITCODE"
     }

@@ -2,6 +2,7 @@ import bpy
 
 from ..components import mc2
 from ..runtime.blender_bone_refs import resolve_bone_forest_names
+from ..runtime.inspector import get_inspector_status, is_inspector_running
 
 
 def _draw_curve_parameter(layout, cloth, parameter_path: str, label: str, *, show_use_toggle: bool = True):
@@ -229,6 +230,17 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         debug.prop(scene, "hocloth_ui_details_expanded", text="详细信息")
         if scene.hocloth_ui_details_expanded:
             debug.prop(scene, "hocloth_debug_detailed_native", text="Native Matrix Debug")
+
+        inspector_box = layout.box()
+        inspector_box.label(text="Inspector")
+        inspector_row = inspector_box.row(align=True)
+        inspector_running = is_inspector_running()
+        inspector_row.operator(
+            "hocloth.toggle_inspector",
+            icon="CANCEL" if inspector_running else "WINDOW",
+            text="关闭 C++ Inspector" if inspector_running else "打开 C++ Inspector",
+        )
+        inspector_box.label(text=f"状态: {get_inspector_status()}")
 
         components = layout.box()
         components.label(text="MC2 Components")

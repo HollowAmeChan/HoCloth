@@ -35,6 +35,7 @@ message(STATUS "HoCloth intermediate output directory: ${HOCLOTH_INTERMEDIATE_DI
 message(STATUS "HoCloth solver backend: MC2 BoneSpring bootstrap")
 
 set(HOCLOTH_NANOBIND_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/nanobind")
+set(HOCLOTH_IMGUI_DIR "${HOCLOTH_PLUGIN_ROOT}/_third_party/imgui")
 
 add_library(hocloth_mc2_core STATIC
     "${HOCLOTH_NATIVE_ROOT}/src/api/mc2_backend.cpp"
@@ -99,6 +100,44 @@ add_library(hocloth_runtime_core STATIC
 )
 target_include_directories(hocloth_runtime_core PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
 target_link_libraries(hocloth_runtime_core PUBLIC hocloth_mc2_core)
+
+if (EXISTS "${HOCLOTH_IMGUI_DIR}/imgui.h")
+    add_library(hocloth_imgui STATIC
+        "${HOCLOTH_IMGUI_DIR}/imgui.cpp"
+        "${HOCLOTH_IMGUI_DIR}/imgui_demo.cpp"
+        "${HOCLOTH_IMGUI_DIR}/imgui_draw.cpp"
+        "${HOCLOTH_IMGUI_DIR}/imgui_tables.cpp"
+        "${HOCLOTH_IMGUI_DIR}/imgui_widgets.cpp"
+    )
+    target_include_directories(hocloth_imgui PUBLIC "${HOCLOTH_IMGUI_DIR}")
+
+    add_library(hocloth_inspector STATIC
+        "${HOCLOTH_NATIVE_ROOT}/src/inspector/inspector_ui.cpp"
+    )
+    target_include_directories(hocloth_inspector PUBLIC "${HOCLOTH_NATIVE_ROOT}/include")
+    target_link_libraries(hocloth_inspector PUBLIC hocloth_imgui)
+
+    if (WIN32)
+        target_sources(hocloth_inspector PRIVATE
+            "${HOCLOTH_NATIVE_ROOT}/src/inspector/inspector_app.cpp"
+            "${HOCLOTH_IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
+            "${HOCLOTH_IMGUI_DIR}/backends/imgui_impl_win32.cpp"
+        )
+        target_link_libraries(hocloth_inspector PUBLIC d3d11 dxgi dwmapi)
+
+        add_executable(hocloth_inspector_app WIN32
+            "${HOCLOTH_NATIVE_ROOT}/src/inspector/main_win32_dx11.cpp"
+        )
+        target_include_directories(hocloth_inspector_app PRIVATE "${HOCLOTH_NATIVE_ROOT}/include")
+        target_link_libraries(hocloth_inspector_app PRIVATE hocloth_inspector)
+
+        message(STATUS "HoCloth inspector module: Dear ImGui Win32 + DX11 app enabled.")
+    else()
+        message(STATUS "HoCloth inspector module: Dear ImGui core enabled (Win32 app skipped on this platform).")
+    endif()
+else()
+    message(STATUS "HoCloth inspector module: Dear ImGui checkout not found, inspector targets skipped.")
+endif()
 
 if (EXISTS "${HOCLOTH_NANOBIND_DIR}/CMakeLists.txt")
     if (HOCLOTH_PYTHON_EXECUTABLE)

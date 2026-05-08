@@ -5,6 +5,7 @@ from ..runtime.authoring_snapshot import (
     build_authoring_snapshot,
 )
 from ..runtime.inputs import build_runtime_inputs, reset_runtime_input_tracking
+from ..runtime.inspector import launch_inspector, stop_inspector, toggle_inspector
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.pose_apply import (
     apply_runtime_mesh_outputs_to_scene,
@@ -885,6 +886,54 @@ class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_open_inspector(bpy.types.Operator):
+    bl_idname = "hocloth.open_inspector"
+    bl_label = "Open Inspector"
+    bl_description = "Launch the native HoCloth inspector window"
+
+    def execute(self, context):
+        ok, message = launch_inspector()
+        if not ok:
+            self.report({"ERROR"}, message)
+            context.scene.hocloth_runtime_status = message
+            return {"CANCELLED"}
+        self.report({"INFO"}, message)
+        context.scene.hocloth_runtime_status = message
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_close_inspector(bpy.types.Operator):
+    bl_idname = "hocloth.close_inspector"
+    bl_label = "Close Inspector"
+    bl_description = "Close the native HoCloth inspector window"
+
+    def execute(self, context):
+        ok, message = stop_inspector()
+        if not ok:
+            self.report({"ERROR"}, message)
+            context.scene.hocloth_runtime_status = message
+            return {"CANCELLED"}
+        self.report({"INFO"}, message)
+        context.scene.hocloth_runtime_status = message
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_toggle_inspector(bpy.types.Operator):
+    bl_idname = "hocloth.toggle_inspector"
+    bl_label = "Toggle Inspector"
+    bl_description = "Open or close the native HoCloth inspector window"
+
+    def execute(self, context):
+        ok, message = toggle_inspector()
+        if not ok:
+            self.report({"ERROR"}, message)
+            context.scene.hocloth_runtime_status = message
+            return {"CANCELLED"}
+        self.report({"INFO"}, message)
+        context.scene.hocloth_runtime_status = message
+        return {"FINISHED"}
+
+
 CLASSES = (
     HOCLOTH_OT_add_active_bone_cloth,
     HOCLOTH_OT_add_active_spring_bone,
@@ -908,6 +957,9 @@ CLASSES = (
     HOCLOTH_OT_bake_runtime_action,
     HOCLOTH_OT_clear_baked_action,
     HOCLOTH_OT_destroy_runtime,
+    HOCLOTH_OT_open_inspector,
+    HOCLOTH_OT_close_inspector,
+    HOCLOTH_OT_toggle_inspector,
 )
 
 
