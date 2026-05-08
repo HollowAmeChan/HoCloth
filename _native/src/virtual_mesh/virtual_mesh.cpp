@@ -558,6 +558,77 @@ void VirtualMesh::BuildVertexToTriangles()
     }
 }
 
+void VirtualMesh::BuildVertexToVertexFromTopology()
+{
+    // Ported from MC2 Proxy_CalcVertexToVertexFromTriangleJob and
+    // Proxy_CalcVertexToVertexFromLineJob. This compressed adjacency feeds
+    // ProxyCreateFixedListAndAABB(), Mesh baseline generation, and mapping.
+    const int vertex_count = VertexCount();
+    vertex_to_vertex_index_array.Dispose();
+    vertex_to_vertex_data_array.Dispose();
+    if (vertex_count <= 0) {
+        return;
+    }
+
+    data::MultiDataBuilder<std::uint16_t> vertex_builder(vertex_count, vertex_count * 4);
+    std::vector<std::unordered_set<std::uint16_t>> unique_neighbors(
+        static_cast<std::size_t>(vertex_count)
+    );
+    std::vector<int2> edge_list;
+    std::unordered_set<std::uint32_t> edge_keys;
+
+    const auto add_neighbor = [&](int from, int to) {
+        if (!IsValidVertexIndex(from, vertex_count) || !IsValidVertexIndex(to, vertex_count)) {
+            return;
+        }
+        const std::uint16_t value = static_cast<std::uint16_t>(to);
+        if (!unique_neighbors[static_cast<std::size_t>(from)].insert(value).second) {
+            return;
+        }
+        vertex_builder.Add(from, value);
+    };
+
+    for (int triangle_index = 0; triangle_index < TriangleCount(); ++triangle_index) {
+        const int3 triangle = triangles[triangle_index];
+        if (!IsValidVertexIndex(triangle.x, vertex_count)
+            || !IsValidVertexIndex(triangle.y, vertex_count)
+            || !IsValidVertexIndex(triangle.z, vertex_count)) {
+            continue;
+        }
+
+        add_neighbor(triangle.x, triangle.y);
+        add_neighbor(triangle.x, triangle.z);
+        add_neighbor(triangle.y, triangle.x);
+        add_neighbor(triangle.y, triangle.z);
+        add_neighbor(triangle.z, triangle.x);
+        add_neighbor(triangle.z, triangle.y);
+
+        AddUniqueEdge(edge_list, edge_keys, triangle.x, triangle.y);
+        AddUniqueEdge(edge_list, edge_keys, triangle.y, triangle.z);
+        AddUniqueEdge(edge_list, edge_keys, triangle.z, triangle.x);
+    }
+
+    for (int line_index = 0; line_index < LineCount(); ++line_index) {
+        const int2 line = lines[line_index];
+        if (!IsValidVertexIndex(line.x, vertex_count)
+            || !IsValidVertexIndex(line.y, vertex_count)) {
+            continue;
+        }
+
+        add_neighbor(line.x, line.y);
+        add_neighbor(line.y, line.x);
+        AddUniqueEdge(edge_list, edge_keys, line.x, line.y);
+    }
+
+    const auto [vertex_data, vertex_indices] = vertex_builder.ToArray();
+    vertex_to_vertex_data_array.AddRange(vertex_data);
+    vertex_to_vertex_index_array.AddRange(vertex_indices);
+
+    if (edges.Count() == 0 && !edge_list.empty()) {
+        edges.AddRange(edge_list);
+    }
+}
+
 void VirtualMesh::BuildEdgeToTriangles()
 {
     // Ported from MC2 Proxy_CalcEdgeToTriangleJob.
@@ -1393,6 +1464,7 @@ void VirtualMesh::ImportBoneType(const RenderSetupData& render_setup)
         ApplyBoneClothDefaultSelection();
     }
     BuildVertexToTriangles();
+    BuildVertexToVertexFromTopology();
     BuildEdgeToTriangles();
     BuildTransformBaseLines();
     CreateProxyFixedListAndAABB();
@@ -1562,7 +1634,6 @@ void VirtualMesh::BuildTransformBaseLines()
     // Ported from Magica Cloth 2: CreateTransformBaseLine()
     const int vertex_count = VertexCount();
     vertex_parent_indices.Dispose();
-    center_fixed_list.Dispose();
     vertex_child_index_array.Dispose();
     vertex_child_data_array.Dispose();
     base_line_flags.Dispose();
@@ -1593,12 +1664,6 @@ void VirtualMesh::BuildTransformBaseLines()
         const int parent_id = transform_data.parent_id_array[static_cast<std::size_t>(index)];
         const auto found = id_to_index.find(parent_id);
         vertex_parent_indices[index] = found != id_to_index.end() ? found->second : -1;
-    }
-
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        if (attributes[vertex_index].IsFixed() && IsValidVertexIndex(vertex_index, vertex_count)) {
-            center_fixed_list.Add(static_cast<std::uint16_t>(vertex_index));
-        }
     }
 
     BuildBaseLinesFromParents();
@@ -2926,6 +2991,7 @@ void VirtualMesh::ConvertProxyMesh(
     }
 
     BuildVertexToTriangles();
+    BuildVertexToVertexFromTopology();
     BuildEdgeToTriangles();
     CreateProxyFixedListAndAABB();
     if (is_bone_cloth) {

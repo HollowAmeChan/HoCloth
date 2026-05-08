@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace nb = nanobind;
@@ -161,11 +163,49 @@ std::vector<std::string> ReadStringArray(const nb::dict& dict, const char* key)
     return result;
 }
 
+std::string NormalizeBoneConnectionMode(std::string mode)
+{
+    mode.erase(
+        std::remove_if(mode.begin(), mode.end(), [](unsigned char c) {
+            return c == '_' || c == '-' || std::isspace(c) != 0;
+        }),
+        mode.end()
+    );
+    std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (mode == "automaticmesh" || mode == "automatic") {
+        return "AutomaticMesh";
+    }
+    if (mode == "sequentialloopmesh" || mode == "sequentialloop") {
+        return "SequentialLoopMesh";
+    }
+    if (mode == "sequentialnonloopmesh" || mode == "sequentialnonloop") {
+        return "SequentialNonLoopMesh";
+    }
+    return "Line";
+}
+
 std::vector<int> ReadIntArray(const nb::dict& dict, const char* key)
 {
     std::vector<int> result;
     for (nb::handle item : ReadSequence(dict, key)) {
         result.push_back(nb::cast<int>(item));
+    }
+    return result;
+}
+
+std::vector<CompiledBoneAttributeOverride> ReadBoneAttributeOverrides(const nb::dict& dict)
+{
+    std::vector<CompiledBoneAttributeOverride> result;
+    for (nb::handle item : ReadSequence(dict, "bone_attribute_overrides")) {
+        nb::dict override_dict = nb::cast<nb::dict>(item);
+        CompiledBoneAttributeOverride override;
+        override.bone_name = ReadString(override_dict, "bone_name");
+        override.attribute = ReadString(override_dict, "attribute", "DEFAULT");
+        if (!override.bone_name.empty() && override.attribute != "DEFAULT") {
+            result.push_back(std::move(override));
+        }
     }
     return result;
 }
@@ -247,6 +287,12 @@ void AppendJointFromAuthoringBone(
     if (bone_dict.contains("rest_local_rotation")) {
         joint.rest_local_rotation = ReadQuat(bone_dict["rest_local_rotation"]);
     }
+    if (bone_dict.contains("rest_world_rotation")) {
+        joint.rest_world_rotation = ReadQuat(bone_dict["rest_world_rotation"]);
+        joint.has_rest_world_rotation = true;
+    } else {
+        joint.rest_world_rotation = joint.rest_local_rotation;
+    }
     chain.joints.push_back(std::move(joint));
 }
 
@@ -290,6 +336,12 @@ void ReadLegacyJoints(CompiledSpringBone& chain, const nb::dict& chain_dict)
         if (joint_dict.contains("rest_local_rotation")) {
             joint.rest_local_rotation = ReadQuat(joint_dict["rest_local_rotation"]);
         }
+        if (joint_dict.contains("rest_world_rotation")) {
+            joint.rest_world_rotation = ReadQuat(joint_dict["rest_world_rotation"]);
+            joint.has_rest_world_rotation = true;
+        } else {
+            joint.rest_world_rotation = joint.rest_local_rotation;
+        }
         chain.joints.push_back(std::move(joint));
     }
 }
@@ -302,6 +354,9 @@ void ApplyClothSerializeData(CompiledSpringBone& chain, const nb::dict& serializ
 
     chain.cloth_type = ReadString(serialize_data, "clothType", chain.cloth_type);
     chain.component_type = chain.cloth_type == "BoneSpring" ? "SPRING_BONE" : "BONE_CLOTH";
+    chain.bone_connection_mode = NormalizeBoneConnectionMode(
+        ReadString(serialize_data, "connectionMode", chain.bone_connection_mode)
+    );
     chain.gravity_strength = ReadFloat(serialize_data, "gravity", chain.gravity_strength);
     chain.gravity_falloff = ReadFloat(serialize_data, "gravityFalloff", chain.gravity_falloff);
     chain.stabilization_time_after_reset = ReadFloat(
@@ -460,6 +515,14 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         );
         chain.armature_name = ReadString(chain_dict, "armature_name");
         chain.root_bone_name = ReadString(chain_dict, "root_bone_name");
+        chain.root_bone_names = ReadStringArray(chain_dict, "root_bone_names");
+        if (chain.root_bone_names.empty() && !chain.root_bone_name.empty()) {
+            chain.root_bone_names.push_back(chain.root_bone_name);
+        }
+        chain.bone_connection_mode = NormalizeBoneConnectionMode(
+            ReadString(chain_dict, "bone_connection_mode", chain.bone_connection_mode)
+        );
+        chain.pose_space = ReadString(chain_dict, "pose_space", chain.pose_space);
         chain.center_object_name = ReadString(chain_dict, "center_object_name");
         chain.center_bone_name = ReadString(chain_dict, "center_bone_name");
         chain.joint_radius = ReadFloat(chain_dict, "joint_radius");
@@ -535,6 +598,7 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         chain.collider_group_ids = ReadStringArray(chain_dict, "collider_group_ids");
         chain.collision_binding_ids = ReadStringArray(chain_dict, "collision_binding_ids");
         chain.collision_bone_indices = ReadIntArray(chain_dict, "collision_bone_indices");
+        chain.bone_attribute_overrides = ReadBoneAttributeOverrides(chain_dict);
 
         ApplyClothSerializeData(chain, ReadDict(chain_dict, "serialize_data"));
         if (!chain.collider_collision_enabled) {

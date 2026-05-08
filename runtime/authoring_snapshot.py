@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Quaternion, Vector
 
-from .blender_bone_refs import resolve_bone_chain_names
+from .blender_bone_refs import resolve_bone_forest_names
 from ..components import mc2
 from .exchange import wrap_authoring_snapshot
 
@@ -34,6 +34,16 @@ def _joint_override_map(typed_item) -> dict[str, object]:
     }
 
 
+def _bone_attribute_overrides(typed_item) -> list[dict]:
+    overrides = []
+    for item in getattr(typed_item, "joint_overrides", []):
+        attribute = getattr(item, "mc2_attribute", "DEFAULT")
+        if not item.bone_name or attribute == "DEFAULT":
+            continue
+        overrides.append({"bone_name": item.bone_name, "attribute": attribute})
+    return overrides
+
+
 def _vector_to_tuple(value: Vector) -> tuple[float, float, float]:
     return (float(value.x), float(value.y), float(value.z))
 
@@ -42,37 +52,31 @@ def _quaternion_to_tuple(value: Quaternion) -> tuple[float, float, float, float]
     return (float(value.w), float(value.x), float(value.y), float(value.z))
 
 
-def _transform_point(matrix: Matrix, point) -> Vector:
-    return (matrix @ Vector((float(point[0]), float(point[1]), float(point[2]), 1.0))).to_3d()
+def _bone_parent_local_matrix(armature_object, bone, world_matrix):
+    if bone.parent is not None:
+        parent_pose_bone = armature_object.pose.bones.get(bone.parent.name) if armature_object.pose else None
+        parent_pose_matrix = (
+            parent_pose_bone.matrix.copy()
+            if parent_pose_bone is not None
+            else bone.parent.matrix_local.copy()
+        )
+        return (armature_object.matrix_world @ parent_pose_matrix).inverted_safe() @ world_matrix
+    return armature_object.matrix_world.inverted_safe() @ world_matrix
 
 
-def _scale_point(point: Vector, scale) -> tuple[float, float, float]:
-    return (
-        float(point.x) * float(scale[0]),
-        float(point.y) * float(scale[1]),
-        float(point.z) * float(scale[2]),
-    )
-
-
-def _scaled_distance(a, b, scale) -> float:
-    delta = (
-        (float(b[0]) - float(a[0])) * float(scale[0]),
-        (float(b[1]) - float(a[1])) * float(scale[1]),
-        (float(b[2]) - float(a[2])) * float(scale[2]),
-    )
-    return (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]) ** 0.5
-
-
-def _sample_chain_bones(scene, armature_object, typed_item) -> tuple[list[dict], tuple[float, float, float]]:
-    bone_names = resolve_bone_chain_names(scene, armature_object, typed_item.root_bone_name)
+def _sample_chain_bones(
+    scene,
+    armature_object,
+    typed_item,
+    root_bone_names: list[str],
+) -> tuple[list[dict], tuple[float, float, float]]:
+    bone_names = resolve_bone_forest_names(scene, armature_object, root_bone_names)
     if not bone_names:
         return [], (1.0, 1.0, 1.0)
 
-    armature_scale = tuple(float(axis) for axis in armature_object.matrix_world.to_scale())
+    armature_matrix = armature_object.matrix_world.copy()
+    armature_scale = tuple(float(axis) for axis in armature_matrix.to_scale())
     name_to_index = {name: index for index, name in enumerate(bone_names)}
-    root_bone = armature_object.data.bones.get(bone_names[0])
-    root_matrix_inv = root_bone.matrix_local.inverted() if root_bone is not None else Matrix.Identity(4)
-    root_rotation_inv = root_bone.matrix_local.to_quaternion().conjugated() if root_bone is not None else Quaternion()
     overrides = _joint_override_map(typed_item)
     runtime_stiffness = float(typed_item.distance_constraint.stiffness.value)
     runtime_damping = float(typed_item.damping_curve.value)
@@ -83,24 +87,20 @@ def _sample_chain_bones(scene, armature_object, typed_item) -> tuple[list[dict],
         if bone is None:
             continue
 
+        pose_bone = armature_object.pose.bones.get(bone_name) if armature_object.pose else None
+        pose_matrix = pose_bone.matrix.copy() if pose_bone is not None else bone.matrix_local.copy()
+        world_matrix = armature_matrix @ pose_matrix
         parent_name = bone.parent.name if bone.parent and bone.parent.name in name_to_index else ""
         parent_index = name_to_index[parent_name] if parent_name else -1
         depth = sampled[parent_index]["depth"] + 1 if parent_index >= 0 and parent_index < len(sampled) else 0
-        parent_bone = bone.parent if parent_index >= 0 else None
-        head_root = _transform_point(root_matrix_inv, bone.head_local)
-        tail_root = _transform_point(root_matrix_inv, bone.tail_local)
-        rest_head_local = _scale_point(head_root, armature_scale)
-        rest_tail_local = _scale_point(tail_root, armature_scale)
-        if parent_bone is not None:
-            parent_head_root = _transform_point(root_matrix_inv, parent_bone.head_local)
-            parent_head_local = Vector(_scale_point(parent_head_root, armature_scale))
-            rest_local_translation = _vector_to_tuple(Vector(rest_head_local) - parent_head_local)
-            parent_global = root_rotation_inv @ parent_bone.matrix_local.to_quaternion()
-            current_global = root_rotation_inv @ bone.matrix_local.to_quaternion()
-            rest_local_rotation = _quaternion_to_tuple(parent_global.conjugated() @ current_global)
-        else:
-            rest_local_translation = (0.0, 0.0, 0.0)
-            rest_local_rotation = _quaternion_to_tuple(root_rotation_inv @ bone.matrix_local.to_quaternion())
+        head_world = world_matrix.to_translation()
+        length = max(float(bone.length), 1.0e-6)
+        tail_world = head_world + (world_matrix.to_quaternion() @ Vector((0.0, length, 0.0)))
+        rest_head_local = _vector_to_tuple(head_world)
+        rest_tail_local = _vector_to_tuple(tail_world)
+        local_matrix = _bone_parent_local_matrix(armature_object, bone, world_matrix)
+        rest_local_translation = _vector_to_tuple(local_matrix.to_translation())
+        rest_local_rotation = _quaternion_to_tuple(local_matrix.to_quaternion())
 
         override = overrides.get(bone_name)
         use_override = override is not None and override.enabled
@@ -110,7 +110,7 @@ def _sample_chain_bones(scene, armature_object, typed_item) -> tuple[list[dict],
                 "parent_name": parent_name,
                 "parent_index": int(parent_index),
                 "depth": int(depth),
-                "length": _scaled_distance(bone.head_local, bone.tail_local, armature_scale),
+                "length": float((tail_world - head_world).length),
                 "radius": float(override.radius) if use_override else float(typed_item.joint_radius),
                 "stiffness": float(override.stiffness) if use_override else runtime_stiffness,
                 "damping": float(override.damping) if use_override else runtime_damping,
@@ -122,6 +122,7 @@ def _sample_chain_bones(scene, armature_object, typed_item) -> tuple[list[dict],
                 "rest_tail_local": rest_tail_local,
                 "rest_local_translation": rest_local_translation,
                 "rest_local_rotation": rest_local_rotation,
+                "rest_world_rotation": _quaternion_to_tuple(world_matrix.to_quaternion()),
             }
         )
     return sampled, tuple(float(axis) for axis in armature_scale)
@@ -132,7 +133,8 @@ def _bone_chain_snapshot(scene, item, typed_item):
     if armature_object is None or armature_object.type != "ARMATURE":
         return None
 
-    bones, armature_scale = _sample_chain_bones(scene, armature_object, typed_item)
+    root_bone_names = mc2.resolve_cloth_root_bone_names(typed_item)
+    bones, armature_scale = _sample_chain_bones(scene, armature_object, typed_item, root_bone_names)
     center_object_name = ""
     center_bone_name = ""
     if typed_item.center_source == "OBJECT" and typed_item.center_object is not None:
@@ -148,7 +150,8 @@ def _bone_chain_snapshot(scene, item, typed_item):
     runtime_drag = max(0.0, min(1.0, 1.0 - float(typed_item.angle_restoration_constraint.velocity_attenuation)))
     serialize_data = {
         "clothType": "BoneCloth" if typed_item.authoring_mode == "BONE_CLOTH" else "BoneSpring",
-        "rootBones": [typed_item.root_bone_name] if typed_item.root_bone_name else [],
+        "rootBones": list(root_bone_names),
+        "connectionMode": typed_item.bone_connection_mode,
         "gravity": float(typed_item.gravity_strength),
         "gravityDirection": _vec3(typed_item.gravity_direction),
         "damping": _curve_parameter(typed_item.damping_curve),
@@ -233,6 +236,9 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "armature_name": armature_object.name,
         "armature_data_name": armature_object.data.name if armature_object.data else "",
         "root_bone_name": typed_item.root_bone_name,
+        "root_bone_names": list(root_bone_names),
+        "bone_connection_mode": typed_item.bone_connection_mode,
+        "pose_space": "WORLD",
         "center_object_name": center_object_name,
         "center_bone_name": center_bone_name,
         "joint_radius": float(typed_item.joint_radius),
@@ -285,6 +291,7 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "gravity_direction": _vec3(typed_item.gravity_direction),
         "armature_scale": armature_scale,
         "bones": bones,
+        "bone_attribute_overrides": _bone_attribute_overrides(typed_item),
     }
 
 

@@ -36,6 +36,16 @@ HOCLOTH_MC2_BONE_SPRING_PRESETS = {
 
 class HoClothSpringJointOverride(bpy.types.PropertyGroup):
     bone_name: bpy.props.StringProperty(name="Bone Name")
+    mc2_attribute: bpy.props.EnumProperty(
+        name="MC2 Attribute",
+        items=(
+            ("DEFAULT", "默认", "Root bones are fixed; other bones move."),
+            ("MOVE", "Move", "MC2 movable particle."),
+            ("FIXED", "Fixed", "MC2 fixed particle."),
+            ("INVALID", "Invalid", "MC2 invalid particle."),
+        ),
+        default="DEFAULT",
+    )
     enabled: bpy.props.BoolProperty(name="Enabled", default=False)
     radius: bpy.props.FloatProperty(name="Radius", default=0.02, min=0.0)
     stiffness: bpy.props.FloatProperty(name="Stiffness", default=0.6, min=0.0, soft_max=2.0)
@@ -143,6 +153,40 @@ def join_component_id_list(component_ids: list[str]) -> str:
     return ", ".join(ordered)
 
 
+def resolve_cloth_root_bone_names(cloth) -> list[str]:
+    if getattr(cloth, "authoring_mode", "") == "BONE_SPRING":
+        root_bone_name = getattr(cloth, "root_bone_name", "")
+        return [root_bone_name] if root_bone_name else []
+
+    names: list[str] = []
+    for reference in getattr(cloth, "root_bone_references", []):
+        bone_name = getattr(reference, "bone_name", "")
+        if bone_name and bone_name not in names:
+            names.append(bone_name)
+    if names:
+        return names
+    root_bone_name = getattr(cloth, "root_bone_name", "")
+    if root_bone_name and root_bone_name not in names:
+        names.append(root_bone_name)
+    return names
+
+
+def ensure_root_bone_references(cloth) -> int:
+    if getattr(cloth, "authoring_mode", "") != "BONE_CLOTH":
+        return 0
+    if getattr(cloth, "root_bone_references", None) is None:
+        return 0
+    if len(cloth.root_bone_references) > 0:
+        return 0
+    root_bone_name = getattr(cloth, "root_bone_name", "")
+    if not root_bone_name:
+        return 0
+    reference = cloth.root_bone_references.add()
+    reference.bone_name = root_bone_name
+    cloth.root_bone_reference_index = 0
+    return 1
+
+
 class HoClothMC2ComponentItem(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     component_type: bpy.props.EnumProperty(
@@ -169,6 +213,10 @@ class HoClothMC2ColliderReference(bpy.types.PropertyGroup):
     )
 
 
+class HoClothMC2RootBoneReference(bpy.types.PropertyGroup):
+    bone_name: bpy.props.StringProperty(name="Root Bone")
+
+
 class HoClothMC2MagicaClothComponent(bpy.types.PropertyGroup):
     component_id: bpy.props.StringProperty(name="Component ID")
     authoring_mode: bpy.props.EnumProperty(
@@ -185,6 +233,18 @@ class HoClothMC2MagicaClothComponent(bpy.types.PropertyGroup):
         poll=_poll_armature_object,
     )
     root_bone_name: bpy.props.StringProperty(name="Root Bone")
+    root_bone_references: bpy.props.CollectionProperty(type=HoClothMC2RootBoneReference)
+    root_bone_reference_index: bpy.props.IntProperty(name="Root Bone Index", default=0, min=0)
+    bone_connection_mode: bpy.props.EnumProperty(
+        name="Bone Connection Mode",
+        items=(
+            ("Line", "线", "MC2 line-only bone connection"),
+            ("AutomaticMesh", "自动网格", "MC2 automatic mesh connection by root distance"),
+            ("SequentialLoopMesh", "顺序循环网格", "MC2 sequential mesh connection with loop"),
+            ("SequentialNonLoopMesh", "顺序非循环网格", "MC2 sequential mesh connection without loop"),
+        ),
+        default="Line",
+    )
     center_source: bpy.props.EnumProperty(
         name="Center",
         items=(
@@ -303,6 +363,7 @@ CLASSES = (
     HoClothBoneSpringTriangleBendingConstraint,
     HoClothMC2ComponentItem,
     HoClothMC2ColliderReference,
+    HoClothMC2RootBoneReference,
     HoClothMC2MagicaClothComponent,
     HoClothMC2ColliderComponent,
     HoClothMC2CacheOutputComponent,
@@ -496,6 +557,7 @@ def sync_joint_override_names(cloth, bone_names: list[str]) -> int:
             "damping": item.damping,
             "drag": item.drag,
             "gravity_scale": item.gravity_scale,
+            "mc2_attribute": getattr(item, "mc2_attribute", "DEFAULT"),
         }
         for item in cloth.joint_overrides
         if item.bone_name
@@ -514,6 +576,7 @@ def sync_joint_override_names(cloth, bone_names: list[str]) -> int:
             entry.damping = default_damping
             entry.drag = default_drag
             entry.gravity_scale = 1.0
+            entry.mc2_attribute = "DEFAULT"
         else:
             entry.enabled = state["enabled"]
             entry.radius = state["radius"]
@@ -521,6 +584,7 @@ def sync_joint_override_names(cloth, bone_names: list[str]) -> int:
             entry.damping = state["damping"]
             entry.drag = state["drag"]
             entry.gravity_scale = state["gravity_scale"]
+            entry.mc2_attribute = state.get("mc2_attribute", "DEFAULT")
     cloth.joint_override_index = min(cloth.joint_override_index, max(len(cloth.joint_overrides) - 1, 0))
     return len(cloth.joint_overrides)
 

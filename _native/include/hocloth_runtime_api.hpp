@@ -37,6 +37,8 @@ struct CompiledSpringJoint {
     Vec3 rest_tail_local;
     Vec3 rest_local_translation;
     Quat rest_local_rotation;
+    Quat rest_world_rotation;
+    bool has_rest_world_rotation = false;
 };
 
 struct CompiledSpringLine {
@@ -46,6 +48,11 @@ struct CompiledSpringLine {
 
 struct CompiledSpringBaseline {
     std::vector<int> joint_indices;
+};
+
+struct CompiledBoneAttributeOverride {
+    std::string bone_name;
+    std::string attribute = "DEFAULT";
 };
 
 struct CompiledCurve {
@@ -61,8 +68,11 @@ struct CompiledSpringBone {
     std::string cloth_type;
     std::string armature_name;
     std::string root_bone_name;
+    std::vector<std::string> root_bone_names;
     std::string center_object_name;
     std::string center_bone_name;
+    std::string bone_connection_mode = "Line";
+    std::string pose_space = "LEGACY_ROOT_LOCAL";
     float joint_radius = 0.0f;
     CompiledCurve radius_curve;
     float stiffness = 0.0f;
@@ -121,6 +131,7 @@ struct CompiledSpringBone {
     std::vector<CompiledSpringJoint> joints;
     std::vector<CompiledSpringLine> lines;
     std::vector<CompiledSpringBaseline> baselines;
+    std::vector<CompiledBoneAttributeOverride> bone_attribute_overrides;
 };
 
 struct CompiledCollisionObject {
@@ -185,6 +196,8 @@ struct RuntimeChainInput {
     std::vector<Vec3> basic_head_positions;
     std::vector<Vec3> basic_tail_positions;
     std::vector<Quat> basic_rotations;
+    std::vector<Vec3> basic_local_positions;
+    std::vector<Quat> basic_local_rotations;
 };
 
 struct RuntimeCollisionObjectInput {

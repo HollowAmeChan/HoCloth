@@ -49,6 +49,24 @@ def resolve_bone_chain_names(scene, armature_reference, root_bone_name: str) -> 
     return _resolve_bone_subtree(root_bone)[0]
 
 
+def resolve_bone_forest_names(scene, armature_reference, root_bone_names: list[str]) -> list[str]:
+    armature_object = resolve_armature_object(scene, armature_reference)
+    if armature_object is None:
+        return []
+
+    names = []
+    seen = set()
+    for root_bone_name in root_bone_names:
+        root_bone = armature_object.data.bones.get(root_bone_name)
+        if root_bone is None:
+            continue
+        for bone_name in _resolve_bone_subtree(root_bone)[0]:
+            if bone_name not in seen:
+                names.append(bone_name)
+                seen.add(bone_name)
+    return names
+
+
 def resolve_bone_chain_branching_names(scene, armature_reference, root_bone_name: str) -> list[str]:
     armature_object = resolve_armature_object(scene, armature_reference)
     if armature_object is None or not root_bone_name:

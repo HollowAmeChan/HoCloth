@@ -11,7 +11,6 @@ from ..runtime.pose_apply import (
     apply_runtime_transforms_to_scene,
     capture_pose_baseline,
     capture_pose_state,
-    clear_pose_transforms,
     restore_pose_state,
 )
 from ..runtime.session import (
@@ -162,6 +161,8 @@ class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
         )
         cloth.armature_object = context.object
         cloth.root_bone_name = extracted.root_bone_name
+        reference = cloth.root_bone_references.add()
+        reference.bone_name = extracted.root_bone_name
         cloth.spring_constraint.use_spring = False
         mc2.sync_joint_override_names(cloth, extracted.bone_names)
         context.scene.hocloth_runtime_status = f"Added BoneCloth with {len(extracted.bone_names)} bones"
@@ -261,9 +262,13 @@ class HOCLOTH_OT_sync_spring_bone_joints(bpy.types.Operator):
             self.report({"ERROR"}, "Assign an armature before syncing joints.")
             return {"CANCELLED"}
 
-        from ..runtime.blender_bone_refs import resolve_bone_chain_names
+        from ..runtime.blender_bone_refs import resolve_bone_forest_names
 
-        bone_names = resolve_bone_chain_names(context.scene, cloth.armature_object, cloth.root_bone_name)
+        bone_names = resolve_bone_forest_names(
+            context.scene,
+            cloth.armature_object,
+            mc2.resolve_cloth_root_bone_names(cloth),
+        )
         synced = mc2.sync_joint_override_names(cloth, bone_names)
         context.scene.hocloth_runtime_status = f"Synced {synced} joints"
         return {"FINISHED"}
@@ -341,6 +346,70 @@ class HOCLOTH_OT_remove_collider_reference(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_add_root_bone_reference(bpy.types.Operator):
+    bl_idname = "hocloth.add_root_bone_reference"
+    bl_label = "Add Root Bone"
+    bl_description = "Add a root bone to this MC2 BoneCloth component"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+
+    def execute(self, context):
+        cloth = _find_cloth(context.scene, self.component_id)
+        if cloth is None:
+            self.report({"ERROR"}, "MagicaCloth component was not found.")
+            return {"CANCELLED"}
+        bone_names: list[str] = []
+        if context.selected_pose_bones:
+            bone_names = [bone.name for bone in context.selected_pose_bones]
+        elif context.selected_bones:
+            bone_names = [bone.name for bone in context.selected_bones]
+        elif context.active_pose_bone is not None:
+            bone_names = [context.active_pose_bone.name]
+        elif context.active_bone is not None:
+            bone_names = [context.active_bone.name]
+
+        existing = {reference.bone_name for reference in cloth.root_bone_references if reference.bone_name}
+        added = 0
+        for bone_name in bone_names:
+            if not bone_name or bone_name in existing:
+                continue
+            reference = cloth.root_bone_references.add()
+            reference.bone_name = bone_name
+            existing.add(bone_name)
+            added += 1
+        if len(cloth.root_bone_references) == 1:
+            cloth.root_bone_name = cloth.root_bone_references[0].bone_name
+        cloth.root_bone_reference_index = max(len(cloth.root_bone_references) - 1, 0)
+        context.scene.hocloth_runtime_status = f"Added {added} root bone references"
+        return {"FINISHED"}
+
+
+class HOCLOTH_OT_remove_root_bone_reference(bpy.types.Operator):
+    bl_idname = "hocloth.remove_root_bone_reference"
+    bl_label = "Remove Root Bone"
+    bl_description = "Remove a root bone from this MC2 BoneCloth component"
+
+    component_id: bpy.props.StringProperty(name="Component ID")
+    index: bpy.props.IntProperty(name="Index", default=-1)
+
+    def execute(self, context):
+        cloth = _find_cloth(context.scene, self.component_id)
+        if cloth is None:
+            self.report({"ERROR"}, "MagicaCloth component was not found.")
+            return {"CANCELLED"}
+        index = self.index if self.index >= 0 else cloth.root_bone_reference_index
+        if index < 0 or index >= len(cloth.root_bone_references):
+            self.report({"ERROR"}, "Root bone reference was not found.")
+            return {"CANCELLED"}
+        cloth.root_bone_references.remove(index)
+        cloth.root_bone_reference_index = min(
+            cloth.root_bone_reference_index,
+            max(len(cloth.root_bone_references) - 1, 0),
+        )
+        context.scene.hocloth_runtime_status = "Removed root bone reference"
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_rebuild_scene(bpy.types.Operator):
     bl_idname = "hocloth.rebuild_scene"
     bl_label = "Build Runtime"
@@ -400,13 +469,10 @@ class HOCLOTH_OT_restart_runtime_from_baseline(bpy.types.Operator):
 
         authoring_snapshot = get_last_authoring_snapshot()
         pose_state = get_pose_baseline()
-        if pose_state:
-            restore_pose_state(scene, authoring_snapshot, pose_state)
-        else:
-            clear_pose_transforms(scene, authoring_snapshot)
-
         target_frame = scene.frame_start
         scene.frame_set(target_frame)
+        if pose_state:
+            restore_pose_state(scene, authoring_snapshot, pose_state)
         reset_runtime()
         if context.view_layer is not None:
             context.view_layer.update()
@@ -592,6 +658,8 @@ CLASSES = (
     HOCLOTH_OT_reset_spring_joint_override,
     HOCLOTH_OT_add_collider_reference,
     HOCLOTH_OT_remove_collider_reference,
+    HOCLOTH_OT_add_root_bone_reference,
+    HOCLOTH_OT_remove_root_bone_reference,
     HOCLOTH_OT_rebuild_scene,
     HOCLOTH_OT_reset_runtime,
     HOCLOTH_OT_restart_runtime_from_baseline,

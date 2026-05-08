@@ -111,6 +111,7 @@ public:
     void CreateVertexBindPose();
     void CreateVertexToTransformRotations();
     void BuildVertexToTriangles();
+    void BuildVertexToVertexFromTopology();
     void BuildEdgeToTriangles();
     void BuildEdgeFlags();
     void ConvertInvalidToFixed();

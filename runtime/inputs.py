@@ -106,11 +106,14 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
         component_id = chain_data.get("component_id", "")
         armature_name = chain_data.get("armature_name", "")
         root_bone_name = chain_data.get("root_bone_name", "")
+        root_bone_names = [name for name in chain_data.get("root_bone_names", []) if name]
+        if not root_bone_names and root_bone_name:
+            root_bone_names = [root_bone_name]
         armature_object = resolve_armature_object(scene, armature_name)
         if armature_object is None or armature_object.pose is None:
             continue
 
-        pose_bone = armature_object.pose.bones.get(root_bone_name)
+        pose_bone = armature_object.pose.bones.get(root_bone_names[0] if root_bone_names else root_bone_name)
         if pose_bone is None:
             continue
 
@@ -146,6 +149,8 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
         basic_head_positions: list[float] = []
         basic_tail_positions: list[float] = []
         basic_rotations: list[float] = []
+        basic_local_positions: list[float] = []
+        basic_local_rotations: list[float] = []
         pose_bones = armature_object.pose.bones
         for bone in chain_data.get("bones", []):
             bone_name = bone.get("name", "")
@@ -157,14 +162,25 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
                 length = max(float(bone.get("length", 0.0)), 1.0e-6)
                 direction = pose_matrix.to_quaternion() @ Vector((0.0, length, 0.0))
                 tail = _vector_tuple(Vector(head) + direction)
+                if pose_bone.parent is not None:
+                    parent_world = armature_object.matrix_world @ pose_bone.parent.matrix
+                    local_matrix = parent_world.inverted_safe() @ pose_matrix
+                else:
+                    local_matrix = armature_object.matrix_world.inverted_safe() @ pose_matrix
+                local_position = _vector_tuple(local_matrix.to_translation())
+                local_rotation = _quat_tuple(local_matrix.to_quaternion())
             else:
                 head = translation
                 tail = translation
-                bone_rotation = tuple(bone.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0)))
+                bone_rotation = tuple(bone.get("rest_world_rotation", (1.0, 0.0, 0.0, 0.0)))
+                local_position = tuple(bone.get("rest_local_translation", (0.0, 0.0, 0.0)))
+                local_rotation = tuple(bone.get("rest_local_rotation", (1.0, 0.0, 0.0, 0.0)))
 
             _append_vec3(basic_head_positions, head)
             _append_vec3(basic_tail_positions, tail)
             _append_quat(basic_rotations, bone_rotation)
+            _append_vec3(basic_local_positions, local_position)
+            _append_quat(basic_local_rotations, local_rotation)
 
         next_chain_states[component_id] = {
             "translation": translation,
@@ -190,6 +206,8 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
                 "basic_head_positions": tuple(basic_head_positions),
                 "basic_tail_positions": tuple(basic_tail_positions),
                 "basic_rotations": tuple(basic_rotations),
+                "basic_local_positions": tuple(basic_local_positions),
+                "basic_local_rotations": tuple(basic_local_rotations),
             }
         )
 

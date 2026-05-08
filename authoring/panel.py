@@ -1,7 +1,7 @@
 import bpy
 
 from ..components import mc2
-from ..runtime.blender_bone_refs import resolve_bone_chain_names
+from ..runtime.blender_bone_refs import resolve_bone_forest_names
 
 
 def _draw_collider_reference_list(layout, scene, item, cloth):
@@ -28,13 +28,34 @@ def _draw_collider_reference_list(layout, scene, item, cloth):
     collider_box.label(text=f"Collider List: {resolved_count}")
 
 
+def _draw_root_bone_reference_list(layout, item, cloth):
+    root_box = layout.box()
+    header = root_box.row(align=True)
+    header.label(text="根骨列表")
+    add = header.operator("hocloth.add_root_bone_reference", text="", icon="ADD")
+    add.component_id = item.component_id
+
+    armature_object = cloth.armature_object
+    if not cloth.root_bone_references:
+        root_box.label(text="未指定根骨", icon="INFO")
+    for index, reference in enumerate(cloth.root_bone_references):
+        row = root_box.row(align=True)
+        if armature_object is not None and armature_object.data is not None:
+            row.prop_search(reference, "bone_name", armature_object.data, "bones", text="")
+        else:
+            row.prop(reference, "bone_name", text="")
+        remove = row.operator("hocloth.remove_root_bone_reference", text="", icon="X")
+        remove.component_id = item.component_id
+        remove.index = index
+
+
 def _draw_mc2_cloth(layout, scene, item):
     cloth = mc2.find_magica_cloth(scene, item.component_id)
     if cloth is None:
         return
 
     armature_object = cloth.armature_object
-    bone_names = resolve_bone_chain_names(scene, armature_object, cloth.root_bone_name)
+    bone_names = resolve_bone_forest_names(scene, armature_object, mc2.resolve_cloth_root_bone_names(cloth))
 
     header = layout.row(align=True)
     header.prop(item, "ui_expanded", text="", emboss=False, icon="TRIA_DOWN" if item.ui_expanded else "TRIA_RIGHT")
@@ -51,7 +72,10 @@ def _draw_mc2_cloth(layout, scene, item):
     body = layout.box()
     body.prop(cloth, "authoring_mode", text="模式")
     body.prop(cloth, "armature_object", text="骨架")
-    if armature_object is not None and armature_object.data is not None:
+    if cloth.authoring_mode == "BONE_CLOTH":
+        _draw_root_bone_reference_list(body, item, cloth)
+        body.prop(cloth, "bone_connection_mode", text="连接模式")
+    elif armature_object is not None and armature_object.data is not None:
         body.prop_search(cloth, "root_bone_name", armature_object.data, "bones", text="根骨骼")
     else:
         body.prop(cloth, "root_bone_name", text="根骨骼")
@@ -71,6 +95,13 @@ def _draw_mc2_cloth(layout, scene, item):
 
     if scene.hocloth_ui_details_expanded:
         detail = body.box()
+        if cloth.authoring_mode == "BONE_CLOTH":
+            sync = detail.operator("hocloth.sync_spring_bone_joints", text="同步骨属性")
+            sync.component_id = item.component_id
+            for override in cloth.joint_overrides:
+                row = detail.row(align=True)
+                row.label(text=override.bone_name, icon="BONE_DATA")
+                row.prop(override, "mc2_attribute", text="")
         detail.label(text="MagicaCloth 详细参数")
         detail.prop(cloth, "center_source", text="中心")
         if cloth.center_source == "OBJECT":

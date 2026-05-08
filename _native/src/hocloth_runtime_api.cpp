@@ -48,6 +48,34 @@ bool IsBoneSpring(const CompiledSpringBone& chain)
     return !IsBoneCloth(chain);
 }
 
+mc2::RenderSetupData::BoneConnectionMode ToBoneConnectionMode(const std::string& mode)
+{
+    if (mode == "AutomaticMesh") {
+        return mc2::RenderSetupData::BoneConnectionMode::AutomaticMesh;
+    }
+    if (mode == "SequentialLoopMesh") {
+        return mc2::RenderSetupData::BoneConnectionMode::SequentialLoopMesh;
+    }
+    if (mode == "SequentialNonLoopMesh") {
+        return mc2::RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh;
+    }
+    return mc2::RenderSetupData::BoneConnectionMode::Line;
+}
+
+mc2::VertexAttribute ToVertexAttribute(const std::string& attribute)
+{
+    if (attribute == "MOVE") {
+        return mc2::VertexAttribute::Move();
+    }
+    if (attribute == "FIXED") {
+        return mc2::VertexAttribute::Fixed();
+    }
+    if (attribute == "INVALID") {
+        return mc2::VertexAttribute::Invalid();
+    }
+    return mc2::VertexAttribute::Invalid();
+}
+
 float Clamp(float value, float low, float high)
 {
     return std::clamp(value, low, high);
@@ -503,8 +531,14 @@ Quat ResolveRuntimeLocalRotation(
     }
 
     const CompiledSpringJoint& joint = chain.joints[joint_index];
-    if (runtime_input == nullptr
-        || joint_index >= runtime_input->basic_rotations.size()) {
+    if (runtime_input == nullptr) {
+        return joint.rest_local_rotation;
+    }
+
+    if (joint_index < runtime_input->basic_local_rotations.size()) {
+        return NormalizeQuat(runtime_input->basic_local_rotations[joint_index]);
+    }
+    if (joint_index >= runtime_input->basic_rotations.size()) {
         return joint.rest_local_rotation;
     }
 
@@ -530,8 +564,13 @@ Vec3 ResolveRuntimeLocalPosition(
     }
 
     const CompiledSpringJoint& joint = chain.joints[joint_index];
+    if (runtime_input != nullptr
+        && joint_index < runtime_input->basic_local_positions.size()) {
+        return runtime_input->basic_local_positions[joint_index];
+    }
+
     if (joint.parent_index < 0) {
-        return Vec3{};
+        return joint.rest_local_translation;
     }
 
     if (runtime_input == nullptr
@@ -610,7 +649,7 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
         ? mc2::RenderSetupData::SetupType::BoneCloth
         : mc2::RenderSetupData::SetupType::BoneSpring;
     setup.bone_connection_mode = IsBoneCloth(chain)
-        ? mc2::RenderSetupData::BoneConnectionMode::SequentialNonLoopMesh
+        ? ToBoneConnectionMode(chain.bone_connection_mode)
         : mc2::RenderSetupData::BoneConnectionMode::Line;
 
     const int joint_count = static_cast<int>(chain.joints.size());
@@ -633,8 +672,12 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
     std::vector<Quat> world_rotations(static_cast<std::size_t>(joint_count), Quat{});
     for (int joint_index = 0; joint_index < joint_count; ++joint_index) {
         const CompiledSpringJoint& joint = chain.joints[static_cast<std::size_t>(joint_index)];
-        Quat world_rotation = joint.rest_local_rotation;
-        if (joint.parent_index >= 0 && joint.parent_index < joint_count) {
+        Quat world_rotation = joint.has_rest_world_rotation
+            ? joint.rest_world_rotation
+            : joint.rest_local_rotation;
+        if (!joint.has_rest_world_rotation
+            && joint.parent_index >= 0
+            && joint.parent_index < joint_count) {
             world_rotation = Mul(
                 world_rotations[static_cast<std::size_t>(joint.parent_index)],
                 joint.rest_local_rotation
@@ -679,6 +722,34 @@ mc2::RenderSetupData BuildRuntimeBoneRenderSetup(const CompiledSpringBone& chain
     setup.transform_local_positions.push_back(mc2::float3{});
     setup.transform_local_rotations.push_back(mc2::quaternion{});
     setup.transform_inverse_rotations.push_back(mc2::quaternion{});
+    if (!chain.root_bone_names.empty()) {
+        std::vector<int> explicit_root_transform_ids;
+        explicit_root_transform_ids.reserve(chain.root_bone_names.size());
+        for (const std::string& root_bone_name : chain.root_bone_names) {
+            auto found = std::find_if(
+                chain.joints.begin(),
+                chain.joints.end(),
+                [&root_bone_name](const CompiledSpringJoint& joint) {
+                    return joint.name == root_bone_name;
+                }
+            );
+            if (found == chain.joints.end()) {
+                continue;
+            }
+            const int joint_index = static_cast<int>(std::distance(chain.joints.begin(), found));
+            const int transform_id = joint_index + 1;
+            if (std::find(
+                    explicit_root_transform_ids.begin(),
+                    explicit_root_transform_ids.end(),
+                    transform_id
+                ) == explicit_root_transform_ids.end()) {
+                explicit_root_transform_ids.push_back(transform_id);
+            }
+        }
+        if (!explicit_root_transform_ids.empty()) {
+            setup.root_transform_ids = std::move(explicit_root_transform_ids);
+        }
+    }
     if (setup.root_transform_ids.empty() && joint_count > 0) {
         setup.root_transform_ids.push_back(1);
     }
@@ -870,6 +941,28 @@ std::shared_ptr<mc2::VirtualMesh> BuildRuntimeProxyMesh(const CompiledSpringBone
             cloth_transform_record.local_to_world_matrix = render_setup.init_render_local_to_world;
             cloth_transform_record.world_to_local_matrix = render_setup.init_render_world_to_local;
         }
+        if (IsBoneCloth(chain) && !chain.bone_attribute_overrides.empty()) {
+            mc2::SelectionData selection = mc2::SelectionData::CreateBoneClothDefault(render_setup);
+            for (const CompiledBoneAttributeOverride& override : chain.bone_attribute_overrides) {
+                auto found = std::find_if(
+                    chain.joints.begin(),
+                    chain.joints.end(),
+                    [&override](const CompiledSpringJoint& joint) {
+                        return joint.name == override.bone_name;
+                    }
+                );
+                if (found == chain.joints.end()) {
+                    continue;
+                }
+                const int joint_index = static_cast<int>(std::distance(chain.joints.begin(), found));
+                if (joint_index < 0 || joint_index >= selection.Count()) {
+                    continue;
+                }
+                selection.attributes[static_cast<std::size_t>(joint_index)] =
+                    ToVertexAttribute(override.attribute);
+            }
+            mesh->ApplySelectionAttribute(selection, true);
+        }
         mesh->ConvertProxyMesh(
             serialize_data,
             cloth_transform_record,
@@ -1035,7 +1128,11 @@ void RebuildMc2ColliderManagers(RuntimeModule::SceneState& scene)
 
             const CompiledSpringJoint& joint = chain.joints[joint_index];
             const mc2::float3 position = ToMc2Float3(joint.rest_head_local);
-            const mc2::quaternion rotation = ToMc2Quaternion(joint.rest_local_rotation);
+            const mc2::quaternion rotation = ToMc2Quaternion(
+                joint.has_rest_world_rotation
+                    ? joint.rest_world_rotation
+                    : joint.rest_local_rotation
+            );
             scene.mc2_simulation_manager.NextPositions()[particle_index] = position;
             scene.mc2_simulation_manager.OldPositions()[particle_index] = position;
             scene.mc2_simulation_manager.BasePositions()[particle_index] = position;
@@ -1111,8 +1208,13 @@ void ApplyRuntimeInputsToMc2Transforms(RuntimeModule::SceneState& scene)
                 continue;
             }
 
-            mc2::float3 position = ToMc2Float3(chain.joints[static_cast<std::size_t>(joint_index)].rest_head_local);
-            mc2::quaternion rotation = ToMc2Quaternion(chain.joints[static_cast<std::size_t>(joint_index)].rest_local_rotation);
+            const CompiledSpringJoint& joint = chain.joints[static_cast<std::size_t>(joint_index)];
+            mc2::float3 position = ToMc2Float3(joint.rest_head_local);
+            mc2::quaternion rotation = ToMc2Quaternion(
+                joint.has_rest_world_rotation
+                    ? joint.rest_world_rotation
+                    : joint.rest_local_rotation
+            );
             if (runtime_input != nullptr
                 && static_cast<std::size_t>(joint_index) < runtime_input->basic_head_positions.size()) {
                 position = ToMc2Float3(runtime_input->basic_head_positions[static_cast<std::size_t>(joint_index)]);
@@ -1207,7 +1309,9 @@ void SyncJointStatesToMc2Particles(
             : ToAnglePoint(cache.joint_states[static_cast<std::size_t>(driven_joint_index)]);
         const float point_scale = std::max(0.05f, driven_joint.length);
         const mc2::float3 base_position = ResolveParticleBasePosition(chain, runtime_input, joint_index);
-        Quat basis_rotation = driven_joint.rest_local_rotation;
+        Quat basis_rotation = driven_joint.has_rest_world_rotation
+            ? driven_joint.rest_world_rotation
+            : driven_joint.rest_local_rotation;
         if (
             runtime_input != nullptr
             && static_cast<std::size_t>(driven_joint_index) < runtime_input->basic_rotations.size()
@@ -1284,7 +1388,9 @@ void ApplyMc2ParticlesToJointStates(
         const mc2::float3 base_position = scene.mc2_simulation_manager.BasePositions()[particle_index];
         const float point_scale = std::max(0.05f, driven_joint.length);
         Vec3 world_offset = Sub(Mc2ToVec3(next_position), Mc2ToVec3(base_position));
-        Quat basis_rotation = driven_joint.rest_local_rotation;
+        Quat basis_rotation = driven_joint.has_rest_world_rotation
+            ? driven_joint.rest_world_rotation
+            : driven_joint.rest_local_rotation;
         if (
             runtime_input != nullptr
             && driven_joint_index < runtime_input->basic_rotations.size()
@@ -2008,24 +2114,19 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
                 if (transform_index >= 0
                     && transform_index < transform_data.flag_array.Length()
                     && transform_index < transform_data.rotation_array.Length()
+                    && transform_index < transform_data.local_position_array.Length()
                     && transform_index < transform_data.local_rotation_array.Length()) {
                     const mc2::BitFlag8 transform_flag = transform_data.flag_array[transform_index];
-                    std::string write_mode = "none";
                     Quat base_rotation = ResolveRuntimeLocalRotation(chain, runtime_input, joint_index);
                     Quat output_rotation =
                         Mc2ToQuat(transform_data.local_rotation_array[transform_index]);
-                    if (transform_flag.IsSet(mc2::TransformManager::FlagWorldRotWrite)
-                        || joint.parent_index < 0) {
-                        write_mode = "world_rotation";
-                        base_rotation = runtime_input != nullptr
-                            && joint_index < runtime_input->basic_rotations.size()
-                                ? runtime_input->basic_rotations[joint_index]
-                                : joint.rest_local_rotation;
-                        output_rotation = Mc2ToQuat(transform_data.rotation_array[transform_index]);
-                    } else if (transform_flag.IsSet(mc2::TransformManager::FlagLocalPosRotWrite)) {
-                        write_mode = "local_rotation";
-                    } else if (!transform_flag.IsSet(mc2::TransformManager::FlagLocalPosRotWrite)
-                        && joint.parent_index >= 0) {
+                    if (transform_flag.IsSet(mc2::TransformManager::FlagWorldRotWrite)) {
+                        continue;
+                    }
+                    if (!transform_flag.IsSet(mc2::TransformManager::FlagLocalPosRotWrite)) {
+                        if (joint.parent_index < 0) {
+                            continue;
+                        }
                         const JointState& state = cache.joint_states[joint_index];
                         transforms.push_back(BoneTransform{
                             chain.component_id,
@@ -2049,7 +2150,7 @@ std::vector<BoneTransform> RuntimeModule::GetBoneTransforms(SceneHandle handle) 
                         joint.name,
                         Vec3{0.0f, 0.0f, 0.0f},
                         rotation_delta,
-                        write_mode,
+                        "local_rotation",
                         transform_flag.Value(),
                     });
                     continue;
