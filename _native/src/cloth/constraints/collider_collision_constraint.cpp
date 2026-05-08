@@ -120,9 +120,12 @@ void ColliderCollisionConstraint::WorkBufferUpdate(
     int edge_collider_collision_count
 )
 {
-    if (particle_count <= 0 || edge_collider_collision_count <= 0) {
+    if (particle_count <= 0) {
         temp_friction_array_.Dispose();
         temp_normal_array_.Dispose();
+        return;
+    }
+    if (edge_collider_collision_count <= 0) {
         return;
     }
 
@@ -130,8 +133,6 @@ void ColliderCollisionConstraint::WorkBufferUpdate(
         temp_friction_array_.Dispose();
         temp_friction_array_ = ExNativeArray<int>(particle_count);
         temp_friction_array_.AddRange(particle_count, 0);
-    } else {
-        temp_friction_array_.Fill(0);
     }
 
     const int normal_count = particle_count * 3;
@@ -139,8 +140,6 @@ void ColliderCollisionConstraint::WorkBufferUpdate(
         temp_normal_array_.Dispose();
         temp_normal_array_ = ExNativeArray<int>(normal_count);
         temp_normal_array_.AddRange(normal_count, 0);
-    } else {
-        temp_normal_array_.Fill(0);
     }
 }
 
@@ -382,6 +381,10 @@ void ColliderCollisionConstraint::Solve(
 
         const VertexAttribute attr0 = attributes[vertex_indices[0]];
         const VertexAttribute attr1 = attributes[vertex_indices[1]];
+        if (attr0.IsInvalid() || attr0.IsDisableCollision()
+            || attr1.IsInvalid() || attr1.IsDisableCollision()) {
+            continue;
+        }
         if (!attr0.IsMove() && !attr1.IsMove()) {
             continue;
         }

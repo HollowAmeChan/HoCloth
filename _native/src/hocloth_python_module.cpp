@@ -555,6 +555,9 @@ CompiledScene ParseCompiledScene(const nb::dict& root)
         if (object_dict.contains("world_rotation")) {
             collision_object.world_rotation = ReadQuat(object_dict["world_rotation"]);
         }
+        if (object_dict.contains("world_scale")) {
+            collision_object.world_scale = ReadVec3(object_dict["world_scale"]);
+        }
         if (object_dict.contains("linear_velocity")) {
             collision_object.linear_velocity = ReadVec3(object_dict["linear_velocity"]);
         }
@@ -646,6 +649,9 @@ RuntimeInputs ParseRuntimeInputs(const nb::dict& root)
         }
         if (object_dict.contains("world_rotation")) {
             collision_object.world_rotation = ReadQuat(object_dict["world_rotation"]);
+        }
+        if (object_dict.contains("world_scale")) {
+            collision_object.world_scale = ReadVec3(object_dict["world_scale"]);
         }
         if (object_dict.contains("linear_velocity")) {
             collision_object.linear_velocity = ReadVec3(object_dict["linear_velocity"]);

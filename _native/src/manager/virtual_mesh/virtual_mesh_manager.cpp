@@ -18,6 +18,12 @@ namespace {
 
 constexpr std::uint8_t BaseLineFlagIncludeLine = 0x01;
 
+template <typename T>
+bool HasCount(const T& array, int count)
+{
+    return count <= 0 || array.Count() >= count;
+}
+
 quaternion ApplyNegativeScaleQuaternion(const quaternion& rotation, const float4& negative_scale_quaternion)
 {
     return quaternion{
@@ -196,22 +202,66 @@ void VirtualMeshManager::RegisterProxyMesh(
     const int vertex_count = proxy_mesh->VertexCount();
     if (vertex_count > 0) {
         team_data.proxy_common_chunk = team_ids_.AddRange(vertex_count, static_cast<std::int16_t>(team_id));
-        attributes_.AddRange(proxy_mesh->attributes);
-        uv_.AddRange(proxy_mesh->uv);
-        vertex_bind_pose_positions_.AddRange(proxy_mesh->vertex_bind_pose_positions);
-        vertex_bind_pose_rotations_.AddRange(proxy_mesh->vertex_bind_pose_rotations);
-        vertex_depths_.AddRange(proxy_mesh->vertex_depths);
-        vertex_root_indices_.AddRange(proxy_mesh->vertex_root_indices);
-        vertex_local_positions_.AddRange(proxy_mesh->vertex_local_positions);
-        vertex_local_rotations_.AddRange(proxy_mesh->vertex_local_rotations);
-        vertex_parent_indices_.AddRange(proxy_mesh->vertex_parent_indices);
+        if (HasCount(proxy_mesh->attributes, vertex_count)) {
+            attributes_.AddRange(proxy_mesh->attributes, vertex_count);
+        } else {
+            attributes_.AddRange(vertex_count, VertexAttribute::Invalid());
+        }
+        if (HasCount(proxy_mesh->uv, vertex_count)) {
+            uv_.AddRange(proxy_mesh->uv, vertex_count);
+        } else {
+            uv_.AddRange(vertex_count, float2{});
+        }
+        if (HasCount(proxy_mesh->vertex_bind_pose_positions, vertex_count)) {
+            vertex_bind_pose_positions_.AddRange(proxy_mesh->vertex_bind_pose_positions, vertex_count);
+        } else {
+            vertex_bind_pose_positions_.AddRange(vertex_count, float3{});
+        }
+        if (HasCount(proxy_mesh->vertex_bind_pose_rotations, vertex_count)) {
+            vertex_bind_pose_rotations_.AddRange(proxy_mesh->vertex_bind_pose_rotations, vertex_count);
+        } else {
+            vertex_bind_pose_rotations_.AddRange(vertex_count, quaternion{});
+        }
+        if (HasCount(proxy_mesh->vertex_depths, vertex_count)) {
+            vertex_depths_.AddRange(proxy_mesh->vertex_depths, vertex_count);
+        } else {
+            vertex_depths_.AddRange(vertex_count, 0.0f);
+        }
+        if (HasCount(proxy_mesh->vertex_root_indices, vertex_count)) {
+            vertex_root_indices_.AddRange(proxy_mesh->vertex_root_indices, vertex_count);
+        } else {
+            vertex_root_indices_.AddRange(vertex_count, -1);
+        }
+        if (HasCount(proxy_mesh->vertex_local_positions, vertex_count)) {
+            vertex_local_positions_.AddRange(proxy_mesh->vertex_local_positions, vertex_count);
+        } else {
+            vertex_local_positions_.AddRange(vertex_count, float3{});
+        }
+        if (HasCount(proxy_mesh->vertex_local_rotations, vertex_count)) {
+            vertex_local_rotations_.AddRange(proxy_mesh->vertex_local_rotations, vertex_count);
+        } else {
+            vertex_local_rotations_.AddRange(vertex_count, quaternion{});
+        }
+        if (HasCount(proxy_mesh->vertex_parent_indices, vertex_count)) {
+            vertex_parent_indices_.AddRange(proxy_mesh->vertex_parent_indices, vertex_count);
+        } else {
+            vertex_parent_indices_.AddRange(vertex_count, -1);
+        }
         if (proxy_mesh->vertex_to_triangles.Count() == vertex_count) {
             vertex_to_triangles_.AddRange(proxy_mesh->vertex_to_triangles);
         } else {
             vertex_to_triangles_.AddRange(vertex_count);
         }
-        vertex_child_index_array_.AddRange(proxy_mesh->vertex_child_index_array);
-        normal_adjustment_rotations_.AddRange(proxy_mesh->normal_adjustment_rotations);
+        if (HasCount(proxy_mesh->vertex_child_index_array, vertex_count)) {
+            vertex_child_index_array_.AddRange(proxy_mesh->vertex_child_index_array, vertex_count);
+        } else {
+            vertex_child_index_array_.AddRange(vertex_count, std::uint32_t{});
+        }
+        if (HasCount(proxy_mesh->normal_adjustment_rotations, vertex_count)) {
+            normal_adjustment_rotations_.AddRange(proxy_mesh->normal_adjustment_rotations, vertex_count);
+        } else {
+            normal_adjustment_rotations_.AddRange(vertex_count, quaternion{});
+        }
         positions_.AddRange(vertex_count);
         rotations_.AddRange(vertex_count);
     }
@@ -256,10 +306,15 @@ void VirtualMeshManager::RegisterProxyMesh(
     }
 
     if (proxy_mesh->edges.Count() > 0) {
+        const int edge_count = proxy_mesh->edges.Count();
         team_data.proxy_edge_chunk =
-            edge_team_ids_.AddRange(proxy_mesh->edges.Count(), static_cast<std::int16_t>(team_id));
+            edge_team_ids_.AddRange(edge_count, static_cast<std::int16_t>(team_id));
         edges_.AddRange(proxy_mesh->edges);
-        edge_flags_.AddRange(proxy_mesh->edge_flags);
+        if (proxy_mesh->edge_flags.Count() == edge_count) {
+            edge_flags_.AddRange(proxy_mesh->edge_flags);
+        } else {
+            edge_flags_.AddRange(edge_count, BitFlag8{});
+        }
     }
 
     if (proxy_mesh->base_line_start_data_indices.Count() > 0
@@ -288,10 +343,24 @@ void VirtualMeshManager::RegisterProxyMesh(
     }
 
     if (proxy_mesh->VertexCount() > 0) {
-        team_data.proxy_mesh_chunk = local_positions_.AddRange(proxy_mesh->local_positions);
-        local_normals_.AddRange(proxy_mesh->local_normals);
-        local_tangents_.AddRange(proxy_mesh->local_tangents);
-        bone_weights_.AddRange(proxy_mesh->bone_weights);
+        team_data.proxy_mesh_chunk = HasCount(proxy_mesh->local_positions, vertex_count)
+            ? local_positions_.AddRange(proxy_mesh->local_positions, vertex_count)
+            : local_positions_.AddRange(vertex_count, float3{});
+        if (HasCount(proxy_mesh->local_normals, vertex_count)) {
+            local_normals_.AddRange(proxy_mesh->local_normals, vertex_count);
+        } else {
+            local_normals_.AddRange(vertex_count, float3{0.0f, 1.0f, 0.0f});
+        }
+        if (HasCount(proxy_mesh->local_tangents, vertex_count)) {
+            local_tangents_.AddRange(proxy_mesh->local_tangents, vertex_count);
+        } else {
+            local_tangents_.AddRange(vertex_count, float3{0.0f, 0.0f, 1.0f});
+        }
+        if (HasCount(proxy_mesh->bone_weights, vertex_count)) {
+            bone_weights_.AddRange(proxy_mesh->bone_weights, vertex_count);
+        } else {
+            bone_weights_.AddRange(vertex_count, VirtualMeshBoneWeight{});
+        }
     }
 
     if (proxy_mesh->SkinBoneCount() > 0) {

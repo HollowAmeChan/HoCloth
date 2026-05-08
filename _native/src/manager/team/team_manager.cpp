@@ -1685,6 +1685,23 @@ void TeamManager::PostTeamUpdate()
             team_data.frame_update_time -= limit_time;
             team_data.frame_old_time -= limit_time;
         }
+
+        TeamWindData& wind_data = team_wind_array_[team_id];
+        for (int index = 0; index < wind_data.zone_count; ++index) {
+            TeamWindInfo& wind_info = wind_data.wind_zone_list[static_cast<std::size_t>(index)];
+            if (wind_info.IsValid()) {
+                wind_info.time += team_data.time_scale * 0.01f;
+                if (wind_info.time > limit_time) {
+                    wind_info.time -= limit_time;
+                }
+            }
+        }
+        if (wind_data.moving_wind.IsValid()) {
+            wind_data.moving_wind.time += team_data.time_scale * 0.01f;
+            if (wind_data.moving_wind.time > limit_time) {
+                wind_data.moving_wind.time -= limit_time;
+            }
+        }
     }
 }
 

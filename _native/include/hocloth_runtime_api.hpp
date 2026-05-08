@@ -165,6 +165,7 @@ struct CompiledCollisionObject {
     std::string shape_type;
     Vec3 world_translation;
     Quat world_rotation;
+    Vec3 world_scale{1.0f, 1.0f, 1.0f};
     Vec3 linear_velocity;
     Vec3 angular_velocity;
     float radius = 0.0f;
@@ -229,6 +230,7 @@ struct RuntimeCollisionObjectInput {
     std::string collision_object_id;
     Vec3 world_translation;
     Quat world_rotation;
+    Vec3 world_scale{1.0f, 1.0f, 1.0f};
     Vec3 linear_velocity;
 };
 

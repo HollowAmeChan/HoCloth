@@ -70,6 +70,9 @@ mc2::VertexAttribute ToVertexAttribute(const std::string& attribute)
     if (attribute == "FIXED") {
         return mc2::VertexAttribute::Fixed();
     }
+    if (attribute == "DISABLE_COLLISION" || attribute == "DISABLECOLLISION") {
+        return mc2::VertexAttribute::DisableCollision();
+    }
     if (attribute == "INVALID") {
         return mc2::VertexAttribute::Invalid();
     }
@@ -776,7 +779,7 @@ mc2::ColliderManager::ColliderData ToMc2ColliderData(const CompiledCollisionObje
     data.center = mc2::float3{};
     data.frame_position = ToMc2Float3(collision_object.world_translation);
     data.frame_rotation = ToMc2Quaternion(collision_object.world_rotation);
-    data.frame_scale = mc2::float3{1.0f, 1.0f, 1.0f};
+    data.frame_scale = ScaleToMc2(collision_object.world_scale);
 
     const float radius = std::max(0.001f, collision_object.radius);
     if (collision_object.shape_type == "CAPSULE") {
@@ -1685,6 +1688,7 @@ void ApplyCollisionObjectInputs(RuntimeModule::SceneState& scene)
         CompiledCollisionObject& collision_object = scene.compiled_scene.collision_objects[it->second];
         collision_object.world_translation = collision_input.world_translation;
         collision_object.world_rotation = collision_input.world_rotation;
+        collision_object.world_scale = collision_input.world_scale;
         collision_object.linear_velocity = collision_input.linear_velocity;
         if (it->second < scene.mc2_collision_data.size()) {
             scene.mc2_collision_data[it->second] = ToMc2ColliderData(collision_object);
@@ -2206,7 +2210,8 @@ StepSceneResult RuntimeModule::StepScene(SceneHandle handle, float dt, int simul
                 simulation_power,
                 scene.time_state.simulation_delta_time,
                 scene.mc2_team_manager,
-                scene.mc2_virtual_mesh_manager
+                scene.mc2_virtual_mesh_manager,
+                scene.mc2_wind_manager
             );
             scene.mc2_simulation_manager.UpdateStepBasicPosture(
                 scene.mc2_team_manager,

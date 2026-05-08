@@ -120,6 +120,172 @@ float2 SphereMappingUV(const float3& position, const AABB& bounds, int index)
     return float2{v * 10.0f + add, u * 10.0f + add};
 }
 
+int2 TriangleEdgeAt(const int3& triangle, int edge_index)
+{
+    switch (edge_index) {
+    case 0:
+        return data::PackInt2(triangle.x, triangle.y);
+    case 1:
+        return data::PackInt2(triangle.y, triangle.z);
+    default:
+        return data::PackInt2(triangle.z, triangle.x);
+    }
+}
+
+float CalcTwoTriangleAngle(
+    const ExSimpleNativeArray<float3>& local_positions,
+    const int3& tri1,
+    const int3& tri2,
+    const int2& edge
+)
+{
+    const int vertex1 = data::RemainingData(tri1, edge);
+    const int vertex2 = data::RemainingData(tri2, edge);
+    if (edge.x < 0
+        || edge.y < 0
+        || vertex1 < 0
+        || vertex2 < 0
+        || edge.x >= local_positions.Count()
+        || edge.y >= local_positions.Count()
+        || vertex1 >= local_positions.Count()
+        || vertex2 >= local_positions.Count()) {
+        return 180.0f;
+    }
+
+    const float3 edge_vector =
+        Subtract(local_positions[edge.y], local_positions[edge.x]);
+    const float3 tri1_vector =
+        Subtract(local_positions[vertex1], local_positions[edge.x]);
+    const float3 tri2_vector =
+        Subtract(local_positions[vertex2], local_positions[edge.x]);
+    const float3 normal0 = Cross(edge_vector, tri1_vector);
+    const float3 normal1 = Cross(tri2_vector, edge_vector);
+    return Angle(normal0, normal1) * 57.29577951308232f;
+}
+
+bool CheckTwoTriangleOpen(
+    const ExSimpleNativeArray<float3>& local_positions,
+    const int3& tri2,
+    const int2& edge,
+    const float3& tri1_normal
+)
+{
+    const int vertex = data::RemainingData(tri2, edge);
+    if (edge.x < 0
+        || vertex < 0
+        || edge.x >= local_positions.Count()
+        || vertex >= local_positions.Count()) {
+        return true;
+    }
+    const float3 direction =
+        Normalize(Subtract(local_positions[vertex], local_positions[edge.x]));
+    return Dot(tri1_normal, direction) <= 0.0f;
+}
+
+void OptimizeTriangleDirection(
+    ExSimpleNativeArray<int3>& triangles,
+    std::vector<float3>& triangle_normals,
+    VirtualMesh::EdgeToTrianglesMap& edge_to_triangles,
+    const ExSimpleNativeArray<float3>& local_positions,
+    float same_surface_angle
+)
+{
+    const int triangle_count = triangles.Count();
+    if (triangle_count <= 0 || triangle_normals.size() < static_cast<std::size_t>(triangle_count)) {
+        return;
+    }
+    if (edge_to_triangles.empty()) {
+        return;
+    }
+
+    int start_index = 0;
+    std::unordered_set<int> used_triangles;
+    std::queue<int> triangle_queue;
+    std::vector<int> layer;
+    while (start_index < triangle_count) {
+        if (used_triangles.contains(start_index)) {
+            ++start_index;
+            continue;
+        }
+
+        used_triangles.insert(start_index);
+        triangle_queue.push(start_index);
+        layer.clear();
+        int open_count = 0;
+        int close_count = 0;
+
+        while (!triangle_queue.empty()) {
+            const int triangle_index = triangle_queue.front();
+            triangle_queue.pop();
+            if (triangle_index < 0 || triangle_index >= triangle_count) {
+                continue;
+            }
+
+            const float3 triangle_normal =
+                triangle_normals[static_cast<std::size_t>(triangle_index)];
+            const int3 triangle = triangles[triangle_index];
+            layer.push_back(triangle_index);
+
+            for (int edge_index = 0; edge_index < 3; ++edge_index) {
+                const int2 edge = TriangleEdgeAt(triangle, edge_index);
+                const auto found = edge_to_triangles.find(data::Pack32(edge.x, edge.y));
+                if (found == edge_to_triangles.end()) {
+                    continue;
+                }
+
+                for (std::uint16_t data : found->second) {
+                    const int other_index = static_cast<int>(data);
+                    if (other_index < 0
+                        || other_index >= triangle_count
+                        || used_triangles.contains(other_index)) {
+                        continue;
+                    }
+
+                    int3 other_triangle = triangles[other_index];
+                    const float3 other_normal =
+                        triangle_normals[static_cast<std::size_t>(other_index)];
+                    const float angle = CalcTwoTriangleAngle(
+                        local_positions,
+                        triangle,
+                        other_triangle,
+                        edge
+                    );
+                    if (angle > same_surface_angle) {
+                        continue;
+                    }
+
+                    if (Dot(triangle_normal, other_normal) < 0.0f) {
+                        other_triangle = FlipTriangle(other_triangle);
+                        triangles[other_index] = other_triangle;
+                        triangle_normals[static_cast<std::size_t>(other_index)] =
+                            Scale(other_normal, -1.0f);
+                    }
+
+                    if (CheckTwoTriangleOpen(local_positions, other_triangle, edge, triangle_normal)) {
+                        ++open_count;
+                    } else {
+                        ++close_count;
+                    }
+
+                    used_triangles.insert(other_index);
+                    triangle_queue.push(other_index);
+                }
+            }
+        }
+
+        if (close_count > open_count) {
+            for (int triangle_index : layer) {
+                if (triangle_index < 0 || triangle_index >= triangle_count) {
+                    continue;
+                }
+                triangles[triangle_index] = FlipTriangle(triangles[triangle_index]);
+                triangle_normals[static_cast<std::size_t>(triangle_index)] =
+                    Scale(triangle_normals[static_cast<std::size_t>(triangle_index)], -1.0f);
+            }
+        }
+    }
+}
+
 template <typename T>
 void CopyTransformArray(ExNativeArray<T>& array, const std::vector<int>& indices)
 {
@@ -437,6 +603,37 @@ void VirtualMesh::BuildVertexToTriangles()
         vertex_to_triangles[triangle.z].Set(static_cast<std::uint32_t>(triangle_index));
     }
 
+    // Triangle direction optimization and later edge consumers must use the
+    // topology for the current triangle list. Reduction/optimization can leave
+    // an older serialized cache behind, so rebuild it instead of trusting a
+    // non-empty map.
+    BuildEdgeToTriangles();
+    OptimizeTriangleDirection(
+        triangles,
+        triangle_normals,
+        edge_to_triangles,
+        local_positions,
+        define::system::SameSurfaceAngle
+    );
+    BuildEdgeToTriangles();
+    for (int triangle_index = 0; triangle_index < triangle_count; ++triangle_index) {
+        const int3 triangle = triangles[triangle_index];
+        if (!IsValidVertexIndex(triangle.x, vertex_count)
+            || !IsValidVertexIndex(triangle.y, vertex_count)
+            || !IsValidVertexIndex(triangle.z, vertex_count)) {
+            continue;
+        }
+        const float3 p0 = local_positions[triangle.x];
+        const float3 p1 = local_positions[triangle.y];
+        const float3 p2 = local_positions[triangle.z];
+        const float2 uv0 = triangle.x < uv.Count() ? uv[triangle.x] : float2{};
+        const float2 uv1 = triangle.y < uv.Count() ? uv[triangle.y] : float2{};
+        const float2 uv2 = triangle.z < uv.Count() ? uv[triangle.z] : float2{};
+        triangle_normals[static_cast<std::size_t>(triangle_index)] = TriangleNormal(p0, p1, p2);
+        triangle_tangents[static_cast<std::size_t>(triangle_index)] =
+            TriangleTangent(p0, p1, p2, uv0, uv1, uv2);
+    }
+
     for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
         VertexTriangleList triangle_list = vertex_to_triangles[vertex_index];
         const int count = triangle_list.Length();
@@ -555,6 +752,42 @@ void VirtualMesh::BuildVertexToTriangles()
             triangle_list[index] = data::Pack12_20(flip_flag, triangle_index);
         }
         vertex_to_triangles[vertex_index] = triangle_list;
+
+        // MC2 Proxy_CalcVertexNormalTangentFromTriangleJob writes the
+        // triangle-derived normal/binormal back into the proxy vertex. This
+        // feed is important for BoneCloth baseline pose and collision radius
+        // curves because later jobs treat localTangents as binormal/up.
+        float3 normal{};
+        float3 tangent{};
+        for (int index = 0; index < count; ++index) {
+            const std::uint32_t packed = triangle_list[index];
+            const int flip_flag = data::Unpack12_20Hi(packed);
+            const int triangle_index = data::Unpack12_20Low(packed);
+            if (triangle_index < 0 || triangle_index >= triangle_count) {
+                continue;
+            }
+
+            const float normal_sign = (flip_flag & 0x1) == 0 ? 1.0f : -1.0f;
+            const float tangent_sign = (flip_flag & 0x2) == 0 ? 1.0f : -1.0f;
+            normal = Add(
+                normal,
+                Scale(triangle_normals[static_cast<std::size_t>(triangle_index)], normal_sign)
+            );
+            tangent = Add(
+                tangent,
+                Scale(triangle_tangents[static_cast<std::size_t>(triangle_index)], tangent_sign)
+            );
+        }
+
+        if (LengthSquared(normal) > define::system::Epsilon
+            && LengthSquared(tangent) > define::system::Epsilon) {
+            normal = Normalize(normal);
+            const float3 binormal = Normalize(Cross(normal, tangent));
+            if (LengthSquared(binormal) > define::system::Epsilon) {
+                local_normals[vertex_index] = normal;
+                local_tangents[vertex_index] = binormal;
+            }
+        }
     }
 }
 
@@ -624,7 +857,11 @@ void VirtualMesh::BuildVertexToVertexFromTopology()
     vertex_to_vertex_data_array.AddRange(vertex_data);
     vertex_to_vertex_index_array.AddRange(vertex_indices);
 
-    if (edges.Count() == 0 && !edge_list.empty()) {
+    // MC2 rebuilds the proxy edge set from the current triangle/line topology.
+    // Keeping an older edge array after reduction or duplicate-triangle removal
+    // corrupts edge collision, self edge primitives, and triangle bending pairs.
+    edges.Dispose();
+    if (!edge_list.empty()) {
         edges.AddRange(edge_list);
     }
 }
@@ -690,6 +927,17 @@ void VirtualMesh::BuildEdgeFlags()
         }
         edge_flags[edge_index] = flag;
     }
+}
+
+void VirtualMesh::RefreshDerivedTopology()
+{
+    // Porting guardrail: MC2 rebuilds proxy adjacency from the current
+    // topology after import/reduction-style mutations. In native C++ we keep
+    // these caches as member arrays, so make the refresh explicit.
+    BuildVertexToTriangles();
+    BuildVertexToVertexFromTopology();
+    BuildEdgeToTriangles();
+    BuildEdgeFlags();
 }
 
 void VirtualMesh::ConvertInvalidToFixed()
@@ -1492,15 +1740,13 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
         return;
     }
 
-    std::vector<std::vector<int>> adjacency(static_cast<std::size_t>(vertex_count));
-    const int edge_count = edges.Count();
-    for (int edge_index = 0; edge_index < edge_count; ++edge_index) {
-        const int2 edge = edges[edge_index];
-        if (edge.x < 0 || edge.y < 0 || edge.x >= vertex_count || edge.y >= vertex_count) {
-            continue;
-        }
-        adjacency[static_cast<std::size_t>(edge.x)].push_back(edge.y);
-        adjacency[static_cast<std::size_t>(edge.y)].push_back(edge.x);
+    if (vertex_to_vertex_index_array.Count() < vertex_count) {
+        BuildVertexToVertexFromTopology();
+    }
+    if (vertex_to_vertex_index_array.Count() < vertex_count) {
+        vertex_parent_indices.AddRange(vertex_count, -1);
+        vertex_child_index_array.AddRange(vertex_count, std::uint32_t{});
+        return;
     }
 
     std::vector<int> fixed_vertices;
@@ -1525,24 +1771,61 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
     }
     center_fixed_list.AddRange(fixed_vertex_indices);
     vertex_parent_indices.AddRange(vertex_count, -1);
+
+    struct BaseLineWork {
+        int vertex_index = -1;
+        float distance = 0.0f;
+    };
+
+    data::MultiDataBuilder<std::uint16_t> child_builder(vertex_count, vertex_count);
     std::vector<std::uint8_t> mark(static_cast<std::size_t>(vertex_count), 0);
-    std::vector<int> current;
+    std::vector<BaseLineWork> current;
     current.reserve(fixed_vertices.size());
     for (int vertex_index : fixed_vertices) {
-        current.push_back(vertex_index);
-        mark[static_cast<std::size_t>(vertex_index)] = 1;
+        current.push_back(BaseLineWork{vertex_index, 0.0f});
     }
 
+    const auto read_neighbors = [this, vertex_count](int vertex_index, auto&& visitor) {
+        if (vertex_index < 0
+            || vertex_index >= vertex_count
+            || vertex_index >= vertex_to_vertex_index_array.Count()) {
+            return;
+        }
+
+        int data_count = 0;
+        int data_start = 0;
+        data::Unpack12_20(vertex_to_vertex_index_array[vertex_index], data_count, data_start);
+        for (int offset = 0; offset < data_count; ++offset) {
+            const int data_index = data_start + offset;
+            if (data_index < 0 || data_index >= vertex_to_vertex_data_array.Count()) {
+                continue;
+            }
+            const int target = vertex_to_vertex_data_array[data_index];
+            if (target >= 0 && target < vertex_count) {
+                visitor(target);
+            }
+        }
+    };
+
     while (!current.empty()) {
+        for (const BaseLineWork& work : current) {
+            const int vertex_index = work.vertex_index;
+            if (vertex_index < 0 || vertex_index >= vertex_count) {
+                continue;
+            }
+            mark[static_cast<std::size_t>(vertex_index)] = 1;
+        }
+
         std::sort(
             current.begin(),
             current.end(),
-            [this](int a, int b) {
-                return local_positions[a].x < local_positions[b].x;
+            [](const BaseLineWork& lhs, const BaseLineWork& rhs) {
+                return lhs.distance < rhs.distance;
             }
         );
 
-        for (int vertex_index : current) {
+        for (const BaseLineWork& work : current) {
+            const int vertex_index = work.vertex_index;
             if (vertex_index < 0 || vertex_index >= vertex_count) {
                 continue;
             }
@@ -1552,9 +1835,13 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
 
             ExCostSortedList1 cost{-1.0f, -1};
             const float3 position = local_positions[vertex_index];
-            for (int target : adjacency[static_cast<std::size_t>(vertex_index)]) {
-                if (target < 0 || target >= vertex_count || mark[static_cast<std::size_t>(target)] == 0) {
-                    continue;
+            read_neighbors(vertex_index, [&](int target) {
+                if (mark[static_cast<std::size_t>(target)] == 0) {
+                    return;
+                }
+
+                if (target < 0 || target >= vertex_count) {
+                    return;
                 }
 
                 const float3 target_position = local_positions[target];
@@ -1563,7 +1850,7 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
                 } else {
                     const int parent_index = vertex_parent_indices[target];
                     if (parent_index < 0 || parent_index >= vertex_count) {
-                        continue;
+                        return;
                     }
                     const float angle = Angle(
                         Subtract(target_position, position),
@@ -1571,7 +1858,7 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
                     );
                     cost.Add(angle, target);
                 }
-            }
+            });
 
             if (cost.IsValid()) {
                 vertex_parent_indices[vertex_index] = cost.Data();
@@ -1579,50 +1866,189 @@ void VirtualMesh::BuildMeshBaseLinesFromEdges()
             }
         }
 
-        for (int vertex_index : current) {
+        for (const BaseLineWork& work : current) {
+            const int vertex_index = work.vertex_index;
             if (vertex_index >= 0 && vertex_index < vertex_count) {
                 mark[static_cast<std::size_t>(vertex_index)] = 2;
+                const int parent_index = vertex_parent_indices[vertex_index];
+                if (parent_index >= 0 && parent_index < vertex_count) {
+                    child_builder.Add(
+                        parent_index,
+                        static_cast<std::uint16_t>(vertex_index)
+                    );
+                }
             }
         }
 
         std::vector<float> best_distance(static_cast<std::size_t>(vertex_count), std::numeric_limits<float>::max());
-        std::vector<int> next;
-        for (int vertex_index : current) {
+        std::vector<BaseLineWork> next;
+        for (const BaseLineWork& work : current) {
+            const int vertex_index = work.vertex_index;
             if (vertex_index < 0 || vertex_index >= vertex_count) {
                 continue;
             }
             const float3 position = local_positions[vertex_index];
-            for (int target : adjacency[static_cast<std::size_t>(vertex_index)]) {
+            read_neighbors(vertex_index, [&](int target) {
                 if (target < 0
                     || target >= vertex_count
                     || attributes[target].IsInvalid()
                     || mark[static_cast<std::size_t>(target)] != 0) {
-                    continue;
+                    return;
                 }
 
                 const float distance = Distance(position, local_positions[target]);
                 if (distance < best_distance[static_cast<std::size_t>(target)]) {
                     if (best_distance[static_cast<std::size_t>(target)]
                         == std::numeric_limits<float>::max()) {
-                        next.push_back(target);
+                        next.push_back(BaseLineWork{target, distance});
+                    } else {
+                        for (BaseLineWork& candidate : next) {
+                            if (candidate.vertex_index == target) {
+                                candidate.distance = distance;
+                                break;
+                            }
+                        }
                     }
                     best_distance[static_cast<std::size_t>(target)] = distance;
                 }
-            }
+            });
         }
 
         std::sort(
             next.begin(),
             next.end(),
-            [&best_distance](int a, int b) {
-                return best_distance[static_cast<std::size_t>(a)]
-                    < best_distance[static_cast<std::size_t>(b)];
+            [](const BaseLineWork& lhs, const BaseLineWork& rhs) {
+                return lhs.distance < rhs.distance;
             }
         );
         current = std::move(next);
     }
 
-    BuildBaseLinesFromParents();
+    const auto [child_data, child_index] = child_builder.ToArray();
+    vertex_child_data_array.AddRange(child_data);
+    vertex_child_index_array.AddRange(child_index);
+
+    std::vector<BitFlag8> line_flags;
+    std::vector<std::uint16_t> start_indices;
+    std::vector<std::uint16_t> data_counts;
+    std::vector<std::uint16_t> indices;
+    line_flags.reserve(fixed_vertices.size());
+    start_indices.reserve(fixed_vertices.size());
+    data_counts.reserve(fixed_vertices.size());
+    indices.reserve(static_cast<std::size_t>(vertex_count));
+
+    std::stack<int> stack;
+    for (int fixed_vertex : fixed_vertices) {
+        if (fixed_vertex < 0
+            || fixed_vertex >= vertex_count
+            || child_builder.CountValuesForKey(fixed_vertex) == 0) {
+            continue;
+        }
+
+        const std::uint16_t start = static_cast<std::uint16_t>(indices.size());
+        std::uint16_t count = 0;
+        BitFlag8 line_flag;
+        stack.push(fixed_vertex);
+        while (!stack.empty()) {
+            const int vertex_index = stack.top();
+            stack.pop();
+            if (vertex_index < 0 || vertex_index >= vertex_count) {
+                continue;
+            }
+
+            indices.push_back(static_cast<std::uint16_t>(vertex_index));
+            ++count;
+            if (!attributes[vertex_index].IsSet(VertexAttribute::FlagTriangle)) {
+                line_flag.SetFlag(BaseLineFlagIncludeLine, true);
+            }
+
+            int data_count = 0;
+            int data_start = 0;
+            data::Unpack12_20(
+                child_index[static_cast<std::size_t>(vertex_index)],
+                data_count,
+                data_start
+            );
+            for (int offset = 0; offset < data_count; ++offset) {
+                const int data_index = data_start + offset;
+                if (data_index >= 0 && data_index < static_cast<int>(child_data.size())) {
+                    stack.push(child_data[static_cast<std::size_t>(data_index)]);
+                }
+            }
+        }
+
+        line_flags.push_back(line_flag);
+        start_indices.push_back(start);
+        data_counts.push_back(count);
+    }
+
+    base_line_flags.AddRange(line_flags);
+    base_line_start_data_indices.AddRange(start_indices);
+    base_line_data_counts.AddRange(data_counts);
+    base_line_data.AddRange(indices);
+
+    vertex_local_positions.AddRange(vertex_count, float3{});
+    vertex_local_rotations.AddRange(vertex_count, quaternion{});
+    for (int data_index = 0; data_index < base_line_data.Count(); ++data_index) {
+        const int vertex_index = base_line_data[data_index];
+        const int parent_index = vertex_parent_indices[vertex_index];
+        if (parent_index < 0 || parent_index >= vertex_count) {
+            vertex_local_positions[vertex_index] = float3{};
+            vertex_local_rotations[vertex_index] = quaternion{};
+            continue;
+        }
+
+        const float3 parent_position = local_positions[parent_index];
+        const float3 parent_normal =
+            parent_index < local_normals.Count() ? local_normals[parent_index] : float3{0.0f, 1.0f, 0.0f};
+        const float3 parent_tangent =
+            parent_index < local_tangents.Count() ? local_tangents[parent_index] : float3{0.0f, 0.0f, 1.0f};
+        const quaternion inverse_parent_rotation =
+            Inverse(ToRotation(parent_normal, parent_tangent));
+
+        const float3 position = local_positions[vertex_index];
+        const float3 normal =
+            vertex_index < local_normals.Count() ? local_normals[vertex_index] : float3{0.0f, 1.0f, 0.0f};
+        const float3 tangent =
+            vertex_index < local_tangents.Count() ? local_tangents[vertex_index] : float3{0.0f, 0.0f, 1.0f};
+
+        vertex_local_positions[vertex_index] =
+            Rotate(inverse_parent_rotation, Subtract(position, parent_position));
+        vertex_local_rotations[vertex_index] =
+            Multiply(inverse_parent_rotation, ToRotation(normal, tangent));
+    }
+
+    std::vector<float> root_lengths(static_cast<std::size_t>(vertex_count), 0.0f);
+    vertex_root_indices.AddRange(vertex_count, -1);
+    vertex_depths.AddRange(vertex_count, 0.0f);
+    float max_length = 0.0f;
+    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+        int root_index = -1;
+        float root_length = 0.0f;
+        if (attributes[vertex_index].IsMove()) {
+            int current_vertex = vertex_index;
+            int parent_index = vertex_parent_indices[current_vertex];
+            int guard = 0;
+            while (parent_index >= 0 && parent_index < vertex_count && guard++ < vertex_count) {
+                root_length += Distance(local_positions[current_vertex], local_positions[parent_index]);
+                root_index = parent_index;
+                if (!attributes[parent_index].IsMove()) {
+                    break;
+                }
+                current_vertex = parent_index;
+                parent_index = vertex_parent_indices[current_vertex];
+            }
+        }
+        vertex_root_indices[vertex_index] = root_index;
+        root_lengths[static_cast<std::size_t>(vertex_index)] = root_length;
+        max_length = std::max(max_length, root_length);
+    }
+    if (max_length > define::system::Epsilon) {
+        for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+            vertex_depths[vertex_index] =
+                SafeDepth(root_lengths[static_cast<std::size_t>(vertex_index)], max_length);
+        }
+    }
 }
 
 void VirtualMesh::BuildTransformBaseLines()
@@ -2098,6 +2524,7 @@ void VirtualMesh::Reduction(const ReductionSettings& settings)
         if (result.Failed()) {
             return;
         }
+        RefreshDerivedTopology();
         CalcAverageAndMaxVertexDistanceRun();
     } catch (...) {
         result = Result::Error(ResultCode::Reduction_Exception, "VirtualMesh reduction failed.");
@@ -2667,27 +3094,29 @@ void VirtualMesh::BuildBaseLinesFromParents()
     for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
         int root_index = -1;
         float root_length = 0.0f;
-        int current = vertex_index;
-        int guard = 0;
-        while (current >= 0 && current < vertex_count && guard++ < vertex_count) {
-            const int parent = vertex_parent_indices[current];
-            if (parent < 0 || parent >= vertex_count) {
-                break;
+        if (attributes[vertex_index].IsMove()) {
+            int current = vertex_index;
+            int parent = vertex_parent_indices[current];
+            int guard = 0;
+            while (parent >= 0 && parent < vertex_count && guard++ < vertex_count) {
+                root_length += Distance(local_positions[current], local_positions[parent]);
+                root_index = parent;
+                if (!attributes[parent].IsMove()) {
+                    break;
+                }
+                current = parent;
+                parent = vertex_parent_indices[current];
             }
-            root_index = parent;
-            root_length += Distance(local_positions[current], local_positions[parent]);
-            if (attributes[parent].IsDontMove()) {
-                break;
-            }
-            current = parent;
         }
         vertex_root_indices[vertex_index] = root_index;
         root_lengths[static_cast<std::size_t>(vertex_index)] = root_length;
         max_length = std::max(max_length, root_length);
     }
-    for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-        vertex_depths[vertex_index] =
-            SafeDepth(root_lengths[static_cast<std::size_t>(vertex_index)], max_length);
+    if (max_length > define::system::Epsilon) {
+        for (int vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+            vertex_depths[vertex_index] =
+                SafeDepth(root_lengths[static_cast<std::size_t>(vertex_index)], max_length);
+        }
     }
 }
 
@@ -2986,9 +3415,7 @@ void VirtualMesh::ConvertProxyMesh(
         custom_skinning_bone_indices.clear();
     }
 
-    BuildVertexToTriangles();
-    BuildVertexToVertexFromTopology();
-    BuildEdgeToTriangles();
+    RefreshDerivedTopology();
     CreateProxyFixedListAndAABB();
     if (is_bone_cloth) {
         BuildTransformBaseLines();
@@ -3002,7 +3429,6 @@ void VirtualMesh::ConvertProxyMesh(
         CreateVertexToTransformRotations();
     }
     CreateVertexBindPose();
-    BuildEdgeFlags();
 
     center_world_position = TransformPoint(local_center_position, init_local_to_world);
     center_world_rotation = init_rotation;

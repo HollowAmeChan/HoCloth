@@ -13,6 +13,7 @@ namespace hocloth::mc2 {
 
 class TeamManager;
 class VirtualMeshManager;
+class WindManager;
 
 // Port target for Magica Cloth 2: Scripts/Core/Manager/Simulation/SimulationManager.cs
 class SimulationManager final : public IManager {
@@ -115,7 +116,8 @@ public:
         const float4& simulation_power,
         float simulation_delta_time,
         const TeamManager& team_manager,
-        const VirtualMeshManager& virtual_mesh_manager
+        const VirtualMeshManager& virtual_mesh_manager,
+        const WindManager& wind_manager
     );
     void UpdateStepBasicPosture(
         const TeamManager& team_manager,

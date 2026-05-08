@@ -2,6 +2,7 @@
 
 #include "hocloth/manager/team/team_manager.hpp"
 #include "hocloth/manager/virtual_mesh/virtual_mesh_manager.hpp"
+#include "hocloth/manager/simulation/wind_manager.hpp"
 #include "hocloth/utility/data/data_utility.hpp"
 #include "hocloth/utility/math/math_extensions.hpp"
 #include "hocloth/utility/math/math_utility.hpp"
@@ -44,6 +45,121 @@ float Sign(float value)
         return -1.0f;
     }
     return 0.0f;
+}
+
+float Frac(float value)
+{
+    return value - std::floor(value);
+}
+
+float LerpFloat(float a, float b, float t)
+{
+    return a + (b - a) * t;
+}
+
+float HashNoise2(float x, float y)
+{
+    const float value = std::sin(x * 12.9898f + y * 78.233f) * 43758.5453f;
+    return Frac(value) * 2.0f - 1.0f;
+}
+
+float2 CNoise2(float x, float y)
+{
+    return float2{HashNoise2(x, y), HashNoise2(y, x)};
+}
+
+float3 WindForceBlend(
+    const TeamWindInfo& wind_info,
+    const WindParams& wind_params,
+    const float3& wind_position,
+    float wind_turbulence
+)
+{
+    if (wind_info.main < 0.01f) {
+        return float3{};
+    }
+
+    const float wind_main_ratio = wind_info.main / define::system::WindBaseSpeed;
+    const float3 sin_position = Add(wind_position, float3{wind_info.time * 10.0f, wind_info.time * 10.0f, wind_info.time * 10.0f});
+    const float2 sin_xy{std::sin(sin_position.x), std::sin(sin_position.y)};
+    const float3 noise_position = Add(wind_position, float3{wind_info.time * 2.3132f, wind_info.time * 2.3132f, wind_info.time * 2.3132f});
+    float2 noise_xy = CNoise2(noise_position.x, noise_position.y);
+    noise_xy.x *= 2.3f;
+    noise_xy.y *= 2.3f;
+    const float2 wave_xy{
+        LerpFloat(sin_xy.x, noise_xy.x, wind_params.blend),
+        LerpFloat(sin_xy.y, noise_xy.y, wind_params.blend),
+    };
+
+    wind_turbulence *= wind_params.turbulence;
+    constexpr float radians_per_degree = 0.017453292519943295f;
+    float3 angle{
+        wave_xy.x * 45.0f * radians_per_degree,
+        wave_xy.y * 45.0f * radians_per_degree,
+        0.0f,
+    };
+    angle.y *= LerpFloat(0.1f, 0.5f, wind_params.blend);
+    angle = Scale(angle, wind_turbulence);
+    const quaternion wave_rotation = Multiply(
+        Multiply(
+            AxisAngle(float3{0.0f, 1.0f, 0.0f}, angle.y),
+            AxisAngle(float3{1.0f, 0.0f, 0.0f}, angle.x)
+        ),
+        AxisAngle(float3{0.0f, 0.0f, 1.0f}, angle.z)
+    );
+    const quaternion direction_rotation = AxisQuaternion(wind_info.direction);
+    const float3 direction = Rotate(Multiply(direction_rotation, wave_rotation), float3{0.0f, 0.0f, 1.0f});
+    return Scale(direction, wind_main_ratio);
+}
+
+float3 CalcWindForce(
+    int team_id,
+    const TeamManager::TeamData& team_data,
+    const WindParams& wind_params,
+    const TeamWindData& team_wind_data,
+    const ExNativeArray<WindManager::WindData>& wind_data_array,
+    int vertex_index,
+    int particle_index,
+    float depth,
+    float friction,
+    const ExSimpleNativeArray<int>& vertex_root_indices
+)
+{
+    float3 wind_force{};
+    const int root_index =
+        vertex_index >= 0 && vertex_index < vertex_root_indices.Count()
+            ? vertex_root_indices[vertex_index]
+            : -1;
+    const float sync_scale = (1.0f - wind_params.synchronization) * 100.0f;
+    const float3 wind_position{
+        static_cast<float>(team_id + 1) * 4.19230645f + static_cast<float>(root_index) * 0.0023963f * sync_scale,
+        static_cast<float>(team_id + 1) * 4.19230645f + static_cast<float>(root_index) * 0.0023963f * sync_scale,
+        static_cast<float>(team_id + 1) * 4.19230645f + static_cast<float>(root_index) * 0.0023963f * sync_scale,
+    };
+
+    for (int index = 0; index < team_wind_data.ZoneCount(); ++index) {
+        const TeamWindInfo& wind_info = team_wind_data.wind_zone_list[static_cast<std::size_t>(index)];
+        float turbulence = 1.0f;
+        if (wind_info.wind_id >= 0 && wind_info.wind_id < wind_data_array.Length()) {
+            turbulence = wind_data_array[wind_info.wind_id].turbulence;
+        }
+        wind_force = Add(wind_force, WindForceBlend(wind_info, wind_params, wind_position, turbulence));
+    }
+
+    if (wind_params.moving_wind > 0.01f) {
+        wind_force = Add(
+            wind_force,
+            WindForceBlend(team_wind_data.moving_wind, wind_params, wind_position, 1.0f)
+        );
+    }
+
+    float influence = wind_params.influence;
+    influence *= (1.0f - friction);
+    const float depth_scale = depth * depth;
+    influence *= LerpFloat(1.0f, depth_scale, wind_params.depth_weight);
+    (void)team_data;
+    (void)particle_index;
+    return Scale(wind_force, influence);
 }
 
 float3 ApplySpring(
@@ -787,7 +903,8 @@ void SimulationManager::StartSimulationStep(
     const float4& simulation_power,
     float simulation_delta_time,
     const TeamManager& team_manager,
-    const VirtualMeshManager& virtual_mesh_manager
+    const VirtualMeshManager& virtual_mesh_manager,
+    const WindManager& wind_manager
 )
 {
     // Ported from Magica Cloth 2: Scripts/Core/Manager/Simulation/SimulationManager.cs StartSimulationStepJob
@@ -799,8 +916,10 @@ void SimulationManager::StartSimulationStep(
     const auto& step_buffer = step_particles.Buffer();
     const auto& attributes = virtual_mesh_manager.Attributes();
     const auto& depths = virtual_mesh_manager.VertexDepths();
+    const auto& vertex_root_indices = virtual_mesh_manager.VertexRootIndices();
     const auto& proxy_positions = virtual_mesh_manager.Positions();
     const auto& proxy_rotations = virtual_mesh_manager.Rotations();
+    const auto& wind_data_array = wind_manager.WindDataArray();
 
     for (int step_index = 0; step_index < step_particles.Count(); ++step_index) {
         const int particle_index = step_buffer[static_cast<std::size_t>(step_index)];
@@ -900,6 +1019,25 @@ void SimulationManager::StartSimulationStep(
                 break;
             }
             force = Add(force, external_force);
+            if (parameters.wind.IsValid()) {
+                const float friction =
+                    particle_index < friction_array_.Length() ? friction_array_[particle_index] : 0.0f;
+                force = Add(
+                    force,
+                    CalcWindForce(
+                        team_id,
+                        team_data,
+                        parameters.wind,
+                        team_manager.GetTeamWindData(team_id),
+                        wind_data_array,
+                        vertex_index,
+                        particle_index,
+                        depth,
+                        friction,
+                        vertex_root_indices
+                    )
+                );
+            }
             force = Scale(force, team_data.scale_ratio);
 
             velocity = Add(velocity, Scale(force, simulation_delta_time * simulation_power.x));
@@ -1097,20 +1235,110 @@ void SimulationManager::EndSimulationStepSolve(
         }
 
         const VertexAttribute attr = attributes[vertex_index];
-        const float3 next_position = next_pos_array_[particle_index];
+        const float depth =
+            vertex_index < virtual_mesh_manager.VertexDepths().Length()
+                ? virtual_mesh_manager.VertexDepths()[vertex_index]
+                : 0.0f;
+        float3 next_position = next_pos_array_[particle_index];
         const float3 old_position = old_pos_array_[particle_index];
 
         if (attr.IsMove() || team_data.IsSpring()) {
-            const float3 velocity_old_position = velocity_pos_array_[particle_index];
+            float3 velocity_old_position = velocity_pos_array_[particle_index];
+            float friction = particle_index < friction_array_.Length()
+                ? friction_array_[particle_index]
+                : 0.0f;
+            const float3 collision_normal = particle_index < collision_normal_array_.Length()
+                ? collision_normal_array_[particle_index]
+                : float3{};
+            const bool is_collision =
+                LengthSquared(collision_normal) > define::system::Epsilon;
+            const float static_friction_param =
+                parameters.collider_collision_constraint.static_friction * team_data.scale_ratio;
+            const float dynamic_friction_param =
+                parameters.collider_collision_constraint.dynamic_friction;
+
+            float static_friction = particle_index < static_friction_array_.Length()
+                ? static_friction_array_[particle_index]
+                : 0.0f;
+            if (is_collision && friction > 0.0f && static_friction_param > 0.0f) {
+                float3 tangent_vector =
+                    ProjectOnPlane(Subtract(next_position, old_position), collision_normal);
+                const float tangent_velocity =
+                    Length(tangent_vector) / simulation_delta_time;
+                if (tangent_velocity < static_friction_param) {
+                    static_friction = Clamp01(static_friction + 0.04f);
+                } else {
+                    const float velocity = tangent_velocity - static_friction_param;
+                    const float value = std::max(velocity / 0.2f, 0.05f);
+                    static_friction = Clamp01(static_friction - value);
+                }
+
+                tangent_vector = Scale(tangent_vector, static_friction);
+                next_position = Subtract(next_position, tangent_vector);
+                velocity_old_position = Subtract(velocity_old_position, tangent_vector);
+            } else {
+                static_friction = Clamp01(static_friction - 0.05f);
+            }
+            if (particle_index < static_friction_array_.Length()) {
+                static_friction_array_[particle_index] = static_friction;
+            }
+
             float3 velocity =
                 Scale(Subtract(next_position, velocity_old_position), 1.0f / simulation_delta_time);
+            const float velocity_sq = LengthSquared(velocity);
+            const float3 normal_velocity = velocity_sq > define::system::Epsilon
+                ? Normalize(velocity)
+                : float3{};
+
+            if (friction > define::system::Epsilon
+                && is_collision
+                && dynamic_friction_param > 0.0f
+                && velocity_sq >= define::system::Epsilon) {
+                float dot = Dot(collision_normal, normal_velocity);
+                dot = 0.5f + 0.5f * dot;
+                dot *= dot;
+                dot = 1.0f - dot;
+                velocity = Subtract(
+                    velocity,
+                    Scale(velocity, dot * Clamp01(friction * dynamic_friction_param))
+                );
+            }
+
+            friction *= define::system::FrictionDampingRate;
+            if (particle_index < friction_array_.Length()) {
+                friction_array_[particle_index] = friction;
+            }
 
             if (parameters.inertia_constraint.particle_speed_limit >= 0.0f) {
                 const float max_speed =
                     parameters.inertia_constraint.particle_speed_limit * team_data.scale_ratio;
-                const float speed = Length(velocity);
-                if (speed > max_speed && speed > 0.0f) {
-                    velocity = Scale(velocity, max_speed / speed);
+                velocity = ClampVector(velocity, max_speed);
+            }
+
+            const InertiaCenterData& center_data = team_manager.GetCenterData(team_id);
+            if (center_data.angular_velocity > define::system::Epsilon
+                && parameters.inertia_constraint.centrifugal_acceleration > define::system::Epsilon
+                && velocity_sq >= define::system::Epsilon) {
+                const float3 local_position =
+                    Subtract(next_position, center_data.now_world_position);
+                const float3 projected =
+                    ProjectOnPlane(local_position, center_data.rotation_axis);
+                const float radius = Length(projected);
+                if (radius > define::system::Epsilon) {
+                    const float3 normal = Scale(projected, 1.0f / radius);
+                    const float angular_velocity = center_data.angular_velocity;
+                    const float mass = 1.0f + (1.0f - depth);
+                    float force = mass * angular_velocity * angular_velocity * radius;
+                    const float3 tangent =
+                        Normalize(Cross(center_data.rotation_axis, normal));
+                    force *= Clamp01(Dot(normal_velocity, tangent));
+                    velocity = Add(
+                        velocity,
+                        Scale(
+                            normal,
+                            force * parameters.inertia_constraint.centrifugal_acceleration * 0.02f
+                        )
+                    );
                 }
             }
 
@@ -1119,6 +1347,7 @@ void SimulationManager::EndSimulationStepSolve(
 
         real_velocity_array_[particle_index] =
             Scale(Subtract(next_position, old_position), 1.0f / simulation_delta_time);
+        next_pos_array_[particle_index] = next_position;
         old_pos_array_[particle_index] = next_position;
     }
 }

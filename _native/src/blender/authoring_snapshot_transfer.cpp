@@ -718,6 +718,9 @@ CompiledScene ParseAuthoringSnapshot(const nb::dict& root)
         if (collider_dict.contains("world_rotation")) {
             collision_object.world_rotation = ReadQuat(collider_dict["world_rotation"]);
         }
+        if (collider_dict.contains("world_scale")) {
+            collision_object.world_scale = ReadVec3(collider_dict["world_scale"]);
+        }
         valid_collider_ids.insert(component_id);
         collision_object_id_by_collider_id[component_id] = collision_object.collision_object_id;
         scene.collision_objects.push_back(std::move(collision_object));

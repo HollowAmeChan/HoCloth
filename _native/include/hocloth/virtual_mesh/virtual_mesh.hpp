@@ -114,6 +114,7 @@ public:
     void BuildVertexToVertexFromTopology();
     void BuildEdgeToTriangles();
     void BuildEdgeFlags();
+    void RefreshDerivedTopology();
     void ConvertInvalidToFixed();
     void ApplySelectionAttribute(
         const SelectionData& selection_data,

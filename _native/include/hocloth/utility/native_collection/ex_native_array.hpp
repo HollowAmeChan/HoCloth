@@ -161,6 +161,21 @@ public:
         return chunk;
     }
 
+    DataChunk AddRange(const ExSimpleNativeArray<T>& values, int length)
+    {
+        if (length <= 0) {
+            return DataChunk::Empty();
+        }
+        assert(length <= values.Count());
+        const DataChunk chunk = AddRange(length);
+        std::copy(
+            values.Data().begin(),
+            values.Data().begin() + length,
+            storage_.begin() + chunk.start_index
+        );
+        return chunk;
+    }
+
     DataChunk AddRange(const ExNativeArray<T>& values, DataChunk source_chunk)
     {
         if (!source_chunk.IsValid()) {

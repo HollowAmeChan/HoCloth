@@ -224,7 +224,7 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
         collision_object_id = f"collision::{component_id}"
         source_object_name = collider_data.get("object_name", "")
         source_object = scene.objects.get(source_object_name) if source_object_name else None
-        translation, rotation, _scale = _object_transform_input(source_object)
+        translation, rotation, scale = _object_transform_input(source_object)
         linear_velocity = (0.0, 0.0, 0.0)
         previous_state = _INPUT_STATE["collision_object_states"].get(collision_object_id)
         if previous_state is not None and frame_delta in (-1, 1):
@@ -240,6 +240,7 @@ def build_runtime_inputs(scene, authoring_snapshot: dict | None) -> dict:
                 "collision_object_id": collision_object_id,
                 "world_translation": translation,
                 "world_rotation": rotation,
+                "world_scale": scale,
                 "linear_velocity": linear_velocity,
             }
         )

@@ -316,6 +316,7 @@ def _mc2_collider_snapshot(item, collider):
         return None
 
     world_matrix = collider_object.matrix_world.copy()
+    world_scale = tuple(float(axis) for axis in world_matrix.to_scale())
     shape_type = collider.collider_type
     mc2_component_type = {
         "SPHERE": "MagicaSphereCollider",
@@ -348,6 +349,7 @@ def _mc2_collider_snapshot(item, collider):
         "capsule_end_radius": float(size[1] if shape_type == "CAPSULE" else collider.radius),
         "world_translation": _vec3(world_matrix.to_translation()),
         "world_rotation": _quat(world_matrix.to_quaternion()),
+        "world_scale": world_scale,
     }
 
 

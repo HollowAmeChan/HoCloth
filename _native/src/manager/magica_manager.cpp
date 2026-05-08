@@ -136,7 +136,8 @@ int MagicaManager::StepFrame(
             simulation_power,
             simulation_delta_time,
             team_manager_,
-            virtual_mesh_manager_
+            virtual_mesh_manager_,
+            wind_manager_
         );
         simulation_manager_.UpdateStepBasicPosture(team_manager_, virtual_mesh_manager_);
         cloth_manager_.SolveStepConstraints(

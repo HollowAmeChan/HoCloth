@@ -42,6 +42,7 @@ class HoClothSpringJointOverride(bpy.types.PropertyGroup):
             ("DEFAULT", "默认", "Root bones are fixed; other bones move."),
             ("MOVE", "Move", "MC2 movable particle."),
             ("FIXED", "Fixed", "MC2 fixed particle."),
+            ("DISABLE_COLLISION", "Disable Collision", "MC2 collision-disabled particle."),
             ("INVALID", "Invalid", "MC2 invalid particle."),
         ),
         default="DEFAULT",
