@@ -209,6 +209,10 @@ class HOCLOTH_PT_main_panel(bpy.types.Panel):
         reset_row.operator("hocloth.reset_runtime", icon="LOOP_BACK", text="重置运行时")
         reset_row.operator("hocloth.destroy_runtime", icon="TRASH", text="销毁运行时")
 
+        bake_row = layout.row(align=True)
+        bake_row.operator("hocloth.bake_runtime_action", icon="REC", text="Bake Action")
+        bake_row.operator("hocloth.clear_baked_action", icon="X", text="Clear Bake")
+
         debug = layout.box()
         debug.prop(scene, "hocloth_ui_details_expanded", text="详细信息")
         if scene.hocloth_ui_details_expanded:

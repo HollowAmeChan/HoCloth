@@ -68,6 +68,74 @@ def _current_authoring_snapshot(scene):
     return build_authoring_snapshot(scene)
 
 
+def _iter_snapshot_pose_bones(scene, authoring_snapshot: dict | None):
+    payload = (authoring_snapshot or {}).get("payload", {})
+    armature_cache = {}
+    seen = set()
+    for chain in payload.get("bone_chains", []):
+        armature_name = chain.get("armature_name", "")
+        if armature_name not in armature_cache:
+            from ..runtime.blender_refs import resolve_armature_object
+
+            armature_cache[armature_name] = resolve_armature_object(scene, armature_name)
+        armature_object = armature_cache.get(armature_name)
+        if armature_object is None or armature_object.pose is None:
+            continue
+
+        for bone in chain.get("bones", []):
+            bone_name = bone.get("name", "")
+            key = (armature_object.name, bone_name)
+            if key in seen:
+                continue
+            pose_bone = armature_object.pose.bones.get(bone_name)
+            if pose_bone is None:
+                continue
+            seen.add(key)
+            yield armature_object, pose_bone
+
+
+def _keyframe_snapshot_pose_bones(scene, authoring_snapshot: dict | None, frame: int) -> int:
+    inserted = 0
+    for _armature_object, pose_bone in _iter_snapshot_pose_bones(scene, authoring_snapshot):
+        if pose_bone.rotation_mode != "QUATERNION":
+            pose_bone.rotation_mode = "QUATERNION"
+        pose_bone.keyframe_insert(data_path="location", frame=frame)
+        pose_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+        inserted += 1
+    return inserted
+
+
+def _clear_snapshot_pose_bone_bake(scene, authoring_snapshot: dict | None) -> int:
+    removed = 0
+    by_armature = {}
+    for armature_object, pose_bone in _iter_snapshot_pose_bones(scene, authoring_snapshot):
+        by_armature.setdefault(armature_object.name, (armature_object, set()))[1].add(pose_bone.name)
+
+    for armature_object, bone_names in (entry for entry in by_armature.values()):
+        action = getattr(getattr(armature_object, "animation_data", None), "action", None)
+        if action is None:
+            continue
+        for fcurve in list(action.fcurves):
+            data_path = fcurve.data_path
+            if not data_path.startswith('pose.bones["'):
+                continue
+            try:
+                bone_name = data_path.split('"', 2)[1]
+            except IndexError:
+                continue
+            if bone_name not in bone_names:
+                continue
+            if not (
+                data_path.endswith(".location")
+                or data_path.endswith(".rotation_quaternion")
+            ):
+                continue
+            action.fcurves.remove(fcurve)
+            removed += 1
+        armature_object.update_tag()
+    return removed
+
+
 def _build_runtime_from_scene(context, report=None) -> bool:
     scene = context.scene
     set_detailed_native_debug_enabled(getattr(scene, "hocloth_debug_detailed_native", False))
@@ -627,6 +695,171 @@ class HOCLOTH_OT_apply_runtime_mesh_output(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HOCLOTH_OT_bake_runtime_action(bpy.types.Operator):
+    bl_idname = "hocloth.bake_runtime_action"
+    bl_label = "Bake Runtime Action"
+    bl_description = "Bake HoCloth runtime output to keyframes on the involved pose bones"
+
+    _timer = None
+    _authoring_snapshot = None
+    _pose_baseline = None
+    _frame = 0
+    _end_frame = 0
+    _baked_frames = 0
+    _keyed_bones = 0
+    _original_apply_on_step = True
+
+    def _finish(self, context, status: str, cancelled: bool = False):
+        wm = context.window_manager
+        if self._timer is not None:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+        context.scene.hocloth_apply_pose_on_step = self._original_apply_on_step
+        context.scene.hocloth_runtime_status = status
+        self.report({"WARNING"} if cancelled else {"INFO"}, status)
+        return {"CANCELLED"} if cancelled else {"FINISHED"}
+
+    def _bake_one_frame(self, context):
+        scene = context.scene
+        scene.frame_set(self._frame)
+        if context.view_layer is not None:
+            context.view_layer.update()
+
+        source_pose = capture_pose_state(scene, self._authoring_snapshot)
+        runtime_inputs = build_runtime_inputs(scene, self._authoring_snapshot)
+        result = step_runtime(
+            scene.hocloth_runtime_dt,
+            scene.hocloth_simulation_frequency,
+            runtime_inputs,
+        )
+        apply_result = apply_runtime_transforms_to_scene(
+            scene,
+            result["transforms"],
+            source_pose or self._pose_baseline,
+        )
+        if context.view_layer is not None:
+            context.view_layer.update()
+
+        self._keyed_bones += _keyframe_snapshot_pose_bones(
+            scene,
+            self._authoring_snapshot,
+            self._frame,
+        )
+        self._baked_frames += 1
+
+        runtime_state = result["runtime_state"]
+        scene.hocloth_runtime_step_count = runtime_state["step_count"]
+        scene.hocloth_runtime_transform_count = runtime_state["bone_transform_count"]
+        scene.hocloth_runtime_non_identity_transform_count = runtime_state.get("non_identity_transform_count", 0)
+        scene.hocloth_runtime_max_rotation_degrees = runtime_state.get("max_rotation_degrees", 0.0)
+        scene.hocloth_runtime_max_translation = runtime_state.get("max_translation", 0.0)
+        scene.hocloth_runtime_write_mode_summary = runtime_state.get("write_mode_summary", "")
+        scene.hocloth_runtime_last_fixed_steps = runtime_state.get("last_executed_steps", 0)
+        scene.hocloth_runtime_applied_count = apply_result["applied_count"]
+        scene.hocloth_runtime_missing_bone_count = apply_result["missing_bone_count"]
+        scene.hocloth_runtime_missing_armature_count = apply_result["missing_armature_count"]
+        scene.hocloth_runtime_apply_armature_count = apply_result["armature_count"]
+        scene.hocloth_runtime_status = (
+            f"Baking HoCloth frame {self._frame}/{self._end_frame}, "
+            f"frames={self._baked_frames}, key ops={self._keyed_bones}"
+        )
+        self._frame += 1
+
+    def modal(self, context, event):
+        if event.type == "ESC":
+            return self._finish(
+                context,
+                f"HoCloth bake cancelled at frame {self._frame}",
+                cancelled=True,
+            )
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+
+        if self._frame > self._end_frame:
+            return self._finish(
+                context,
+                f"Baked HoCloth action: frames={self._baked_frames}, key ops={self._keyed_bones}",
+            )
+
+        try:
+            self._bake_one_frame(context)
+        except Exception as exc:
+            return self._finish(
+                context,
+                f"Bake failed at frame {self._frame}: {exc}",
+                cancelled=True,
+            )
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        scene = context.scene
+        stop_live_runtime(scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+
+        start_frame = int(scene.frame_start)
+        end_frame = int(scene.frame_end)
+        if end_frame < start_frame:
+            self.report({"ERROR"}, "Scene frame range is invalid.")
+            return {"CANCELLED"}
+
+        scene.frame_set(start_frame)
+        if context.view_layer is not None:
+            context.view_layer.update()
+        if not _build_runtime_from_scene(context, self.report):
+            return {"CANCELLED"}
+
+        self._authoring_snapshot = get_last_authoring_snapshot()
+        self._pose_baseline = get_pose_baseline()
+        self._frame = start_frame
+        self._end_frame = end_frame
+        self._baked_frames = 0
+        self._keyed_bones = 0
+        self._original_apply_on_step = scene.hocloth_apply_pose_on_step
+        scene.hocloth_apply_pose_on_step = True
+        scene.hocloth_runtime_status = (
+            f"HoCloth bake started: frames {start_frame}-{end_frame}"
+        )
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.001, window=context.window)
+        wm.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+
+class HOCLOTH_OT_clear_baked_action(bpy.types.Operator):
+    bl_idname = "hocloth.clear_baked_action"
+    bl_label = "Clear Baked Action"
+    bl_description = "Remove HoCloth keyframes from involved pose bones and return to the first frame"
+
+    def execute(self, context):
+        scene = context.scene
+        stop_live_runtime(scene, "Live runtime stopped")
+        screen = context.screen
+        if screen is not None and getattr(screen, "is_animation_playing", False):
+            bpy.ops.screen.animation_cancel(restore_frame=False)
+
+        authoring_snapshot = get_last_authoring_snapshot() or _current_authoring_snapshot(scene)
+        removed = _clear_snapshot_pose_bone_bake(scene, authoring_snapshot)
+        pose_state = get_pose_baseline()
+        scene.frame_set(scene.frame_start)
+        if pose_state:
+            restore_pose_state(scene, authoring_snapshot, pose_state)
+        reset_runtime()
+        if context.view_layer is not None:
+            context.view_layer.update()
+        scene.hocloth_runtime_step_count = 0
+        scene.hocloth_runtime_transform_count = 0
+        scene.hocloth_runtime_applied_count = 0
+        scene.hocloth_runtime_last_fixed_steps = 0
+        scene.hocloth_runtime_status = (
+            f"Cleared HoCloth bake: removed {removed} f-curves, returned to frame {scene.frame_start}"
+        )
+        self.report({"INFO"}, scene.hocloth_runtime_status)
+        return {"FINISHED"}
+
+
 class HOCLOTH_OT_destroy_runtime(bpy.types.Operator):
     bl_idname = "hocloth.destroy_runtime"
     bl_label = "Destroy Runtime"
@@ -672,6 +905,8 @@ CLASSES = (
     HOCLOTH_OT_toggle_live_runtime,
     HOCLOTH_OT_apply_runtime_pose,
     HOCLOTH_OT_apply_runtime_mesh_output,
+    HOCLOTH_OT_bake_runtime_action,
+    HOCLOTH_OT_clear_baked_action,
     HOCLOTH_OT_destroy_runtime,
 )
 
