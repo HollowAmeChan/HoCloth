@@ -52,7 +52,7 @@ Current authoring boundary rule:
 - Old HoCloth `components/properties.py`, `components/registry.py`, and `compile/` package have been removed from the active frontend. Scene authoring now goes through MC2-style component collections plus an `authoring_snapshot`.
 - New protocol work should extend `authoring_snapshot`, `frame_inputs`, `build_output`, or `step_output`. Python no longer generates a backend scene view or debug preview files; viewport and writeback consumers read native `build_output`.
 - New frontend work lives in `components/mc2.py` and the simplified `authoring/panel.py`. The main panel creates MC2-native component containers and the build path sends `authoring_snapshot` to native first.
-- As of 2026-05-09, Blender-side interactive authoring is intentionally narrowed: Blender only handles scene binding, build triggers, and build-output display. Curve editing, rich inspector interaction, and future session-style parameter authoring move to the planned C++ inspector. See `_docs/HoCloth交互架构重定义.md`.
+- As of 2026-05-09, Blender-side interactive authoring is intentionally narrowed but not emptied: Blender owns the component registry (`Scene` collections), scene binding, persistent curve data, and particle/selection-style authoring hosts such as vertex groups and bone custom properties, while cpp/imgui owns component-style parameter editing and runtime actions. Bridge text layers remain transport/debug mirrors only. See `_docs/HoCloth交互架构重定义.md`.
 
 ## Cloth
 

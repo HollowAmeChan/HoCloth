@@ -1,215 +1,303 @@
-# HoCloth 交互架构重定义
+# HoCloth交互架构重定义
 
 ## 1. 背景
 
-当前 HoCloth 的 MC2 移植如果继续把 Blender 当成 Unity Inspector 的替身，会在三个方向持续变得别扭：
+HoCloth 在继续移植 MC2 时，最大的阻力已经不是 solver 本身，而是 authoring 交互边界。
+如果继续把 Blender 强行当成 Unity Inspector 的等价替身，会同时遇到三类问题：
 
-- UI：Blender `Panel`/RNA 不适合承载 MC2 风格的高频交互 authoring。
-- 缓存：MC2 的 `PreBuild` 本质是构建缓存，不适合塞回 Blender 属性层充当主源。
-- 持久化：Blender `.blend` 适合保存场景绑定关系，不适合作为 HoCloth 全量 authoring 资产的唯一真源。
+- Blender `Panel` / RNA 不适合承载完整的 MC2 inspector 交互体验。
+- MC2 的 `PreBuild`、selection、virtual mesh、runtime cache 本质上属于构建派生层，不应该伪装成 Blender 前端真源。
+- `.blend` 适合保存宿主绑定和参数数据，但不适合再人为造一套半独立的 bridge/txt 真源。
 
-因此从本阶段开始，HoCloth 重新定义宿主分工：Blender 是场景宿主与绑定入口，HoCloth C++ 侧是 authoring / prebuild / runtime 主体。
+因此需要重新定义分层，明确哪些数据属于 Blender，哪些属于 imgui inspector，哪些只是 native build 的派生结果。
 
-## 2. 核心结论
-
-新的总原则：
+## 2. 总原则
 
 ```text
-Blender 只做：
-1. 参与模拟对象的绑定与标注
-2. 构建触发
-3. 构建后结果显示
+Blender 负责
+1. Scene binding
+2. Component 注册与持久化
+3. 粒子/选择类 authoring 宿主
+4. Build / Step / Live 触发
+5. Build 结果显示与写回
 
-C++ 侧负责：
-1. 交互式参数编辑
-2. 曲线编辑
-3. 组件参数 authoring
-4. PreBuild / Cache
-5. Runtime
+Cpp/imgui 负责
+1. MC2 风格 inspector 参数编辑
+2. 曲线参数编辑体验
+3. Runtime / build 操作入口
+4. 运行时状态查看
+
+Native 负责
+1. 消费 authoring snapshot
+2. PreBuild
+3. Runtime
+4. Build / Step 输出
+```
+
+关键收口：
+
+- `Scene / PropertyGroup` 仍然是 component authoring 的唯一真源。
+- `Text datablock` 和外部 bridge 文件只是 transport / debug mirror，不是长期 authoring 存储。
+- 粒子属性、selection、骨骼属性这类数据回归 Blender 原生宿主，而不是迁进 imgui 成为新的真源。
+- live runtime 每次启动前都必须先 rebuild / rebake 一次 Blender 当前 authoring 数据。
+
+## 3. 数据分层
+
+### 3.1 Scene Binding / Component Registry
+
+Blender 侧必须保留一套 `Scene / CollectionProperty` 作为组件注册表。
+这一层描述的是：
+
+- 当前场景里有哪些 HoCloth / MC2 component
+- 每个 component 绑定到哪个 object / armature / collider / cache target
+- 哪些 component 会被导出到 imgui inspector 和 native build
+
+这意味着 imgui 不负责“发现组件”，而是消费 Blender 已经声明好的 component 集合。
+
+这层数据包括但不限于：
+
+- `scene.hocloth_mc2_components`
+- 各 typed component collection
+- armature / collider / cache output 绑定
+- root bone / collider reference 等宿主引用关系
+
+这一层是整个 authoring 的注册表和入口，不迁出 Blender。
+
+### 3.2 Component Parameters
+
+MC2 component 参数仍然持久化在 Blender `PropertyGroup` 中。
+imgui inspector 的职责是编辑这些参数，而不是拥有另一份长期真源。
+
+典型内容：
+
+- preset profile
+- stiffness / damping / gravity / inertia
+- collider component 参数
+- cache output 参数
+- curve parameter 的基础字段
+
+原则：
+
+- Blender datablock 保存参数真源
+- imgui 只提供更像 MC2 / Unity inspector 的编辑体验
+- imgui 对常规参数的任何修改，都应先回写 Blender datablock
+- native build 始终从 Blender 当前参数重新导出
+
+### 3.3 Curve Parameters
+
+曲线参数是一个单独需要明确的层。
+
+曲线不能只存在于 imgui 内存里，否则会丢失：
+
+- 关闭 inspector 后状态会丢
+- 保存 `.blend` 后无法持久化
+- build / live runtime 无法稳定重建
+
+因此曲线参数的真源必须保留在 Blender 侧，至少包括：
+
+- `value`
+- `use_curve`
+- `control_points`
+- `curve_samples`
+
+推荐的职责划分：
+
+- Blender 持久化 `control_points` 作为曲线真源
+- Blender 同时维护 `curve_samples` 作为 build/runtime 友好的缓存
+- imgui 负责曲线编辑体验与控制点调整
+- imgui 修改后通过 bridge 回写 Blender datablock
+- native build 永远从 Blender 当前曲线重新采样，不直接信任 imgui 内存态
+
+也就是说，曲线的“编辑器”可以在 imgui，但曲线的“存档”必须在 Blender。
+
+### 3.4 Particle / Selection Authoring
+
+这类数据不再追求塞进 component property，也不交给 imgui 做权威持久化。
+
+宿主方案固定为：
+
+- mesh 侧：vertex groups
+- bone 侧：bone custom properties
+
+当前骨骼属性约定：
+
+- 主 key：`hocloth_mc2_attribute`
+- 兼容 alias：`mc2_attribute`
+
+允许的枚举值：
+
+- `DEFAULT`
+- `MOVE`
+- `FIXED`
+- `DISABLE_COLLISION`
+- `INVALID`
+
+当前导出策略：
+
+- native build 优先读取 bone custom property
+- 旧 `joint_overrides.mc2_attribute` 只作为兼容回退
+
+这样做的原因：
+
+- 数据天然随 `.blend` 持久化
+- 更贴近 Blender 用户习惯
+- 不需要额外制造一层半吊子的 txt/component 存储
+- native build 可以在构建阶段把它们转换为 `SelectionData` / `VertexAttribute` / runtime indices
+
+### 3.5 Session / Bridge
+
+这一层只负责外部 inspector 与 Blender Python 的通信。
+
+当前内容：
+
+- `HoCloth_InspectorState`
+- `HoCloth_InspectorCommands`
+- `_bin/inspector_bridge/state.txt`
+- `_bin/inspector_bridge/commands/`
+
+这一层负责：
+
+- inspector transport
+- debug mirror
+- 状态观察
+
+这一层不负责：
+
+- component 真源
+- 曲线真源
+- 粒子 authoring 真源
+- 长期持久化
+
+### 3.6 PreBuild / Runtime Cache
+
+这一层是纯派生层。
+
+典型内容：
+
+- virtual mesh
+- reduction 结果
+- topology 映射
+- selection 编译结果
+- 约束预计算数据
+- runtime build output
+
+原则：
+
+- 可以外部缓存
+- 可以 native 内部持有
+- 但不作为用户 authoring 真源
+
+## 4. Blender 职责
+
+Blender 保留的职责：
+
+- 创建和绑定 MC2 component
+- 用 `Scene / CollectionProperty` 管理要参与导出的 component 集合
+- 指定 armature / root bones / colliders / cache outputs
+- 持久化 component 参数
+- 持久化曲线控制点与曲线 samples
+- 编辑粒子属性宿主数据
+- 触发 build / step / live runtime
+- 显示 native `build_output` / `step_output`
+
+Blender 不再承担的职责：
+
+- 曲线 HUD
+- Blender GPU 实时 authoring overlay
+- 完整 MC2 风格 inspector 布局
+- imgui 平行真源
+- 另一套桥接 txt component 存储
+
+## 5. imgui Inspector 职责
+
+imgui inspector 的定位是：
+
+- component 参数编辑入口
+- 曲线编辑入口
+- runtime/build 操作入口
+- 运行状态查看
+
+它不负责：
+
+- 替代 Blender 做 scene binding
+- 替代 Blender 做 component 注册表
+- 替代 Blender 持久化曲线真源
+- 替代 Blender 持久化粒子/selection authoring
+
+换句话说：
+
+- “组件存在、绑定谁、是否参与导出” 由 Blender 决定
+- “组件参数怎么调、曲线怎么改” 可以在 imgui 中完成
+- “最终持久化存档” 仍然回到 Blender datablock
+
+## 6. Live Runtime 规则
+
+这一条必须固定下来：
+
+```text
+Start Live Runtime
+  -> flush inspector parameter edits back into Blender first
+  -> collect Blender-side particle authoring hosts
+  -> rebuild / rebake from Blender authoring
+  -> then arm live runtime
+```
+
+原因：
+
+- 粒子属性宿主仍在 Blender 原生数据里
+- 曲线真源仍在 Blender datablock 里
+- imgui 不直接拥有最终 authoring 状态
+
+因此开始模拟前必须重新把 Blender 当前状态 bake 进 native build 输入。
+
+这条规则不只适用于 imgui 内点击运行，也适用于 Blender 侧点击运行。
+无论入口来自哪里，运行前的标准顺序都应该一致：
+
+```text
+Run / Build Barrier
+1. 把 imgui 中修改过的常规 component 参数回写到 Blender datablock
+2. 以 Blender 当前状态作为唯一真源
+3. 从 Blender 读取 bone custom properties
+4. 从 Blender 读取 vertex groups
+5. 组合成 authoring snapshot / selection-style build inputs
+6. 执行 native build
+7. 再进入 step / live runtime
 ```
 
 这意味着：
 
-- Blender 侧不再承担 MC2 风格曲线编辑器。
-- Blender 侧不再承担实时 authoring GPU 叠加绘制。
-- Blender 侧允许显示构建后由 native 返回的可视化结果。
-- C++ Inspector 才是后续完整交互 authoring 的目标形态。
+- imgui 不允许绕过 Blender 直接拿自己的内存态去构建
+- Blender 侧运行按钮也不能假设 inspector 参数已经天然同步完成
+- “参数同步到 Blender” 是 build 之前的必经屏障，而不是可选优化
 
-## 3. 四层数据模型
+这也是当前架构下最不别扭、最稳定的路径：
 
-HoCloth 后续按四层分工：
+- 常规参数统一收口到 Blender
+- 粒子属性统一从 Blender 宿主读取
+- native 永远只吃 Blender 当前导出的构建输入
+- 不会出现 imgui 参数态、Blender 参数态、particle 宿主态三者彼此错位的问题
 
-### 3.1 Scene Binding
+## 7. 当前阶段结论
 
-Blender 私有场景绑定层，只描述“哪些 Blender 数据块参与模拟”。
+从当前版本开始，以下结论立即生效：
 
-典型内容：
+1. `Scene / PropertyGroup` 继续作为 component authoring 真源。
+2. `scene.hocloth_mc2_components` 等 collection 继续作为 component 注册表和导出入口。
+3. 曲线参数真源继续保存在 Blender datablock 中，控制点必须可持久化。
+4. imgui inspector 只负责曲线和 component 参数的编辑体验，修改后回写 Blender。
+5. 粒子/selection authoring 优先走 vertex groups 与 bone custom properties。
+6. `joint_overrides` 在骨骼属性导出上降级为兼容回退层，而不是长期主路径。
+7. bridge text/file 只保留 transport 与 debug mirror 角色。
+8. 任何 build / step / live runtime 入口在构建前，都必须先把 inspector 参数刷新回 Blender，再从 Blender 读取 bone custom properties 与 vertex groups，然后执行 build。
+9. live runtime 启动前必须强制 rebuild 一次。
+10. Blender 面板继续收缩为绑定入口、inspector 开关、runtime 控制与结果显示。
 
-- armature / mesh / collider object 引用
-- root bone 列表
-- cache output 目标
-- 顶点组与 bone 自定义属性来源
+## 8. 接下来的推进顺序
 
-这一层应当尽量稳定、薄、贴近 Blender 原始数据。
+建议按下面顺序继续：
 
-### 3.2 Authoring Asset
-
-HoCloth 自己的 authoring 主源，不再要求完全寄存在 Blender `PropertyGroup` 里。
-
-典型内容：
-
-- component 列表
-- cloth 参数
-- 曲线参数
-- collider binding
-- selection / attribute authoring 数据
-- preset / override
-
-后续主要由 C++ Inspector 编辑。
-
-### 3.3 Session State
-
-交互会话层，只存在于运行中的 C++ Inspector / runtime 侧。
-
-典型用途：
-
-- 拖动曲线
-- 调 stiffness / damping / radius
-- 临时调试参数
-- 预览尚未保存的修改
-
-交互原则：
-
-```text
-UI -> Session -> Runtime Preview
-```
-
-而不是：
-
-```text
-UI -> Blender RNA -> Python draw/update -> Runtime
-```
-
-### 3.4 PreBuild Cache
-
-纯派生缓存层，由 `Scene Binding + Authoring Asset` 编译得到。
-
-典型内容：
-
-- RenderSetupData
-- proxy mesh / render mesh
-- reduction 结果
-- selection 映射结果
-- distance / bending / inertia 等预计算约束数据
-- share / unique prebuild 数据
-
-这一层不作为主 authoring 源，只作为缓存与加速层。
-
-## 4. Blender 侧职责
-
-Blender 保留如下职责：
-
-- 创建与绑定 MC2 组件
-- 指定 armature / root bone / collider / cache output
-- 提供构建前标注数据
-- 触发 build / step / live runtime
-- 显示 native `build_output` / `step_output`
-
-Blender 不再承担如下职责：
-
-- 曲线控制点拖动
-- 参数曲线 HUD
-- MC2 风格 inspector 交互
-- 运行时 authoring 参数高频编辑
-- 代替 native 预构建虚拟网格与拓扑
-
-## 5. 构建前标注策略
-
-粒子属性 authoring 以稳定语义为主，不以 index 作为长期真源。
-
-### 5.1 Bone 属性
-
-BoneCloth / BoneSpring 优先使用 bone 自定义属性。
-
-建议保留一个 enum 语义：
-
-- `DEFAULT`
-- `FIXED`
-- `MOVE`
-- `DISABLE_COLLISION`
-
-### 5.2 Mesh 属性
-
-Mesh / VirtualMesh 相关 authoring 优先使用 Blender 顶点组。
-
-当前阶段建议：
-
-- 顶点组按 0/1 语义采样
-- 构建前采集
-- 构建后转成 MC2 `SelectionData` / `VertexAttribute` / index 化数据
-
-不允许依赖 Blender 侧动态实时修改这些构建输入。
-
-## 6. 曲线策略
-
-曲线参数继续保留在后端与构建链路中：
-
-- Blender authoring snapshot 可继续传递曲线参数
-- native 侧继续消费 `CurveSerializeData` 语义
-- runtime 生效链路保持不变
-
-但 Blender 侧停止承担曲线交互式绘制与编辑：
-
-- 不再绘制曲线 HUD
-- 不再支持控制点 viewport 拖动
-- `Panel` 里只保留标量值和 `use_curve` 开关的轻量显示
-- 后续完整曲线编辑统一迁到 C++ Inspector
-
-## 7. 构建后绘制策略
-
-Blender 侧 viewport 只允许画构建后 / 运行时由 native 返回的数据。
-
-允许继续保留的绘制类型：
-
-- bones
-- particle radius
-- colliders
-- 后续如需更多 debug primitive，也必须来自 native `build_output`
-
-禁止继续扩展的绘制类型：
-
-- Blender 侧 authoring 曲线预览
-- 交互式 authoring HUD
-- Python 本地推导出的 MC2 拓扑调试图
-
-## 8. 推荐流水线
-
-```text
-Blender Scene Binding
-  -> authoring snapshot / raw refs
-  -> C++ authoring transfer
-  -> Authoring Asset + Session
-  -> PreBuild Cache
-  -> Runtime
-  -> build_output / step_output
-  -> Blender draw / writeback
-```
-
-## 9. 当前阶段实施决议
-
-本次调整立即生效的决议：
-
-1. Blender 侧移除参数曲线实时绘制与拖拽。
-2. Blender 侧主面板收缩为绑定、构建和构建后显示入口。
-3. 曲线编辑职责迁移到未来的 C++ Inspector。
-4. 粒子属性 authoring 优先走顶点组与 bone 自定义属性。
-5. PreBuild 作为缓存层继续推进，不再误用为 Blender UI 主编辑层。
-
-## 10. 后续工作
-
-建议接下来按以下顺序推进：
-
-1. 设计 `Scene Binding` 与 `Authoring Asset` 的外部存储协议。
-2. 定义 bone 自定义属性与顶点组到 native `VertexAttribute` 的构建映射。
-3. 为 C++ Inspector 预留 session / authoring / prebuild 边界。
-4. 逐步把 Blender 面板中的复杂参数编辑迁出到 C++ 侧。
+1. 完成 imgui 曲线控制点编辑与 Blender 回写闭环。
+2. 继续把 Blender 侧 component 参数 UI 迁到 imgui inspector。
+3. 明确 vertex group -> `SelectionData` / `VertexAttribute` 的 build-time 映射。
+4. 逐步把旧 `joint_overrides` 从主工作流里降级为兼容层。
+5. 再推进 virtual mesh / selection / prebuild 的正式构建通道。

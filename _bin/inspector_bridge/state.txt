@@ -1,0 +1,10 @@
+format	1
+scene	name	Scene
+runtime	status	Not built
+runtime	backend	none
+runtime	step_count	0
+runtime	transform_count	0
+runtime	apply_pose_on_step	1
+runtime	dt	0.033333
+runtime	simulation_frequency	90
+runtime	live_running	0

@@ -5,6 +5,7 @@ from ..runtime.authoring_snapshot import (
     build_authoring_snapshot,
 )
 from ..runtime.inputs import build_runtime_inputs, reset_runtime_input_tracking
+from ..runtime.inspector_bridge import export_state
 from ..runtime.inspector import launch_inspector, stop_inspector, toggle_inspector
 from ..runtime.live import start_live_runtime, stop_live_runtime
 from ..runtime.pose_apply import (
@@ -210,6 +211,7 @@ class HOCLOTH_OT_add_active_spring_bone(bpy.types.Operator):
         cloth.root_bone_name = extracted.root_bone_name
         mc2.sync_joint_override_names(cloth, extracted.bone_names)
         context.scene.hocloth_runtime_status = f"Added BoneSpring with {len(extracted.bone_names)} bones"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -237,6 +239,7 @@ class HOCLOTH_OT_add_active_bone_cloth(bpy.types.Operator):
         cloth.spring_constraint.use_spring = False
         mc2.sync_joint_override_names(cloth, extracted.bone_names)
         context.scene.hocloth_runtime_status = f"Added BoneCloth with {len(extracted.bone_names)} bones"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -259,6 +262,7 @@ class HOCLOTH_OT_add_active_collider(bpy.types.Operator):
         )
         collider.collider_object = active_object
         context.scene.hocloth_runtime_status = f"Added {collider.collider_type} collider from {active_object.name}"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -278,6 +282,7 @@ class HOCLOTH_OT_add_cache_output(bpy.types.Operator):
             if main_item is not None:
                 main_item.display_name = f"Blender Cache Output: {context.object.name}"
         context.scene.hocloth_runtime_status = "Added cache output"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -296,6 +301,7 @@ class HOCLOTH_OT_remove_component(bpy.types.Operator):
             self.report({"ERROR"}, "Component was not found.")
             return {"CANCELLED"}
         context.scene.hocloth_runtime_status = "Component removed"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -391,6 +397,7 @@ class HOCLOTH_OT_add_collider_reference(bpy.types.Operator):
         if mc2.find_collider_by_object(context.scene, active_object) is not None:
             reference.collider_object = active_object
         context.scene.hocloth_runtime_status = "Added collider reference"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -414,6 +421,7 @@ class HOCLOTH_OT_remove_collider_reference(bpy.types.Operator):
         cloth.collider_references.remove(index)
         cloth.collider_reference_index = min(cloth.collider_reference_index, max(len(cloth.collider_references) - 1, 0))
         context.scene.hocloth_runtime_status = "Removed collider reference"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -452,6 +460,7 @@ class HOCLOTH_OT_add_root_bone_reference(bpy.types.Operator):
             cloth.root_bone_name = cloth.root_bone_references[0].bone_name
         cloth.root_bone_reference_index = max(len(cloth.root_bone_references) - 1, 0)
         context.scene.hocloth_runtime_status = f"Added {added} root bone references"
+        export_state(context.scene)
         return {"FINISHED"}
 
 
@@ -478,6 +487,7 @@ class HOCLOTH_OT_remove_root_bone_reference(bpy.types.Operator):
             max(len(cloth.root_bone_references) - 1, 0),
         )
         context.scene.hocloth_runtime_status = "Removed root bone reference"
+        export_state(context.scene)
         return {"FINISHED"}
 
 

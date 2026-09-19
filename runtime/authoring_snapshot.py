@@ -6,6 +6,26 @@ from .blender_bone_refs import resolve_bone_forest_names
 from ..components import mc2
 from .exchange import wrap_authoring_snapshot
 
+MC2_BONE_ATTRIBUTE_PROPERTY_KEY = "hocloth_mc2_attribute"
+MC2_BONE_ATTRIBUTE_PROPERTY_ALIASES = (
+    MC2_BONE_ATTRIBUTE_PROPERTY_KEY,
+    "mc2_attribute",
+)
+MC2_BONE_ATTRIBUTE_ENUMS = {
+    "DEFAULT",
+    "MOVE",
+    "FIXED",
+    "DISABLE_COLLISION",
+    "INVALID",
+}
+MC2_BONE_ATTRIBUTE_INT_MAP = {
+    0: "DEFAULT",
+    1: "MOVE",
+    2: "FIXED",
+    3: "DISABLE_COLLISION",
+    4: "INVALID",
+}
+
 
 def _vec3(value) -> tuple[float, float, float]:
     return (float(value[0]), float(value[1]), float(value[2]))
@@ -34,13 +54,62 @@ def _joint_override_map(typed_item) -> dict[str, object]:
     }
 
 
-def _bone_attribute_overrides(typed_item) -> list[dict]:
-    overrides = []
-    for item in getattr(typed_item, "joint_overrides", []):
-        attribute = getattr(item, "mc2_attribute", "DEFAULT")
-        if not item.bone_name or attribute == "DEFAULT":
+def _normalize_bone_attribute(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return MC2_BONE_ATTRIBUTE_INT_MAP.get(value)
+
+    token = str(value).strip()
+    if not token:
+        return None
+    token = token.upper().replace("-", "_").replace(" ", "_")
+    collapsed = token.replace("_", "")
+    alias_map = {
+        "DEFAULT": "DEFAULT",
+        "MOVE": "MOVE",
+        "FIXED": "FIXED",
+        "DISABLECOLLISION": "DISABLE_COLLISION",
+        "INVALID": "INVALID",
+    }
+    normalized = alias_map.get(collapsed, token)
+    return normalized if normalized in MC2_BONE_ATTRIBUTE_ENUMS else None
+
+
+def _read_bone_attribute_property(pose_bone, bone) -> str | None:
+    for owner in (pose_bone, bone):
+        if owner is None or not hasattr(owner, "get"):
             continue
-        overrides.append({"bone_name": item.bone_name, "attribute": attribute})
+        for key in MC2_BONE_ATTRIBUTE_PROPERTY_ALIASES:
+            value = owner.get(key)
+            normalized = _normalize_bone_attribute(value)
+            if normalized is not None:
+                return normalized
+    return None
+
+
+def _legacy_joint_attribute_overrides(typed_item) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for item in getattr(typed_item, "joint_overrides", []):
+        normalized = _normalize_bone_attribute(getattr(item, "mc2_attribute", "DEFAULT"))
+        if not item.bone_name or normalized in {None, "DEFAULT"}:
+            continue
+        overrides[item.bone_name] = normalized
+    return overrides
+
+
+def _bone_attribute_overrides(armature_object, typed_item, bone_names: list[str]) -> list[dict]:
+    legacy_overrides = _legacy_joint_attribute_overrides(typed_item)
+    overrides = []
+    for bone_name in bone_names:
+        bone = armature_object.data.bones.get(bone_name) if armature_object is not None else None
+        pose_bone = armature_object.pose.bones.get(bone_name) if armature_object is not None and armature_object.pose else None
+        attribute = _read_bone_attribute_property(pose_bone, bone)
+        if attribute is None:
+            attribute = legacy_overrides.get(bone_name)
+        if attribute in {None, "DEFAULT"}:
+            continue
+        overrides.append({"bone_name": bone_name, "attribute": attribute})
     return overrides
 
 
@@ -299,7 +368,11 @@ def _bone_chain_snapshot(scene, item, typed_item):
         "armature_rotation": armature_rotation,
         "armature_scale": armature_scale,
         "bones": bones,
-        "bone_attribute_overrides": _bone_attribute_overrides(typed_item),
+        "bone_attribute_overrides": _bone_attribute_overrides(
+            armature_object,
+            typed_item,
+            [bone["name"] for bone in bones],
+        ),
     }
 
 
